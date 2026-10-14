@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "RestaurantOffer": {
+      "title": "RestaurantOffer",
+      "description": "Represents a restaurant or cafe promotional offer or discount.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the offer"
+        },
+        "merchantId": {
+          "type": "string",
+          "description": "UID of the merchant who published the offer"
+        },
+        "restaurantName": {
+          "type": "string",
+          "description": "Name of the restaurant or cafe"
+        },
+        "offerTitle": {
+          "type": "string",
+          "description": "Short title describing the promotion"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed offer description and inclusions"
+        },
+        "cuisineType": {
+          "type": "string",
+          "description": "Category or cuisine type (e.g., برجر, كافيهات, بيتزا)"
+        },
+        "price": {
+          "type": "number",
+          "description": "Promotional price in SAR"
+        },
+        "originalPrice": {
+          "type": "number",
+          "description": "Original price before discount"
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency label, defaults to ر.س"
+        },
+        "discountBadge": {
+          "type": "string",
+          "description": "Visual discount badge text, e.g., 25% خصم"
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": ["IMAGE", "VIDEO"],
+          "description": "Media type for the offer visual"
+        },
+        "mediaUri": {
+          "type": "string",
+          "description": "Cloud download URL from Firebase Storage for the offer image or video"
+        },
+        "isPromotionalVideo": {
+          "type": "boolean",
+          "description": "Whether media is an active promotional video"
+        },
+        "district": {
+          "type": "string",
+          "description": "District or neighborhood name"
+        },
+        "region": {
+          "type": "string",
+          "description": "City or region name (e.g. الرياض)"
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Geographical latitude of the restaurant"
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Geographical longitude of the restaurant"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone / WhatsApp number"
+        },
+        "workingHours": {
+          "type": "string",
+          "description": "Working hours text"
+        },
+        "rating": {
+          "type": "number",
+          "description": "Rating score out of 5"
+        },
+        "isApproved": {
+          "type": "boolean",
+          "description": "Whether offer is verified and approved"
+        },
+        "isFeatured": {
+          "type": "boolean",
+          "description": "Whether offer is featured at top of carousel"
+        },
+        "viewsCount": {
+          "type": "integer",
+          "description": "Total views tally for analytics"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of offer creation. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "id",
+        "merchantId",
+        "restaurantName",
+        "offerTitle",
+        "description",
+        "cuisineType",
+        "price",
+        "currency",
+        "mediaType",
+        "mediaUri",
+        "district",
+        "region",
+        "latitude",
+        "longitude",
+        "phone",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/offers/{offerId}": {
+      "schema": {
+        "$ref": "#/entities/RestaurantOffer"
+      },
+      "description": "Global collection of all published restaurant and cafe offers"
+    }
+  }
+}

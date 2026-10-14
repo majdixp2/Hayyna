@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidOffer(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 100
+        && data.merchantId is string && data.merchantId == request.auth.uid
+        && data.restaurantName is string && data.restaurantName.size() > 0 && data.restaurantName.size() <= 100
+        && data.offerTitle is string && data.offerTitle.size() > 0 && data.offerTitle.size() <= 150
+        && data.description is string && data.description.size() <= 2000
+        && data.cuisineType is string && data.cuisineType.size() <= 60
+        && data.price is number && data.price >= 0.0
+        && (!('originalPrice' in data) || data.originalPrice == null || (data.originalPrice is number && data.originalPrice >= 0.0))
+        && data.currency is string && data.currency.size() <= 10
+        && (!('discountBadge' in data) || (data.discountBadge is string && data.discountBadge.size() <= 40))
+        && data.mediaType is string && (data.mediaType == 'IMAGE' || data.mediaType == 'VIDEO')
+        && data.mediaUri is string && data.mediaUri.size() > 0 && data.mediaUri.size() <= 2000
+        && (!('isPromotionalVideo' in data) || data.isPromotionalVideo is bool)
+        && data.district is string && data.district.size() <= 100
+        && data.region is string && data.region.size() <= 100
+        && data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0
+        && data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0
+        && data.phone is string && data.phone.size() <= 30
+        && (!('workingHours' in data) || (data.workingHours is string && data.workingHours.size() <= 120))
+        && (!('rating' in data) || (data.rating is number && data.rating >= 0.0 && data.rating <= 5.0))
+        && (!('isApproved' in data) || data.isApproved is bool)
+        && (!('isFeatured' in data) || data.isFeatured is bool)
+        && (!('viewsCount' in data) || (data.viewsCount is int && data.viewsCount >= 0))
+        && data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    match /offers/{offerId} {
+      // Anyone (customers, visitors, merchants) can browse and view all active restaurant offers on the map
+      allow read: if true;
+
+      // Merchants can publish new offers attached to their own UID
+      allow create: if isAuthenticated()
+        && request.resource.data.merchantId == request.auth.uid
+        && isValidOffer(request.resource.data);
+
+      // Offer owners can update their offer; or users can increment views count
+      allow update: if isAuthenticated() && (
+        (resource.data.merchantId == request.auth.uid && isValidOffer(request.resource.data))
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount'])
+          && request.resource.data.viewsCount is int
+          && request.resource.data.viewsCount == resource.data.viewsCount + 1
+        )
+      );
+
+      // Offer owner can delete their offer
+      allow delete: if isAuthenticated() && resource.data.merchantId == request.auth.uid;
+    }
+  }
+}

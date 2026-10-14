@@ -1,0 +1,6 @@
+{
+  "name": "سوق التاجر",
+  "description": "تطبيق التاجر لعرض وترويج السلع والمنتجات وإرفاق الصور والفيديوهات الإعلانية وتحديد الحي والمنطقة عبر Google ماب.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
