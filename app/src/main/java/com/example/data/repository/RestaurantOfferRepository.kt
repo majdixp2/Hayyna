@@ -139,7 +139,7 @@ class RestaurantOfferRepository(
                     originalPrice = 165.0,
                     discountBadge = "خصم 28% 🍖",
                     mediaType = MediaType.IMAGE,
-                    mediaUri = "restaurant_grill_offer_1791873746852",
+                    mediaUri = "restaurant_grill_offer_1791823746852",
                     isPromotionalVideo = false,
                     district = "حي العليا",
                     region = "منطقة الرياض",
@@ -173,8 +173,14 @@ class RestaurantOfferRepository(
                         return@addSnapshotListener
                     }
                     val offers = snapshot?.documents?.mapNotNull { doc ->
-                        doc.toObject(RestaurantOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
-                            ?.copy(id = doc.id)
+                        // أي وثيقة تالفة تُتجاهل بدل أن توقف التطبيق
+                        try {
+                            doc.toObject(RestaurantOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                                ?.copy(id = doc.id)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Skipping malformed offer ${doc.id}: ${e.message}")
+                            null
+                        }
                     } ?: emptyList()
 
                     if (offers.isNotEmpty()) {
@@ -202,8 +208,14 @@ class RestaurantOfferRepository(
                         return@addSnapshotListener
                     }
                     val offers = snapshot?.documents?.mapNotNull { doc ->
-                        doc.toObject(RestaurantOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
-                            ?.copy(id = doc.id)
+                        // أي وثيقة تالفة تُتجاهل بدل أن توقف التطبيق
+                        try {
+                            doc.toObject(RestaurantOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                                ?.copy(id = doc.id)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Skipping malformed offer ${doc.id}: ${e.message}")
+                            null
+                        }
                     } ?: emptyList()
 
                     if (offers.isNotEmpty()) {
@@ -390,7 +402,7 @@ class RestaurantOfferRepository(
                         originalPrice = 165.0,
                         discountBadge = "خصم 28% 🍖",
                         mediaType = MediaType.IMAGE,
-                        mediaUri = "restaurant_grill_offer_1791873746852",
+                        mediaUri = "restaurant_grill_offer_1791823746852",
                         isPromotionalVideo = false,
                         district = "حي العليا",
                         region = "منطقة الرياض",

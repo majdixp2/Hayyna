@@ -143,6 +143,7 @@ fun MerchantStoreScreen(
                                 offers = filteredCustomerOffers,
                                 selectedOffer = selectedOfferOnMap,
                                 userLocation = viewModel.userLocation.collectAsStateWithLifecycle().value,
+                                onLocationPermissionGranted = { viewModel.requestLocationUpdates() },
                                 onSelectOffer = { offer ->
                                     viewModel.selectOfferOnMap(offer)
                                 },

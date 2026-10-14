@@ -81,6 +81,7 @@ fun FullScreenRestaurantMap(
     userLocation: Location? = null,
     onSelectOffer: (RestaurantOffer) -> Unit,
     onBackgroundClick: () -> Unit = {},
+    onLocationPermissionGranted: () -> Unit = {},
     currentDistrictName: String,
     modifier: Modifier = Modifier
 ) {
@@ -101,10 +102,14 @@ fun FullScreenRestaurantMap(
     ) { perms ->
         hasLocationPermission = perms[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             perms[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        // بعد موافقة المستخدم نبدأ تتبع الموقع فوراً (بدونها لا يعمل حساب المسافة إلا بعد إعادة تشغيل التطبيق)
+        if (hasLocationPermission) onLocationPermissionGranted()
     }
 
     LaunchedEffect(Unit) {
-        if (!hasLocationPermission) {
+        if (hasLocationPermission) {
+            onLocationPermissionGranted()
+        } else {
             permissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,

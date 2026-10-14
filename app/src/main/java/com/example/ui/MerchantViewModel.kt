@@ -239,9 +239,7 @@ class MerchantViewModel(
     fun selectOfferOnMap(offer: RestaurantOffer?) {
         selectedOfferOnMap.value = offer
         if (offer != null) {
-            viewModelScope.launch {
-                repository.incrementViews(offer.id)
-            }
+            launchSafely { repository.incrementViews(offer.id) }
         }
     }
 
@@ -251,9 +249,7 @@ class MerchantViewModel(
 
     fun openOfferDetail(offer: RestaurantOffer) {
         activeDetailOffer.value = offer
-        viewModelScope.launch {
-            repository.incrementViews(offer.id)
-        }
+        launchSafely { repository.incrementViews(offer.id) }
     }
 
     fun closeOfferDetail() {
@@ -286,6 +282,15 @@ class MerchantViewModel(
                 )
                 repository.insertOffer(finalOffer)
                 closeAddOfferSheet()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("MerchantViewModel", "saveOffer failed: ${e.message}", e)
+                android.widget.Toast.makeText(
+                    getApplication(),
+                    "تعذّر نشر العرض. تأكد من تسجيل الدخول بحساب Google ومن اتصال الإنترنت.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
             } finally {
                 isUploadingMedia.value = false
             }
@@ -293,7 +298,7 @@ class MerchantViewModel(
     }
 
     fun deleteOffer(id: String) {
-        viewModelScope.launch {
+        launchSafely("تعذّر حذف العرض. يمكنك حذف عروضك أنت فقط.") {
             repository.deleteOfferById(id)
             if (activeDetailOffer.value?.id == id) {
                 activeDetailOffer.value = null
@@ -305,14 +310,33 @@ class MerchantViewModel(
     }
 
     fun toggleFeatured(id: String, featured: Boolean) {
-        viewModelScope.launch {
+        launchSafely("تعذّر تحديث العرض.") {
             repository.setOfferFeatured(id, featured)
         }
     }
 
     fun toggleApproved(id: String, approved: Boolean) {
-        viewModelScope.launch {
+        launchSafely("تعذّر تحديث العرض.") {
             repository.setOfferApproved(id, approved)
+        }
+    }
+
+    /**
+     * ينفّذ عملية على Firestore ويلتقط أي خطأ (صلاحيات، شبكة، وثيقة غير موجودة)
+     * بدلاً من أن ينهار التطبيق. يعرض رسالة للمستخدم إذا وُجدت.
+     */
+    private fun launchSafely(userMessageOnError: String? = null, block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("MerchantViewModel", "Operation failed: ${e.message}", e)
+                if (userMessageOnError != null) {
+                    android.widget.Toast.makeText(getApplication(), userMessageOnError, android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 

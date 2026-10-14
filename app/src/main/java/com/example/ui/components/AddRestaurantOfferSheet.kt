@@ -433,6 +433,16 @@ fun AddRestaurantOfferSheet(
                             LaunchedEffect(latitude, longitude) {
                                 pinState.position = LatLng(latitude, longitude)
                             }
+                            // عند انتهاء سحب الدبوس نحفظ موقعه الجديد (بدون هذا يضيع السحب ويُحفظ الموقع القديم)
+                            LaunchedEffect(pinState) {
+                                androidx.compose.runtime.snapshotFlow { pinState.isDragging to pinState.position }
+                                    .collect { (dragging, pos) ->
+                                        if (!dragging && (pos.latitude != latitude || pos.longitude != longitude)) {
+                                            latitude = pos.latitude
+                                            longitude = pos.longitude
+                                        }
+                                    }
+                            }
                             Marker(
                                 state = pinState,
                                 draggable = true,

@@ -21,7 +21,18 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    manifestPlaceholders["MAPS_API_KEY"] = "AIzaSy_DEFAULT_MAPS_KEY_AI_STUDIO"
+
+    // مفتاح Google Maps: يُقرأ من .env (محلياً أو من GitHub Secrets) ثم .env.example كاحتياط
+    val mapsApiKey = listOf(".env", ".env.example")
+      .map { rootProject.file(it) }
+      .filter { it.exists() }
+      .flatMap { it.readLines() }
+      .map { it.trim() }
+      .firstOrNull { it.startsWith("MAPS_API_KEY=") }
+      ?.substringAfter("=")
+      ?.trim()
+      ?: ""
+    manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
   }
 
 
