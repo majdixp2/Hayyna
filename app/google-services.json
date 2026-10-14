@@ -41,6 +41,35 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:352615681327:android:ff9636f87ccf841bc125da",
+        "android_client_info": {
+          "package_name": "com.hayyna.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "352615681327-7fb297obms3do4oqgcqn9pt4mvldg41f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCTzQBB0YDFsk7cW2juU5jKPDSUjeFPl9c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "352615681327-7fb297obms3do4oqgcqn9pt4mvldg41f.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"
