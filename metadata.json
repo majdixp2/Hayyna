@@ -1,6 +1,6 @@
 {
-  "name": "سوق التاجر",
-  "description": "تطبيق التاجر لعرض وترويج السلع والمنتجات وإرفاق الصور والفيديوهات الإعلانية وتحديد الحي والمنطقة عبر Google ماب.",
+  "name": "Hayylive",
+  "description": "Hayylive: عروض المطاعم والمقاهي القريبة منك على الخريطة، يضيفها التاجر بالصورة والفيديو ويتصفحها المستخدم حسب الأقرب.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
