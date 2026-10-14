@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Hayylive"
+rootProject.name = "Hayyna"
 
 include(":app")

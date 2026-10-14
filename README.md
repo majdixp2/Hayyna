@@ -1,4 +1,4 @@
-# Hayylive 📍🍔
+# حيّنا Hayyna 📍🍔
 ### منصة عروض وتخفيضات المطاعم والكافيهات بالخريطة التفاعلية
 
 تطبيق أندرويد متكامل مبني باستخدام **Kotlin** و **Jetpack Compose** و **Material 3**.
@@ -59,7 +59,7 @@
 ```bash
 git init
 git add .
-git commit -m "Initial commit: Hayylive app"
+git commit -m "Initial commit: Hayyna app"
 git branch -M main
 git remote add origin https://github.com/USERNAME/REPOSITORY.git
 git push -u origin main

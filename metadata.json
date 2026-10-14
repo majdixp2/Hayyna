@@ -1,6 +1,6 @@
 {
-  "name": "Hayylive",
-  "description": "Hayylive: عروض المطاعم والمقاهي القريبة منك على الخريطة، يضيفها التاجر بالصورة والفيديو ويتصفحها المستخدم حسب الأقرب.",
+  "name": "Hayyna",
+  "description": "حيّنا (Hayyna): عروض المطاعم والمقاهي القريبة منك على الخريطة، يضيفها التاجر بالصورة والفيديو ويتصفحها المستخدم حسب الأقرب.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
