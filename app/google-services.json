@@ -51,6 +51,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "352615681327-mtmlecjgu910d9tbruqm52la2l3q0lpm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hayyna.app",
+            "certificate_hash": "3ad8772b1b7edf842b315afebe4921e76d90e9f6"
+          }
+        },
+        {
           "client_id": "352615681327-7fb297obms3do4oqgcqn9pt4mvldg41f.apps.googleusercontent.com",
           "client_type": 3
         }
