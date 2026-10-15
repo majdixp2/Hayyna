@@ -1,5 +1,17 @@
 package com.example
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.delay
+import com.example.ui.components.SplashLogo
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -29,9 +41,20 @@ class MainActivity : ComponentActivity() {
                 )
             ) {
                 MyApplicationTheme {
-                    Surface(modifier = Modifier.fillMaxSize()) {
-                        val viewModel: MerchantViewModel = viewModel()
-                        MerchantStoreScreen(viewModel = viewModel)
+                    var showSplash by rememberSaveable { mutableStateOf(true) }
+                    LaunchedEffect(Unit) {
+                        delay(1300)
+                        showSplash = false
+                    }
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Surface(modifier = Modifier.fillMaxSize()) {
+                            val viewModel: MerchantViewModel = viewModel()
+                            MerchantStoreScreen(viewModel = viewModel)
+                        }
+                        // الشاشة الافتتاحية فوق التطبيق، تختفي تدريجياً بعد ما تجهز الخريطة
+                        AnimatedVisibility(visible = showSplash, enter = fadeIn(), exit = fadeOut(tween(450))) {
+                            SplashLogo()
+                        }
                     }
                 }
             }
