@@ -1,5 +1,8 @@
 package com.example
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,10 +20,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    val viewModel: MerchantViewModel = viewModel()
-                    MerchantStoreScreen(viewModel = viewModel)
+            // نحترم تكبير الخط في الجوال لكن بحد أقصى، عشان ما ينقص الكلام أو يخرب التصميم
+            val systemDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(
+                    density = systemDensity.density,
+                    fontScale = systemDensity.fontScale.coerceIn(0.85f, 1.15f)
+                )
+            ) {
+                MyApplicationTheme {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        val viewModel: MerchantViewModel = viewModel()
+                        MerchantStoreScreen(viewModel = viewModel)
+                    }
                 }
             }
         }

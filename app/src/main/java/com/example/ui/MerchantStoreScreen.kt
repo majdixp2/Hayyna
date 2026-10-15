@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -205,7 +206,7 @@ fun MerchantStoreScreen(
                                                 shape = RoundedCornerShape(12.dp),
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .height(50.dp)
+                                                    .heightIn(min = 50.dp)
                                                     .testTag("search_map_input")
                                             )
 

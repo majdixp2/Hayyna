@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -300,7 +301,7 @@ fun RestaurantOfferDetailSheet(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .heightIn(min = 52.dp)
                     .testTag("navigate_to_restaurant_cta_btn"),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CalmSagePrimary

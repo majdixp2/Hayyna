@@ -477,7 +477,7 @@ fun OfferCircleMarker(
             Spacer(modifier = Modifier.height(3.dp))
         }
 
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(circleSize + 8.dp)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(circleSize + 6.dp)) {
             Surface(
                 shape = CircleShape,
                 color = Color.White,
@@ -524,23 +524,25 @@ fun OfferCircleMarker(
                 }
             }
 
-            val badge = discountPercentLabel(offer)
-            if (badge != null) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFE05A47),
-                    shadowElevation = 3.dp,
-                    border = BorderStroke(1.dp, Color.White),
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                ) {
-                    Text(
-                        text = badge,
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                    )
-                }
+        }
+
+        // نسبة الخصم تحت الدائرة (ما تغطي صورة العرض)
+        val badge = discountPercentLabel(offer)
+        if (badge != null) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFFE05A47),
+                shadowElevation = 3.dp,
+                border = BorderStroke(1.dp, Color.White),
+                modifier = Modifier.offset(y = (-4).dp)
+            ) {
+                Text(
+                    text = badge,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                )
             }
         }
     }

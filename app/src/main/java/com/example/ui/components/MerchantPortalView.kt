@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -138,7 +139,7 @@ private fun MerchantLoginView(
             colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp)
+                .heightIn(min = 54.dp)
                 .testTag("merchant_google_sign_in_btn")
         ) {
             if (isSigningIn) {
@@ -219,7 +220,7 @@ private fun MerchantDashboard(
                         onClick = onOpenAddOfferSheet,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
+                            .heightIn(min = 52.dp)
                             .testTag("merchant_add_new_offer_btn"),
                         colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
                         shape = RoundedCornerShape(12.dp)

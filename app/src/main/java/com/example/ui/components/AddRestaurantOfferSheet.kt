@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.CompositionLocalProvider
@@ -626,71 +627,78 @@ fun AddRestaurantOfferSheet(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth()
             )
+        }
 
-            if (errorMessage.isNotBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            Button(
-                onClick = {
-                    val price = priceText.toDoubleOrNull()
-                    if (restaurantName.isBlank()) {
-                        errorMessage = "يرجى كتابة اسم المطعم."
-                    } else if (offerTitle.isBlank()) {
-                        errorMessage = "يرجى كتابة عنوان العرض."
-                    } else if (price == null || price <= 0) {
-                        errorMessage = "يرجى إدخال سعر صحيح للعرض."
-                    } else if (districtText.isBlank()) {
-                        errorMessage = "يرجى كتابة اسم الحي."
-                    } else if (mediaUri.isBlank()) {
-                        errorMessage = "يرجى إرفاق صورة أو فيديو للعرض."
-                    } else if (normalizeSaudiPhone(phone) == null) {
-                        errorMessage = "يرجى كتابة رقم جوال صحيح مثل 05xxxxxxxx."
-                    } else {
-                        val finalOpen = if (isOpen24h) 0 else openMinute
-                        val finalClose = if (isOpen24h) 0 else closeMinute
-                        val hoursOffer = RestaurantOffer(openMinute = finalOpen, closeMinute = finalClose)
-                        val offer = RestaurantOffer(
-                            restaurantName = restaurantName.trim(),
-                            offerTitle = offerTitle.trim(),
-                            description = description.trim().ifBlank { "عرض استثنائي ولذيذ متاح لجميع زبائن المطعم مع إمكانية التوجه مباشرة للفرع." },
-                            cuisineType = cuisineType,
-                            price = price,
-                            originalPrice = originalPriceText.toDoubleOrNull(),
-                            discountBadge = discountBadge,
-                            mediaType = mediaType,
-                            mediaUri = mediaUri,
-                            isPromotionalVideo = isPromotionalVideo,
-                            district = districtText.trim(),
-                            region = selectedRegion,
-                            latitude = latitude,
-                            longitude = longitude,
-                            phone = normalizeSaudiPhone(phone) ?: phone.trim(),
-                            openMinute = finalOpen,
-                            closeMinute = finalClose,
-                            workingHours = OfferTime.hoursText(hoursOffer),
-                            expiresAt = EXPIRY_OPTIONS[expiryOptionIndex].expiresAt()
-                        )
-                        onSaveOffer(offer)
-                    }
-                },
-                enabled = !isSaving,
-                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("save_restaurant_offer_btn"),
-                colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
-                shape = RoundedCornerShape(12.dp)
+            // زر النشر ثابت أسفل الصفحة، يظهر دائماً
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                if (isSaving) {
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text("جاري رفع العرض...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                } else {
-                    Text("انشر العرض ✨", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
+                if (errorMessage.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = {
+                        val price = priceText.toDoubleOrNull()
+                        if (restaurantName.isBlank()) {
+                            errorMessage = "يرجى كتابة اسم المطعم."
+                        } else if (offerTitle.isBlank()) {
+                            errorMessage = "يرجى كتابة عنوان العرض."
+                        } else if (price == null || price <= 0) {
+                            errorMessage = "يرجى إدخال سعر صحيح للعرض."
+                        } else if (districtText.isBlank()) {
+                            errorMessage = "يرجى كتابة اسم الحي."
+                        } else if (mediaUri.isBlank()) {
+                            errorMessage = "يرجى إرفاق صورة أو فيديو للعرض."
+                        } else if (normalizeSaudiPhone(phone) == null) {
+                            errorMessage = "يرجى كتابة رقم جوال صحيح مثل 05xxxxxxxx."
+                        } else {
+                            val finalOpen = if (isOpen24h) 0 else openMinute
+                            val finalClose = if (isOpen24h) 0 else closeMinute
+                            val hoursOffer = RestaurantOffer(openMinute = finalOpen, closeMinute = finalClose)
+                            val offer = RestaurantOffer(
+                                restaurantName = restaurantName.trim(),
+                                offerTitle = offerTitle.trim(),
+                                description = description.trim().ifBlank { "عرض استثنائي ولذيذ متاح لجميع زبائن المطعم مع إمكانية التوجه مباشرة للفرع." },
+                                cuisineType = cuisineType,
+                                price = price,
+                                originalPrice = originalPriceText.toDoubleOrNull(),
+                                discountBadge = discountBadge,
+                                mediaType = mediaType,
+                                mediaUri = mediaUri,
+                                isPromotionalVideo = isPromotionalVideo,
+                                district = districtText.trim(),
+                                region = selectedRegion,
+                                latitude = latitude,
+                                longitude = longitude,
+                                phone = normalizeSaudiPhone(phone) ?: phone.trim(),
+                                openMinute = finalOpen,
+                                closeMinute = finalClose,
+                                workingHours = OfferTime.hoursText(hoursOffer),
+                                expiresAt = EXPIRY_OPTIONS[expiryOptionIndex].expiresAt()
+                            )
+                            onSaveOffer(offer)
+                        }
+                    },
+                    enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("save_restaurant_offer_btn"),
+                    colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (isSaving) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("جاري رفع العرض...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    } else {
+                        Text("انشر العرض ✨", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
                 }
             }
-        }
           }
         }
       }
