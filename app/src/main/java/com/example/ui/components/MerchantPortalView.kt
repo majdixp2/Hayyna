@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -75,6 +76,8 @@ fun MerchantPortalView(
     onOpenAddOfferSheet: () -> Unit,
     onOfferClick: (RestaurantOffer) -> Unit,
     onDeleteOffer: (String) -> Unit,
+    onEditOffer: (RestaurantOffer) -> Unit = {},
+    onDeleteAccount: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (!isLoggedIn) {
@@ -89,6 +92,8 @@ fun MerchantPortalView(
             onLogout = onLogout,
             onOfferClick = onOfferClick,
             onDeleteOffer = onDeleteOffer,
+            onEditOffer = onEditOffer,
+            onDeleteAccount = onDeleteAccount,
             modifier = modifier
         )
     }
@@ -167,8 +172,12 @@ private fun MerchantDashboard(
     onLogout: () -> Unit,
     onOfferClick: (RestaurantOffer) -> Unit,
     onDeleteOffer: (String) -> Unit,
+    onEditOffer: (RestaurantOffer) -> Unit,
+    onDeleteAccount: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showPrivacy by remember { mutableStateOf(false) }
+    var confirmDeleteAccount by remember { mutableStateOf(false) }
     var offerPendingDelete by remember { mutableStateOf<RestaurantOffer?>(null) }
     val activeCount = offers.count { !OfferTime.isExpired(it, nowMillis) }
 
@@ -280,10 +289,43 @@ private fun MerchantDashboard(
                     offer = offer,
                     nowMillis = nowMillis,
                     onClick = { onOfferClick(offer) },
+                    onEdit = { onEditOffer(offer) },
                     onDelete = { offerPendingDelete = offer }
                 )
             }
         }
+
+        // الحساب والخصوصية
+        item {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+            ) {
+                TextButton(onClick = { showPrivacy = true }) { Text("سياسة الخصوصية") }
+                TextButton(onClick = { confirmDeleteAccount = true }) {
+                    Text("حذف حسابي", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    }
+
+    if (showPrivacy) PrivacyPolicyDialog(onDismiss = { showPrivacy = false })
+
+    if (confirmDeleteAccount) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteAccount = false },
+            title = { Text("حذف الحساب نهائياً؟") },
+            text = { Text("بيتم حذف حسابك وكل عروضك (${offers.size}) وإحصائياتها، وما تقدر تسترجعها.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDeleteAccount = false
+                    onDeleteAccount()
+                }) { Text("احذف نهائياً", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteAccount = false }) { Text("إلغاء") } }
+        )
     }
 
     offerPendingDelete?.let { offer ->
@@ -309,6 +351,7 @@ private fun MerchantOfferRow(
     offer: RestaurantOffer,
     nowMillis: Long,
     onClick: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val expired = OfferTime.isExpired(offer, nowMillis)
@@ -366,6 +409,9 @@ private fun MerchantOfferRow(
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            androidx.compose.material3.IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "تعديل العرض", tint = CalmSagePrimary)
             }
             androidx.compose.material3.IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = "حذف العرض", tint = MaterialTheme.colorScheme.error)

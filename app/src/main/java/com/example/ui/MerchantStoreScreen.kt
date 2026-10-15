@@ -120,6 +120,12 @@ fun MerchantStoreScreen(
     val nowMillis by viewModel.nowMillis.collectAsStateWithLifecycle()
     val openNowOnly by viewModel.openNowOnly.collectAsStateWithLifecycle()
     val isUploadingMedia by viewModel.isUploadingMedia.collectAsStateWithLifecycle()
+    val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
+    val favoritesOnly by viewModel.favoritesOnly.collectAsStateWithLifecycle()
+    val merchantProfile by viewModel.merchantProfile.collectAsStateWithLifecycle()
+    val editingOffer by viewModel.editingOffer.collectAsStateWithLifecycle()
+    val reports by viewModel.reports.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
 
     val selectedOfferOnMap by viewModel.selectedOfferOnMap.collectAsStateWithLifecycle()
     val activeDetailOffer by viewModel.activeDetailOffer.collectAsStateWithLifecycle()
@@ -323,6 +329,26 @@ fun MerchantStoreScreen(
                                             }
                                         }
 
+                                        // فلتر "المفضلة"
+                                        item {
+                                            Surface(
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = if (favoritesOnly) Color(0xFFE05A47) else Color.White.copy(alpha = 0.95f),
+                                                shadowElevation = 2.dp,
+                                                modifier = Modifier
+                                                    .clickable { viewModel.toggleFavoritesOnly() }
+                                                    .testTag("favorites_chip")
+                                            ) {
+                                                Text(
+                                                    text = "❤️ المفضلة (${favoriteIds.size})",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (favoritesOnly) Color.White else Color(0xFFE05A47),
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                )
+                                            }
+                                        }
+
                                         // فلتر "مفتوح الآن"
                                         item {
                                             Surface(
@@ -503,6 +529,8 @@ fun MerchantStoreScreen(
                                 onOpenAddOfferSheet = { viewModel.openAddOfferSheet() },
                                 onOfferClick = { viewModel.openOfferDetail(it) },
                                 onDeleteOffer = { viewModel.deleteOffer(it) },
+                                onEditOffer = { viewModel.startEditOffer(it) },
+                                onDeleteAccount = { viewModel.deleteAccount() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -530,6 +558,8 @@ fun MerchantStoreScreen(
                                 onToggleFeatured = { id, featured -> viewModel.toggleFeatured(id, featured) },
                                 onToggleApproved = { id, approved -> viewModel.toggleApproved(id, approved) },
                                 onDeleteOffer = { id -> viewModel.deleteOffer(id) },
+                                reports = reports,
+                                onDismissReport = { viewModel.dismissReport(it) },
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(14.dp)
@@ -544,18 +574,28 @@ fun MerchantStoreScreen(
         activeDetailOffer?.let { offer ->
             RestaurantOfferDetailSheet(
                 offer = offer,
-                onDismiss = { viewModel.closeOfferDetail() }
+                onDismiss = { viewModel.closeOfferDetail() },
+                isFavorite = offer.id in favoriteIds,
+                isOwner = currentUser?.uid != null && currentUser?.uid == offer.merchantId,
+                onToggleFavorite = { viewModel.toggleFavorite(offer.id) },
+                onReport = { reason -> viewModel.reportOffer(offer, reason) },
+                onEdit = { viewModel.startEditOffer(offer) }
             )
         }
 
         // Add Restaurant Offer Sheet
         if (isAddOfferSheetOpen) {
+          androidx.compose.runtime.key(editingOffer?.id) {
             AddRestaurantOfferSheet(
                 onDismiss = { viewModel.closeAddOfferSheet() },
                 onSaveOffer = { offer -> viewModel.saveOffer(offer) },
                 isSaving = isUploadingMedia,
-                defaultRestaurantName = merchantOffers.firstOrNull()?.restaurantName ?: merchantRestaurantName
+                editingOffer = editingOffer,
+                profile = merchantProfile ?: merchantRestaurantName.takeIf { it.isNotBlank() }?.let {
+                    com.example.data.model.MerchantProfile(restaurantName = it)
+                }
             )
+          }
         }
 
         // Restaurant List Sheet (اختيار مطعم من القائمة لتحديد موقعه وعرض إعلانه)

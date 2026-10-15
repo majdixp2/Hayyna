@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.model.MerchantProfile
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
@@ -115,38 +116,52 @@ fun AddRestaurantOfferSheet(
     onDismiss: () -> Unit,
     onSaveOffer: (RestaurantOffer) -> Unit,
     isSaving: Boolean = false,
-    defaultRestaurantName: String = ""
+    editingOffer: RestaurantOffer? = null,
+    profile: MerchantProfile? = null
 ) {
+    val isEditing = editingOffer != null
+    // القيم الأولية: من العرض اللي نعدّله، وإلا من ملف المطعم المحفوظ
+    val startLat = editingOffer?.latitude ?: profile?.takeIf { it.hasLocation }?.latitude
+    val startLng = editingOffer?.longitude ?: profile?.takeIf { it.hasLocation }?.longitude
+    val startOpen = editingOffer?.openMinute?.takeIf { it >= 0 } ?: profile?.openMinute?.takeIf { it >= 0 }
+    val startClose = editingOffer?.closeMinute?.takeIf { it >= 0 } ?: profile?.closeMinute?.takeIf { it >= 0 }
+
     val context = LocalContext.current
 
 
-    var restaurantName by remember { mutableStateOf(defaultRestaurantName) }
-    var offerTitle by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var cuisineType by remember { mutableStateOf(LocationPresets.cuisines[1]) }
-    var priceText by remember { mutableStateOf("") }
-    var originalPriceText by remember { mutableStateOf("") }
-    var discountBadge by remember { mutableStateOf(LocationPresets.offerBadges[0]) }
+    var restaurantName by remember { mutableStateOf(editingOffer?.restaurantName ?: profile?.restaurantName.orEmpty()) }
+    var offerTitle by remember { mutableStateOf(editingOffer?.offerTitle.orEmpty()) }
+    var description by remember { mutableStateOf(editingOffer?.description.orEmpty()) }
+    var cuisineType by remember {
+        mutableStateOf(editingOffer?.cuisineType ?: profile?.cuisineType?.takeIf { it.isNotBlank() } ?: LocationPresets.cuisines[1])
+    }
+    var priceText by remember { mutableStateOf(editingOffer?.price?.let { formatPrice(it) }.orEmpty()) }
+    var originalPriceText by remember { mutableStateOf(editingOffer?.originalPrice?.let { formatPrice(it) }.orEmpty()) }
+    var discountBadge by remember { mutableStateOf(editingOffer?.discountBadge ?: LocationPresets.offerBadges[0]) }
 
-    var mediaType by remember { mutableStateOf(MediaType.IMAGE) }
-    var mediaUri by remember { mutableStateOf("") }
-    var isPromotionalVideo by remember { mutableStateOf(false) }
+    var mediaType by remember { mutableStateOf(editingOffer?.mediaType ?: MediaType.IMAGE) }
+    var mediaUri by remember { mutableStateOf(editingOffer?.mediaUri.orEmpty()) }
+    var isPromotionalVideo by remember { mutableStateOf(editingOffer?.isPromotionalVideo ?: false) }
 
     // Location
-    var selectedRegion by remember { mutableStateOf("") }
-    var districtText by remember { mutableStateOf("") }
+    var selectedRegion by remember { mutableStateOf(editingOffer?.region ?: profile?.region.orEmpty()) }
+    var districtText by remember { mutableStateOf(editingOffer?.district ?: profile?.district.orEmpty()) }
     var isLocating by remember { mutableStateOf(false) }
     var locationStatus by remember { mutableStateOf("") }
-    var latitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].latitude) }
-    var longitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].longitude) }
+    var latitude by remember { mutableDoubleStateOf(startLat ?: LocationPresets.regions[0].districts[0].latitude) }
+    var longitude by remember { mutableDoubleStateOf(startLng ?: LocationPresets.regions[0].districts[0].longitude) }
+    // أول مرة نجيب الحي من Google فقط إذا ما عندنا حي محفوظ
+    var skipNextGeocode by remember { mutableStateOf(startLat != null && districtText.isNotBlank()) }
 
-    var phone by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf((editingOffer?.phone ?: profile?.phone.orEmpty()).let(::toLocalPhone)) }
 
     // مدة العرض (index في EXPIRY_OPTIONS) وأوقات الدوام بالدقائق من منتصف الليل
     var expiryOptionIndex by remember { mutableStateOf(0) }
-    var openMinute by remember { mutableStateOf(12 * 60) }
-    var closeMinute by remember { mutableStateOf(0) }
-    var isOpen24h by remember { mutableStateOf(false) }
+    // عند التعديل: الافتراضي إبقاء مدة العرض كما هي
+    var keepCurrentExpiry by remember { mutableStateOf(isEditing) }
+    var openMinute by remember { mutableStateOf(startOpen ?: (12 * 60)) }
+    var closeMinute by remember { mutableStateOf(startClose ?: 0) }
+    var isOpen24h by remember { mutableStateOf(startOpen != null && startOpen == startClose) }
 
     val scope = rememberCoroutineScope()
 
@@ -187,6 +202,10 @@ fun AddRestaurantOfferSheet(
 
     // عند فتح الشاشة: نحدد موقع التاجر تلقائياً
     LaunchedEffect(Unit) {
+        if (startLat != null) {
+            locationStatus = if (isEditing) "موقع العرض الحالي" else "✓ موقع محلك المحفوظ"
+            return@LaunchedEffect
+        }
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (granted) fetchCurrentLocation()
@@ -197,6 +216,10 @@ fun AddRestaurantOfferSheet(
 
     // كل ما تغيّر مكان الدبوس: نجيب المنطقة والحي من Google تلقائياً
     LaunchedEffect(latitude, longitude) {
+        if (skipNextGeocode) {
+            skipNextGeocode = false
+            return@LaunchedEffect
+        }
         kotlinx.coroutines.delay(500)
         val place = ReverseGeocoder.lookup(context, latitude, longitude)
         if (place != null) {
@@ -268,7 +291,7 @@ fun AddRestaurantOfferSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "عرض جديد",
+                    text = if (isEditing) "تعديل العرض" else "عرض جديد",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -576,10 +599,23 @@ fun AddRestaurantOfferSheet(
             // مدة العرض
             Text("مدة العرض ⏰", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                if (isEditing) {
+                    item {
+                        val current = editingOffer?.let { OfferTime.remainingText(it) } ?: "بدون انتهاء"
+                        FilterChip(
+                            selected = keepCurrentExpiry,
+                            onClick = { keepCurrentExpiry = true },
+                            label = { Text("بدون تغيير ($current)", fontSize = 12.sp) }
+                        )
+                    }
+                }
                 items(EXPIRY_OPTIONS.size) { index ->
                     FilterChip(
-                        selected = expiryOptionIndex == index,
-                        onClick = { expiryOptionIndex = index },
+                        selected = !keepCurrentExpiry && expiryOptionIndex == index,
+                        onClick = {
+                            keepCurrentExpiry = false
+                            expiryOptionIndex = index
+                        },
                         label = { Text(EXPIRY_OPTIONS[index].label, fontSize = 12.sp) }
                     )
                 }
@@ -667,7 +703,8 @@ fun AddRestaurantOfferSheet(
                             val finalOpen = if (isOpen24h) 0 else openMinute
                             val finalClose = if (isOpen24h) 0 else closeMinute
                             val hoursOffer = RestaurantOffer(openMinute = finalOpen, closeMinute = finalClose)
-                            val offer = RestaurantOffer(
+                            val newExpiry = if (keepCurrentExpiry) editingOffer?.expiresAt else EXPIRY_OPTIONS[expiryOptionIndex].expiresAt()
+                            val offer = (editingOffer ?: RestaurantOffer()).copy(
                                 restaurantName = restaurantName.trim(),
                                 offerTitle = offerTitle.trim(),
                                 description = description.trim().ifBlank { "عرض استثنائي ولذيذ متاح لجميع زبائن المطعم مع إمكانية التوجه مباشرة للفرع." },
@@ -686,7 +723,7 @@ fun AddRestaurantOfferSheet(
                                 openMinute = finalOpen,
                                 closeMinute = finalClose,
                                 workingHours = OfferTime.hoursText(hoursOffer),
-                                expiresAt = EXPIRY_OPTIONS[expiryOptionIndex].expiresAt()
+                                expiresAt = newExpiry
                             )
                             onSaveOffer(offer)
                         }
@@ -699,9 +736,9 @@ fun AddRestaurantOfferSheet(
                     if (isSaving) {
                         CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text("جاري رفع العرض...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(if (isEditing) "جاري الحفظ..." else "جاري رفع العرض...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     } else {
-                        Text("انشر العرض ✨", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(if (isEditing) "حفظ التعديلات ✓" else "انشر العرض ✨", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
                 }
@@ -822,3 +859,11 @@ private fun TimeDropdown(
         }
     }
 }
+
+
+private fun formatPrice(value: Double): String =
+    if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
+/** +9665xxxxxxxx -> 05xxxxxxxx لعرضه للتاجر بالشكل المألوف. */
+private fun toLocalPhone(phone: String): String =
+    if (phone.startsWith("+9665") && phone.length == 13) "0" + phone.substring(4) else phone

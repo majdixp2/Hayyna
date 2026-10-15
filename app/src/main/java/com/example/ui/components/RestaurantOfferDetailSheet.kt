@@ -59,7 +59,12 @@ import com.example.ui.theme.SoftTerracotta
 @Composable
 fun RestaurantOfferDetailSheet(
     offer: RestaurantOffer,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isFavorite: Boolean = false,
+    isOwner: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
+    onReport: (String) -> Unit = {},
+    onEdit: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -191,6 +196,16 @@ fun RestaurantOfferDetailSheet(
                 OpenNowChip(offer = offer)
                 OfferExpiryChip(offer = offer)
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            OfferActionsRow(
+                offer = offer,
+                isFavorite = isFavorite,
+                isOwner = isOwner,
+                onToggleFavorite = onToggleFavorite,
+                onReport = onReport,
+                onEdit = onEdit
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 

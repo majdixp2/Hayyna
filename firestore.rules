@@ -71,6 +71,22 @@ service cloud.firestore {
         && request.resource.data.get('whatsappCount', 0) == resource.data.get('whatsappCount', 0);
     }
 
+    // ملف المطعم: صاحبه فقط يقرأ ويكتب
+    match /merchants/{uid} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // البلاغات: أي أحد يرسل بلاغ، والأدمن فقط يقرأ ويحذف
+    match /reports/{reportId} {
+      allow create: if request.resource.data.keys().hasOnly(['offerId', 'offerTitle', 'restaurantName', 'merchantId', 'reason', 'reporterUid', 'createdAt'])
+        && request.resource.data.offerId is string && request.resource.data.offerId.size() <= 100
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 300
+        && request.resource.data.offerTitle is string && request.resource.data.offerTitle.size() <= 150
+        && request.resource.data.restaurantName is string && request.resource.data.restaurantName.size() <= 100
+        && request.resource.data.createdAt == request.time;
+      allow read, delete: if isAdmin();
+    }
+
     match /offers/{offerId} {
       // أي أحد يقدر يتصفح العروض
       allow read: if true;

@@ -1,5 +1,9 @@
 package com.example.ui
 
+import com.example.data.FavoritesStore
+import com.example.data.model.MerchantProfile
+import com.example.data.repository.OfferReport
+import kotlinx.coroutines.tasks.await
 import android.app.Activity
 import android.app.Application
 import android.location.Location
@@ -119,6 +123,22 @@ class MerchantViewModel(
     val selectedMediaType = MutableStateFlow("الكل")
     val customerSortBy = MutableStateFlow("NEAREST") // NEAREST, RATING, PRICE_LOW, DISCOUNT
     val openNowOnly = MutableStateFlow(false)
+    val favoritesOnly = MutableStateFlow(false)
+
+    // ---------------- المفضلة ----------------
+    private val favoritesStore = FavoritesStore(application)
+    val favoriteIds: StateFlow<Set<String>> = favoritesStore.ids
+
+    fun toggleFavorite(offerId: String) = favoritesStore.toggle(offerId)
+    fun toggleFavoritesOnly() { favoritesOnly.value = !favoritesOnly.value }
+
+    // ---------------- ملف المطعم والتعديل ----------------
+    val merchantProfile = MutableStateFlow<MerchantProfile?>(null)
+    val editingOffer = MutableStateFlow<RestaurantOffer?>(null)
+
+    // ---------------- البلاغات (للأدمن) ----------------
+    val reports: StateFlow<List<OfferReport>> = repository.reports
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val isUploadingMedia = MutableStateFlow(false)
 
@@ -135,7 +155,8 @@ class MerchantViewModel(
         val cuisine: String,
         val mediaFilter: String,
         val sortBy: String,
-        val openNowOnly: Boolean
+        val openNowOnly: Boolean,
+        val favoritesOnly: Boolean = false
     )
 
     private val filterParams = combine(
@@ -148,10 +169,12 @@ class MerchantViewModel(
 
     /** العروض الظاهرة للعملاء: معتمدة، غير منتهية، ومطابقة للفلاتر. */
     val filteredCustomerOffers: StateFlow<List<RestaurantOffer>> = combine(
-        approvedOffers, filterParams, nowMillis
-    ) { offers, params, now ->
+        approvedOffers, filterParams, nowMillis, favoritesOnly, favoriteIds
+    ) { offers, baseParams, now, favOnly, favIds ->
+        val params = baseParams.copy(favoritesOnly = favOnly)
         val filtered = offers.filter { offer ->
             if (OfferTime.isExpired(offer, now)) return@filter false
+            if (params.favoritesOnly && offer.id !in favIds) return@filter false
             val matchesRegion = params.region == "الكل" || regionKey(params.region).let { key ->
                 offer.region.contains(key) || offer.district.contains(key)
             }
@@ -186,6 +209,14 @@ class MerchantViewModel(
 
     init {
         auth?.addAuthStateListener(authListener)
+        viewModelScope.launch {
+            currentUser.collect { user ->
+                merchantProfile.value = null
+                if (user != null) {
+                    merchantProfile.value = runCatching { repository.getMerchantProfile(user.uid) }.getOrNull()
+                }
+            }
+        }
         locationManager.requestLocationUpdates()
         OfferTracker.handler = { offerId, field ->
             launchSafely { repository.incrementCounter(offerId, field) }
@@ -257,10 +288,23 @@ class MerchantViewModel(
             toast("سجّل الدخول بحساب Google أولاً لإضافة عرض")
             return
         }
+        editingOffer.value = null
         isAddOfferSheetOpen.value = true
     }
 
-    fun closeAddOfferSheet() { isAddOfferSheetOpen.value = false }
+    fun closeAddOfferSheet() {
+        isAddOfferSheetOpen.value = false
+        editingOffer.value = null
+    }
+
+    /** يفتح صفحة العرض بوضع التعديل (للتاجر صاحب العرض). */
+    fun startEditOffer(offer: RestaurantOffer) {
+        val user = currentUser.value ?: return
+        if (offer.merchantId != user.uid) return
+        activeDetailOffer.value = null
+        editingOffer.value = offer
+        isAddOfferSheetOpen.value = true
+    }
 
     // ---------------- إدارة العروض ----------------
 
@@ -276,19 +320,38 @@ class MerchantViewModel(
                 val cloudUrl = MediaUploader.uploadOfferMedia(
                     getApplication(), offer.mediaUri, offer.mediaType == MediaType.VIDEO
                 )
-                repository.insertOffer(
-                    offer.copy(
-                        merchantId = user.uid,
-                        mediaUri = cloudUrl,
-                        isFeatured = false,
-                        isApproved = true,
-                        viewsCount = 0,
-                        directionsCount = 0,
-                        whatsappCount = 0
+                val isUpdate = offer.id.isNotBlank()
+                if (isUpdate) {
+                    repository.updateOffer(offer.copy(mediaUri = cloudUrl))
+                } else {
+                    repository.insertOffer(
+                        offer.copy(
+                            merchantId = user.uid,
+                            mediaUri = cloudUrl,
+                            isFeatured = false,
+                            isApproved = true,
+                            viewsCount = 0,
+                            directionsCount = 0,
+                            whatsappCount = 0
+                        )
                     )
+                }
+                // نحفظ بيانات المطعم عشان تتعبّى تلقائياً في العرض الجاي
+                val profile = MerchantProfile(
+                    restaurantName = offer.restaurantName,
+                    phone = offer.phone,
+                    latitude = offer.latitude,
+                    longitude = offer.longitude,
+                    region = offer.region,
+                    district = offer.district,
+                    cuisineType = offer.cuisineType,
+                    openMinute = offer.openMinute,
+                    closeMinute = offer.closeMinute
                 )
+                merchantProfile.value = profile
+                runCatching { repository.saveMerchantProfile(user.uid, profile) }
                 closeAddOfferSheet()
-                toast("تم نشر العرض ✅")
+                toast(if (isUpdate) "تم حفظ التعديلات ✅" else "تم نشر العرض ✅")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -303,6 +366,36 @@ class MerchantViewModel(
                 toast(msg ?: "تعذّر نشر العرض.")
             } finally {
                 isUploadingMedia.value = false
+            }
+        }
+    }
+
+    fun reportOffer(offer: RestaurantOffer, reason: String) {
+        launchSafely("تعذّر إرسال البلاغ. حاول مرة ثانية.") {
+            repository.reportOffer(offer, reason, currentUser.value?.uid)
+            toast("وصل بلاغك، شكراً لك 🙏")
+        }
+    }
+
+    fun dismissReport(reportId: String) {
+        launchSafely("تعذّر حذف البلاغ.") { repository.deleteReport(reportId) }
+    }
+
+    /** يحذف كل عروض التاجر وملفه ثم حسابه نهائياً. */
+    fun deleteAccount() {
+        val user = currentUser.value ?: return
+        viewModelScope.launch {
+            try {
+                repository.deleteMerchantData(user.uid)
+                user.delete().await()
+                toast("تم حذف حسابك وكل عروضك")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException) {
+                toast("لأمانك: سجّل خروج ثم دخول مرة ثانية، وبعدها احذف الحساب.")
+            } catch (e: Exception) {
+                Log.w(TAG, "deleteAccount failed: ${e.message}", e)
+                toast("تعذّر حذف الحساب: ${e.message ?: "خطأ غير معروف"}")
             }
         }
     }

@@ -1,11 +1,12 @@
 package com.example.ui.components
 
+import com.example.data.repository.OfferReport
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -51,12 +52,50 @@ fun AdminDashboardView(
     onToggleFeatured: (String, Boolean) -> Unit,
     onToggleApproved: (String, Boolean) -> Unit,
     onDeleteOffer: (String) -> Unit,
+    reports: List<OfferReport> = emptyList(),
+    onDismissReport: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
         modifier = modifier.testTag("admin_dashboard_view"),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // البلاغات أولاً — تحتاج مراجعة
+        item {
+            Text(
+                text = if (reports.isEmpty()) "البلاغات: لا يوجد ✅" else "🚩 البلاغات (${reports.size})",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = if (reports.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+            )
+        }
+        items(reports.size) { index ->
+            val report = reports[index]
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFDF2F0)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(report.offerTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2)
+                    Text(report.restaurantName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(4.dp))
+                    Text("السبب: ${report.reason}", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                        androidx.compose.material3.TextButton(onClick = { onDismissReport(report.id) }) {
+                            Text("تجاهل البلاغ")
+                        }
+                        androidx.compose.material3.TextButton(onClick = {
+                            onDeleteOffer(report.offerId)
+                            onDismissReport(report.id)
+                        }) {
+                            Text("احذف العرض", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
         // Admin Header Banner
         item {
             Card(
