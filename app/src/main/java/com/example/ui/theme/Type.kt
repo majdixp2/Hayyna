@@ -2,35 +2,40 @@ package com.example.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
+import com.example.R
 
-// Set of Material typography styles to start with
-val Typography =
-  Typography(
-    bodyLarge =
-      TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp,
-      )
-    /* Other default text styles to override
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
-    ),
-    labelSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
-    )
-    */
-  )
+/** خط Tajawal العربي (رخصة OFL) — ExtraBold و Black يستخدمان نفس الملف الأثقل. */
+val Tajawal = FontFamily(
+    Font(R.font.tajawal_regular, FontWeight.Normal),
+    Font(R.font.tajawal_medium, FontWeight.Medium),
+    Font(R.font.tajawal_bold, FontWeight.SemiBold),
+    Font(R.font.tajawal_bold, FontWeight.Bold),
+    Font(R.font.tajawal_extrabold, FontWeight.ExtraBold),
+    Font(R.font.tajawal_extrabold, FontWeight.Black)
+)
+
+private val Base = Typography()
+
+private fun TextStyle.tajawal() = copy(fontFamily = Tajawal)
+
+/** كل أنماط النصوص في التطبيق بخط Tajawal. */
+val Typography = Typography(
+    displayLarge = Base.displayLarge.tajawal(),
+    displayMedium = Base.displayMedium.tajawal(),
+    displaySmall = Base.displaySmall.tajawal(),
+    headlineLarge = Base.headlineLarge.tajawal(),
+    headlineMedium = Base.headlineMedium.tajawal(),
+    headlineSmall = Base.headlineSmall.tajawal(),
+    titleLarge = Base.titleLarge.tajawal(),
+    titleMedium = Base.titleMedium.tajawal(),
+    titleSmall = Base.titleSmall.tajawal(),
+    bodyLarge = Base.bodyLarge.tajawal(),
+    bodyMedium = Base.bodyMedium.tajawal(),
+    bodySmall = Base.bodySmall.tajawal(),
+    labelLarge = Base.labelLarge.tajawal(),
+    labelMedium = Base.labelMedium.tajawal(),
+    labelSmall = Base.labelSmall.tajawal()
+)

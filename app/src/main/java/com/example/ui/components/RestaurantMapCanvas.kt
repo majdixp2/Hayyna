@@ -1,5 +1,14 @@
 package com.example.ui.components
 
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
+import coil.imageLoader
+import coil.request.SuccessResult
+import com.google.maps.android.clustering.ClusterItem
+import com.google.maps.android.compose.MapsComposeExperimentalApi
+import com.google.maps.android.compose.clustering.Clustering
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -74,6 +83,7 @@ import kotlinx.coroutines.launch
  * Real Google Maps view using maps-compose with custom circular badges, discount tags,
  * real GPS location tracking, and camera animations.
  */
+@OptIn(MapsComposeExperimentalApi::class)
 @Composable
 fun FullScreenRestaurantMap(
     offers: List<RestaurantOffer>,
@@ -161,6 +171,26 @@ fun FullScreenRestaurantMap(
         }
     }
 
+    // صور العروض تُحمّل مسبقاً كـ Bitmap، لأن أيقونات الخريطة تُرسم مرة واحدة ولا تنتظر تحميل الصور من الإنترنت
+    val markerBitmaps = remember { mutableStateMapOf<String, ImageBitmap>() }
+    val imageUrls = offers
+        .filter { it.mediaType == MediaType.IMAGE && it.mediaUri.startsWith("http") }
+        .map { it.mediaUri }
+        .distinct()
+    LaunchedEffect(imageUrls) {
+        imageUrls.filter { it !in markerBitmaps }.forEach { url ->
+            loadMarkerBitmap(context, url)?.let { markerBitmaps[url] = it }
+        }
+    }
+
+    val clusterItems = offers.map { offer ->
+        OfferClusterItem(
+            offer = offer,
+            isSelected = selectedOffer?.id == offer.id,
+            bitmap = markerBitmaps[offer.mediaUri]
+        )
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         GoogleMap(
             modifier = Modifier
@@ -180,27 +210,35 @@ fun FullScreenRestaurantMap(
                 onBackgroundClick()
             }
         ) {
-            offers.forEach { offer ->
-                val isSelected = selectedOffer?.id == offer.id
-                val markerState = rememberMarkerState(
-                    key = "marker_${offer.id}",
-                    position = LatLng(offer.latitude, offer.longitude)
-                )
-
-                MarkerComposable(
-                    state = markerState,
-                    keys = arrayOf(offer.id, isSelected, offer.discountBadge),
-                    onClick = {
-                        onSelectOffer(offer)
-                        true
+            // العروض القريبة من بعض تتجمع في دائرة فيها العدد، وتتفرّق عند التكبير
+            Clustering(
+                items = clusterItems,
+                onClusterClick = { cluster ->
+                    coroutineScope.launch {
+                        cameraPositionState.animate(
+                            CameraUpdateFactory.newLatLngZoom(
+                                cluster.position,
+                                cameraPositionState.position.zoom + 2f
+                            )
+                        )
                     }
-                ) {
+                    true
+                },
+                onClusterItemClick = { item ->
+                    onSelectOffer(item.offer)
+                    true
+                },
+                clusterContent = { cluster ->
+                    OfferClusterBubble(count = cluster.size)
+                },
+                clusterItemContent = { item ->
                     OfferCircleMarker(
-                        offer = offer,
-                        isSelected = isSelected
+                        offer = item.offer,
+                        isSelected = item.isSelected,
+                        bitmap = item.bitmap
                     )
                 }
-            }
+            )
         }
 
         // Floating Map Controls (+ zoom, - zoom, My Location)
@@ -323,32 +361,81 @@ fun FullScreenRestaurantMap(
     }
 }
 
+/** عنصر في التجميع: العرض + هل هو المختار + صورته الجاهزة. */
+data class OfferClusterItem(
+    val offer: RestaurantOffer,
+    val isSelected: Boolean,
+    val bitmap: ImageBitmap?
+) : ClusterItem {
+    override fun getPosition(): LatLng = LatLng(offer.latitude, offer.longitude)
+    override fun getTitle(): String? = offer.restaurantName
+    override fun getSnippet(): String? = offer.offerTitle
+    override fun getZIndex(): Float? = if (isSelected) 2f else if (offer.isFeatured) 1f else 0f
+}
+
+private suspend fun loadMarkerBitmap(context: Context, url: String): ImageBitmap? = try {
+    val request = ImageRequest.Builder(context)
+        .data(url)
+        .size(160)
+        .allowHardware(false)
+        .build()
+    val result = context.imageLoader.execute(request)
+    (result as? SuccessResult)?.drawable?.toBitmap()?.asImageBitmap()
+} catch (e: Exception) {
+    null
+}
+
+/** نسبة الخصم من السعرين، مثل "-34%". */
+private fun discountPercentLabel(offer: RestaurantOffer): String? {
+    val original = offer.originalPrice ?: return null
+    if (original <= 0 || offer.price >= original) return null
+    val pct = ((original - offer.price) / original * 100).toInt()
+    return if (pct >= 1) "-$pct%" else null
+}
+
+/** دائرة التجميع: عدد العروض في المنطقة. */
+@Composable
+fun OfferClusterBubble(count: Int) {
+    Surface(
+        shape = CircleShape,
+        color = CalmSagePrimary,
+        border = BorderStroke(3.dp, Color.White),
+        shadowElevation = 6.dp,
+        modifier = Modifier.size(if (count >= 10) 52.dp else 44.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = if (count > 99) "99+" else "$count",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+    }
+}
+
 /**
- * Custom Circular Marker for each offer:
- * Features the offer image in a small circle with the discount badge below it.
+ * أيقونة العرض على الخريطة: صورة العرض داخل دائرة، وتحتها نسبة الخصم.
+ * ملاحظة: تُرسم كصورة ثابتة، لذلك الصورة تُمرّر جاهزة (bitmap) بدل تحميلها هنا.
  */
 @Composable
 fun OfferCircleMarker(
     offer: RestaurantOffer,
-    isSelected: Boolean
+    isSelected: Boolean,
+    bitmap: ImageBitmap? = null
 ) {
     val context = LocalContext.current
-    val pulseTransition = rememberInfiniteTransition(label = "markerPulse")
-    val pulseScale by pulseTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = 1.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
+    val ringColor = when {
+        isSelected -> Color(0xFFFFD166)
+        offer.isFeatured -> Color(0xFFF59E0B)
+        else -> CalmSagePrimary
+    }
+    val circleSize = if (isSelected) 54.dp else 46.dp
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(bottom = 4.dp)
     ) {
-        // Label with restaurant name when selected
         if (isSelected) {
             Surface(
                 shape = RoundedCornerShape(10.dp),
@@ -361,76 +448,48 @@ fun OfferCircleMarker(
                     color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                 )
             }
             Spacer(modifier = Modifier.height(3.dp))
         }
 
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(if (isSelected) 56.dp else 48.dp)
-        ) {
-            // Pulsing ring if selected
-            if (isSelected) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFFFFD166).copy(alpha = 0.35f),
-                    modifier = Modifier.size((56 * pulseScale).dp)
-                ) {}
-            }
-
-            // Circular Picture Badge
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(circleSize + 8.dp)) {
             Surface(
                 shape = CircleShape,
                 color = Color.White,
                 shadowElevation = if (isSelected) 8.dp else 4.dp,
-                border = BorderStroke(
-                    width = if (isSelected) 3.dp else 2.dp,
-                    color = if (isSelected) Color(0xFFFFD166) else CalmSagePrimary
-                ),
-                modifier = Modifier.size(if (isSelected) 50.dp else 42.dp)
+                border = BorderStroke(if (isSelected) 3.dp else 2.5.dp, ringColor),
+                modifier = Modifier.size(circleSize)
             ) {
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     val drawableResId = remember(offer.mediaUri) {
-                        when (offer.mediaUri) {
-                            "cafe_arabica_offer_1791863237123" -> R.drawable.cafe_arabica_offer_1791863237123
-                            "restaurant_burger_offer_1791823697805" -> R.drawable.restaurant_burger_offer_1791823697805
-                            "restaurant_pizza_offer_1791823722379" -> R.drawable.restaurant_pizza_offer_1791823722379
-                            "restaurant_grill_offer_1791823746852" -> R.drawable.restaurant_grill_offer_1791823746852
-                            else -> {
-                                val id = context.resources.getIdentifier(offer.mediaUri, "drawable", context.packageName)
-                                if (id != 0) id else null
-                            }
-                        }
+                        if (offer.mediaUri.isBlank() || offer.mediaUri.contains("/")) null
+                        else context.resources.getIdentifier(offer.mediaUri, "drawable", context.packageName)
+                            .takeIf { it != 0 }
                     }
-
-                    if (drawableResId != null) {
-                        Image(
+                    when {
+                        bitmap != null -> Image(
+                            bitmap = bitmap,
+                            contentDescription = offer.restaurantName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        drawableResId != null -> Image(
                             painter = painterResource(id = drawableResId),
                             contentDescription = offer.restaurantName,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
-                    } else {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(offer.mediaUri)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = offer.restaurantName,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        else -> Text(text = "🍽️", fontSize = 20.sp)
                     }
 
                     if (offer.mediaType == MediaType.VIDEO) {
                         Surface(
                             shape = CircleShape,
-                            color = Color(0xFFDC2626).copy(alpha = 0.85f),
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .size(18.dp)
+                            color = Color(0xFFDC2626).copy(alpha = 0.9f),
+                            modifier = Modifier.size(20.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Videocam,
@@ -443,23 +502,21 @@ fun OfferCircleMarker(
                 }
             }
 
-            // Discount Badge at bottom: e.g. "خصم 34%"
-            if (offer.discountBadge.isNotBlank()) {
+            val badge = discountPercentLabel(offer)
+            if (badge != null) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = Color(0xFFE05A47),
                     shadowElevation = 3.dp,
                     border = BorderStroke(1.dp, Color.White),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .offset(y = 4.dp)
+                    modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
                     Text(
-                        text = offer.discountBadge.take(10),
+                        text = badge,
                         color = Color.White,
-                        fontSize = 8.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                     )
                 }
             }
