@@ -113,6 +113,12 @@ fun MerchantStoreScreen(
     val merchantEmail by viewModel.merchantEmail.collectAsStateWithLifecycle()
     val isMerchantLoggedIn by viewModel.isMerchantLoggedIn.collectAsStateWithLifecycle()
     val merchantRestaurantName by viewModel.merchantRestaurantName.collectAsStateWithLifecycle()
+    val merchantOffers by viewModel.merchantOffers.collectAsStateWithLifecycle()
+    val isAdmin by viewModel.isAdmin.collectAsStateWithLifecycle()
+    val isSigningIn by viewModel.isSigningIn.collectAsStateWithLifecycle()
+    val nowMillis by viewModel.nowMillis.collectAsStateWithLifecycle()
+    val openNowOnly by viewModel.openNowOnly.collectAsStateWithLifecycle()
+    val isUploadingMedia by viewModel.isUploadingMedia.collectAsStateWithLifecycle()
 
     val selectedOfferOnMap by viewModel.selectedOfferOnMap.collectAsStateWithLifecycle()
     val activeDetailOffer by viewModel.activeDetailOffer.collectAsStateWithLifecycle()
@@ -172,7 +178,8 @@ fun MerchantStoreScreen(
                                         // Role Switcher Pills (العميل: خريطة العروض أو صفحة العروض - والتاجر - والأدمن)
                                         GlobalAppRoleBar(
                                             currentRole = currentRole,
-                                            onRoleSelected = { viewModel.setRole(it) }
+                                            onRoleSelected = { viewModel.setRole(it) },
+                                        showAdmin = isAdmin
                                         )
 
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -308,6 +315,26 @@ fun MerchantStoreScreen(
                                             }
                                         }
 
+                                        // فلتر "مفتوح الآن"
+                                        item {
+                                            Surface(
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = if (openNowOnly) Color(0xFF15803D) else Color.White.copy(alpha = 0.95f),
+                                                shadowElevation = 2.dp,
+                                                modifier = Modifier
+                                                    .clickable { viewModel.toggleOpenNow() }
+                                                    .testTag("open_now_chip")
+                                            ) {
+                                                Text(
+                                                    text = "🟢 مفتوح الآن",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (openNowOnly) Color.White else Color(0xFF15803D),
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                )
+                                            }
+                                        }
+
                                         item {
                                             Surface(
                                                 shape = RoundedCornerShape(16.dp),
@@ -402,7 +429,8 @@ fun MerchantStoreScreen(
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     GlobalAppRoleBar(
                                         currentRole = currentRole,
-                                        onRoleSelected = { viewModel.setRole(it) }
+                                        onRoleSelected = { viewModel.setRole(it) },
+                                        showAdmin = isAdmin
                                     )
                                 }
                             }
@@ -425,6 +453,8 @@ fun MerchantStoreScreen(
                                 onShowOnMap = { offer ->
                                     viewModel.focusOfferOnMap(offer)
                                 },
+                                openNowOnly = openNowOnly,
+                                onToggleOpenNow = { viewModel.toggleOpenNow() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -442,7 +472,8 @@ fun MerchantStoreScreen(
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     GlobalAppRoleBar(
                                         currentRole = currentRole,
-                                        onRoleSelected = { viewModel.setRole(it) }
+                                        onRoleSelected = { viewModel.setRole(it) },
+                                        showAdmin = isAdmin
                                     )
                                 }
                             }
@@ -451,21 +482,16 @@ fun MerchantStoreScreen(
                                 isLoggedIn = isMerchantLoggedIn,
                                 merchantEmail = merchantEmail,
                                 merchantRestaurantName = merchantRestaurantName,
-                                merchantOffers = allOffers,
-                                onLogin = { email, restaurantName ->
-                                    viewModel.loginMerchant(email, restaurantName)
-                                },
+                                merchantOffers = merchantOffers,
+                                isSigningIn = isSigningIn,
+                                nowMillis = nowMillis,
                                 onGoogleSignIn = {
                                     (context as? android.app.Activity)?.let { activity ->
                                         viewModel.signInWithGoogle(activity)
                                     }
                                 },
-                                onLogout = {
-                                    viewModel.logoutMerchant()
-                                },
-                                onOpenAddOfferSheet = {
-                                    viewModel.openAddOfferSheet()
-                                },
+                                onLogout = { viewModel.logoutMerchant() },
+                                onOpenAddOfferSheet = { viewModel.openAddOfferSheet() },
                                 onOfferClick = { viewModel.openOfferDetail(it) },
                                 onDeleteOffer = { viewModel.deleteOffer(it) },
                                 modifier = Modifier.fillMaxSize()
@@ -484,7 +510,8 @@ fun MerchantStoreScreen(
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     GlobalAppRoleBar(
                                         currentRole = currentRole,
-                                        onRoleSelected = { viewModel.setRole(it) }
+                                        onRoleSelected = { viewModel.setRole(it) },
+                                        showAdmin = isAdmin
                                     )
                                 }
                             }
@@ -516,7 +543,9 @@ fun MerchantStoreScreen(
         if (isAddOfferSheetOpen) {
             AddRestaurantOfferSheet(
                 onDismiss = { viewModel.closeAddOfferSheet() },
-                onSaveOffer = { offer -> viewModel.saveOffer(offer) }
+                onSaveOffer = { offer -> viewModel.saveOffer(offer) },
+                isSaving = isUploadingMedia,
+                defaultRestaurantName = merchantOffers.firstOrNull()?.restaurantName ?: merchantRestaurantName
             )
         }
 
@@ -538,6 +567,7 @@ fun MerchantStoreScreen(
 fun GlobalAppRoleBar(
     currentRole: AppRole,
     onRoleSelected: (AppRole) -> Unit,
+    showAdmin: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -552,26 +582,29 @@ fun GlobalAppRoleBar(
             testTag = "map_role_tab"
         )
         RoleTabButton(
-            title = "صفحة العروض 🏷️",
+            title = "العروض 🏷️",
             isSelected = currentRole == AppRole.CUSTOMER_OFFERS,
             onClick = { onRoleSelected(AppRole.CUSTOMER_OFFERS) },
             modifier = Modifier.weight(1.2f),
             testTag = "customer_offers_role_tab"
         )
         RoleTabButton(
-            title = "صفحة التاجر 🏪",
+            title = "التاجر 🏪",
             isSelected = currentRole == AppRole.MERCHANT_PORTAL,
             onClick = { onRoleSelected(AppRole.MERCHANT_PORTAL) },
             modifier = Modifier.weight(1.2f),
             testTag = "merchant_role_tab"
         )
-        RoleTabButton(
-            title = "الأدمن 🛡️",
-            isSelected = currentRole == AppRole.ADMIN_PORTAL,
-            onClick = { onRoleSelected(AppRole.ADMIN_PORTAL) },
-            modifier = Modifier.weight(0.9f),
-            testTag = "admin_role_tab"
-        )
+        // تبويب الأدمن يظهر لحسابات الأدمن فقط
+        if (showAdmin) {
+            RoleTabButton(
+                title = "الأدمن 🛡️",
+                isSelected = currentRole == AppRole.ADMIN_PORTAL,
+                onClick = { onRoleSelected(AppRole.ADMIN_PORTAL) },
+                modifier = Modifier.weight(0.9f),
+                testTag = "admin_role_tab"
+            )
+        }
     }
 }
 

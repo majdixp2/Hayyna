@@ -74,6 +74,8 @@ fun CustomerOffersView(
     onSortBySelect: (String) -> Unit,
     onOfferClick: (RestaurantOffer) -> Unit,
     onShowOnMap: (RestaurantOffer) -> Unit,
+    openNowOnly: Boolean = false,
+    onToggleOpenNow: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isFilterExpanded by remember { mutableStateOf(false) }
@@ -188,6 +190,13 @@ fun CustomerOffersView(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
+                        item {
+                            FilterChip(
+                                selected = openNowOnly,
+                                onClick = onToggleOpenNow,
+                                label = { Text("🟢 مفتوح الآن", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            )
+                        }
                         item {
                             FilterChip(
                                 selected = sortBy == "NEAREST",

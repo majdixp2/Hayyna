@@ -6,58 +6,97 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    // نفس القائمة الموجودة في AdminConfig.kt داخل التطبيق
+    function isAdmin() {
+      return isAuthenticated()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in ['majdixp2@gmail.com'];
+    }
+
+    function optInt(data, key) {
+      return !(key in data) || (data[key] is int && data[key] >= 0);
+    }
+
+    function validMinute(data, key) {
+      return !(key in data) || (data[key] is int && data[key] >= -1 && data[key] <= 1439);
     }
 
     function isValidOffer(data) {
       return data.id is string && data.id.size() > 0 && data.id.size() <= 100
-        && data.merchantId is string && data.merchantId == request.auth.uid
+        && data.merchantId is string
         && data.restaurantName is string && data.restaurantName.size() > 0 && data.restaurantName.size() <= 100
         && data.offerTitle is string && data.offerTitle.size() > 0 && data.offerTitle.size() <= 150
         && data.description is string && data.description.size() <= 2000
         && data.cuisineType is string && data.cuisineType.size() <= 60
-        && data.price is number && data.price >= 0.0
-        && (!('originalPrice' in data) || data.originalPrice == null || (data.originalPrice is number && data.originalPrice >= 0.0))
+        && data.price is number && data.price >= 0
+        && (!('originalPrice' in data) || data.originalPrice == null || (data.originalPrice is number && data.originalPrice >= 0))
         && data.currency is string && data.currency.size() <= 10
-        && (!('discountBadge' in data) || (data.discountBadge is string && data.discountBadge.size() <= 40))
-        && data.mediaType is string && (data.mediaType == 'IMAGE' || data.mediaType == 'VIDEO')
+        && (!('discountBadge' in data) || (data.discountBadge is string && data.discountBadge.size() <= 60))
+        && data.mediaType in ['IMAGE', 'VIDEO']
         && data.mediaUri is string && data.mediaUri.size() > 0 && data.mediaUri.size() <= 2000
         && (!('isPromotionalVideo' in data) || data.isPromotionalVideo is bool)
         && data.district is string && data.district.size() <= 100
         && data.region is string && data.region.size() <= 100
-        && data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0
-        && data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0
+        && data.latitude is number && data.latitude >= -90 && data.latitude <= 90
+        && data.longitude is number && data.longitude >= -180 && data.longitude <= 180
         && data.phone is string && data.phone.size() <= 30
         && (!('workingHours' in data) || (data.workingHours is string && data.workingHours.size() <= 120))
-        && (!('rating' in data) || (data.rating is number && data.rating >= 0.0 && data.rating <= 5.0))
+        && validMinute(data, 'openMinute') && validMinute(data, 'closeMinute')
+        && (!('expiresAt' in data) || data.expiresAt == null || data.expiresAt is timestamp)
+        && (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5))
         && (!('isApproved' in data) || data.isApproved is bool)
         && (!('isFeatured' in data) || data.isFeatured is bool)
-        && (!('viewsCount' in data) || (data.viewsCount is int && data.viewsCount >= 0))
-        && data.createdAt is timestamp && data.createdAt <= request.time;
+        && optInt(data, 'viewsCount') && optInt(data, 'directionsCount') && optInt(data, 'whatsappCount')
+        && data.createdAt is timestamp;
+    }
+
+    // زيادة عدّاد واحد فقط بمقدار 1
+    function incrementsOnly(field) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field])
+        && request.resource.data[field] == resource.data.get(field, 0) + 1;
+    }
+
+    // الزوار (حتى بدون تسجيل) يقدرون يزيدون المشاهدات / الاتجاه / واتساب فقط
+    function isCounterIncrement() {
+      return incrementsOnly('viewsCount')
+        || incrementsOnly('directionsCount')
+        || incrementsOnly('whatsappCount');
+    }
+
+    function keepsProtectedFields() {
+      return request.resource.data.merchantId == resource.data.merchantId
+        && request.resource.data.get('isFeatured', false) == resource.data.get('isFeatured', false)
+        && request.resource.data.get('viewsCount', 0) == resource.data.get('viewsCount', 0)
+        && request.resource.data.get('directionsCount', 0) == resource.data.get('directionsCount', 0)
+        && request.resource.data.get('whatsappCount', 0) == resource.data.get('whatsappCount', 0);
     }
 
     match /offers/{offerId} {
-      // Anyone (customers, visitors, merchants) can browse and view all active restaurant offers on the map
+      // أي أحد يقدر يتصفح العروض
       allow read: if true;
 
-      // Merchants can publish new offers attached to their own UID
+      // التاجر المسجّل ينشر عرض باسمه، بدون "مميز" وبعدّادات صفر
       allow create: if isAuthenticated()
         && request.resource.data.merchantId == request.auth.uid
+        && request.resource.data.get('isFeatured', false) == false
+        && request.resource.data.get('viewsCount', 0) == 0
+        && request.resource.data.get('directionsCount', 0) == 0
+        && request.resource.data.get('whatsappCount', 0) == 0
+        && request.resource.data.createdAt == request.time
         && isValidOffer(request.resource.data);
 
-      // Offer owners can update their offer; or users can increment views count
-      allow update: if isAuthenticated() && (
-        (resource.data.merchantId == request.auth.uid && isValidOffer(request.resource.data))
-        || (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount'])
-          && request.resource.data.viewsCount is int
-          && request.resource.data.viewsCount == resource.data.viewsCount + 1
-        )
-      );
+      // صاحب العرض يعدّل عرضه (بدون "مميز" والعدّادات)، والأدمن يعدّل أي شي، والزوار يزيدون العدّادات فقط
+      allow update: if
+        (isAuthenticated()
+          && resource.data.merchantId == request.auth.uid
+          && keepsProtectedFields()
+          && isValidOffer(request.resource.data))
+        || isAdmin()
+        || isCounterIncrement();
 
-      // Offer owner can delete their offer
-      allow delete: if isAuthenticated() && resource.data.merchantId == request.auth.uid;
+      // صاحب العرض أو الأدمن يحذف
+      allow delete: if isAuthenticated()
+        && (resource.data.merchantId == request.auth.uid || isAdmin());
     }
   }
 }

@@ -1,5 +1,12 @@
 package com.example.ui.components
 
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.background
+import com.example.data.model.OfferTime
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -86,7 +93,9 @@ import com.example.ui.theme.CalmSagePrimary
 @Composable
 fun AddRestaurantOfferSheet(
     onDismiss: () -> Unit,
-    onSaveOffer: (RestaurantOffer) -> Unit
+    onSaveOffer: (RestaurantOffer) -> Unit,
+    isSaving: Boolean = false,
+    defaultRestaurantName: String = ""
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -107,7 +116,7 @@ fun AddRestaurantOfferSheet(
         }
     }
 
-    var restaurantName by remember { mutableStateOf("") }
+    var restaurantName by remember { mutableStateOf(defaultRestaurantName) }
     var offerTitle by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var cuisineType by remember { mutableStateOf(LocationPresets.cuisines[1]) }
@@ -116,7 +125,7 @@ fun AddRestaurantOfferSheet(
     var discountBadge by remember { mutableStateOf(LocationPresets.offerBadges[0]) }
 
     var mediaType by remember { mutableStateOf(MediaType.IMAGE) }
-    var mediaUri by remember { mutableStateOf("restaurant_burger_offer_1791823697805") }
+    var mediaUri by remember { mutableStateOf("") }
     var isPromotionalVideo by remember { mutableStateOf(false) }
 
     // Location
@@ -125,7 +134,13 @@ fun AddRestaurantOfferSheet(
     var latitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].latitude) }
     var longitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].longitude) }
 
-    var phone by remember { mutableStateOf("+966551122334") }
+    var phone by remember { mutableStateOf("") }
+
+    // مدة العرض (index في EXPIRY_OPTIONS) وأوقات الدوام بالدقائق من منتصف الليل
+    var expiryOptionIndex by remember { mutableStateOf(0) }
+    var openMinute by remember { mutableStateOf(12 * 60) }
+    var closeMinute by remember { mutableStateOf(0) }
+    var isOpen24h by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -303,25 +318,6 @@ fun AddRestaurantOfferSheet(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Text("أو اختر نموذجاً جاهزاً لعروض المطاعم:", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        PresetMediaChip("برجر واغيو", "restaurant_burger_offer_1791823697805", MediaType.IMAGE) { uri, type ->
-                            mediaUri = uri; mediaType = type; isPromotionalVideo = false
-                        }
-                        PresetMediaChip("بيتزا حطب", "restaurant_pizza_offer_1791823722379", MediaType.IMAGE) { uri, type ->
-                            mediaUri = uri; mediaType = type; isPromotionalVideo = false
-                        }
-                        PresetMediaChip("مشاوي ملكية", "restaurant_grill_offer_1791823746852", MediaType.IMAGE) { uri, type ->
-                            mediaUri = uri; mediaType = type; isPromotionalVideo = false
-                        }
-                        PresetMediaChip("فيديو إعلاني 🎥", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", MediaType.VIDEO) { uri, type ->
-                            mediaUri = uri; mediaType = type; isPromotionalVideo = true; discountBadge = "فيديو إعلاني حصري 🎬"
-                        }
-                    }
-
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Media preview
@@ -331,14 +327,29 @@ fun AddRestaurantOfferSheet(
                             .height(130.dp)
                             .clip(RoundedCornerShape(8.dp))
                     ) {
-                        ProductMediaViewer(
-                            mediaUri = mediaUri,
-                            mediaType = mediaType,
-                            isPromotionalVideo = isPromotionalVideo,
-                            promotionalBadge = discountBadge,
-                            autoPlayVideo = false,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        if (mediaUri.isBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "أرفق صورة أو فيديو للعرض 📷",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            ProductMediaViewer(
+                                mediaUri = mediaUri,
+                                mediaType = mediaType,
+                                isPromotionalVideo = isPromotionalVideo,
+                                promotionalBadge = discountBadge,
+                                autoPlayVideo = false,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
@@ -538,11 +549,63 @@ fun AddRestaurantOfferSheet(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            // مدة العرض
+            Text("مدة العرض ⏰", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                items(EXPIRY_OPTIONS.size) { index ->
+                    FilterChip(
+                        selected = expiryOptionIndex == index,
+                        onClick = { expiryOptionIndex = index },
+                        label = { Text(EXPIRY_OPTIONS[index].label, fontSize = 12.sp) }
+                    )
+                }
+            }
+            Text(
+                "بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // أوقات الدوام (لفلتر "مفتوح الآن")
+            Text("أوقات الدوام 🕐", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Checkbox(checked = isOpen24h, onCheckedChange = { isOpen24h = it })
+                Text("مفتوح 24 ساعة", fontSize = 13.sp)
+            }
+            if (!isOpen24h) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TimeDropdown(
+                        label = "يفتح",
+                        minute = openMinute,
+                        onMinuteChange = { openMinute = it },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TimeDropdown(
+                        label = "يقفل",
+                        minute = closeMinute,
+                        onMinuteChange = { closeMinute = it },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Phone
             OutlinedTextField(
                 value = phone,
                 onValueChange = { phone = it },
-                label = { Text("رقم هاتف / واتساب المطعم للتواصل") },
+                label = { Text("رقم واتساب / جوال المطعم *") },
+                placeholder = { Text("05xxxxxxxx") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth()
@@ -566,7 +629,14 @@ fun AddRestaurantOfferSheet(
                         errorMessage = "يرجى إدخال سعر صحيح للعرض."
                     } else if (districtText.isBlank()) {
                         errorMessage = "يرجى كتابة اسم الحي."
+                    } else if (mediaUri.isBlank()) {
+                        errorMessage = "يرجى إرفاق صورة أو فيديو للعرض."
+                    } else if (normalizeSaudiPhone(phone) == null) {
+                        errorMessage = "يرجى كتابة رقم جوال صحيح مثل 05xxxxxxxx."
                     } else {
+                        val finalOpen = if (isOpen24h) 0 else openMinute
+                        val finalClose = if (isOpen24h) 0 else closeMinute
+                        val hoursOffer = RestaurantOffer(openMinute = finalOpen, closeMinute = finalClose)
                         val offer = RestaurantOffer(
                             restaurantName = restaurantName.trim(),
                             offerTitle = offerTitle.trim(),
@@ -582,16 +652,27 @@ fun AddRestaurantOfferSheet(
                             region = selectedRegion,
                             latitude = latitude,
                             longitude = longitude,
-                            phone = phone.trim()
+                            phone = normalizeSaudiPhone(phone) ?: phone.trim(),
+                            openMinute = finalOpen,
+                            closeMinute = finalClose,
+                            workingHours = OfferTime.hoursText(hoursOffer),
+                            expiresAt = EXPIRY_OPTIONS[expiryOptionIndex].expiresAt()
                         )
                         onSaveOffer(offer)
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("save_restaurant_offer_btn"),
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("save_restaurant_offer_btn"),
                 colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("نشر العرض على الخريطة وقائمة المطاعم ✨", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                if (isSaving) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("جاري رفع العرض...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                } else {
+                    Text("انشر العرض ✨", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
             }
         }
     }
@@ -619,3 +700,74 @@ fun PresetMediaChip(
     }
 }
 
+
+
+/** خيارات مدة العرض. */
+private data class ExpiryOption(val label: String, val expiresAt: () -> com.google.firebase.Timestamp?)
+
+private val EXPIRY_OPTIONS: List<ExpiryOption> = listOf(
+    ExpiryOption("بدون انتهاء") { null },
+    ExpiryOption("3 ساعات") { timestampAfterHours(3) },
+    ExpiryOption("6 ساعات") { timestampAfterHours(6) },
+    ExpiryOption("لين آخر اليوم") {
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 23)
+            set(java.util.Calendar.MINUTE, 59)
+            set(java.util.Calendar.SECOND, 0)
+        }
+        com.google.firebase.Timestamp(cal.time)
+    },
+    ExpiryOption("3 أيام") { timestampAfterHours(72) },
+    ExpiryOption("أسبوع") { timestampAfterHours(24 * 7) }
+)
+
+private fun timestampAfterHours(hours: Int): com.google.firebase.Timestamp =
+    com.google.firebase.Timestamp(java.util.Date(System.currentTimeMillis() + hours * 3_600_000L))
+
+/** يحوّل 05xxxxxxxx أو 9665xxxxxxxx أو +9665xxxxxxxx إلى +9665xxxxxxxx. يرجع null إذا الرقم غير صحيح. */
+internal fun normalizeSaudiPhone(raw: String): String? {
+    val digits = raw.filter { it.isDigit() }
+        .map { c -> // تحويل الأرقام العربية الهندية إن وجدت
+            val v = Character.getNumericValue(c)
+            if (v in 0..9) ('0' + v) else c
+        }.joinToString("")
+    val local = when {
+        digits.startsWith("9665") && digits.length == 12 -> digits.substring(3)
+        digits.startsWith("05") && digits.length == 10 -> digits.substring(1)
+        digits.startsWith("5") && digits.length == 9 -> digits
+        else -> return if (digits.length in 8..15) "+$digits" else null
+    }
+    return "+966$local"
+}
+
+/** قائمة منسدلة لاختيار الوقت كل نصف ساعة. */
+@Composable
+private fun TimeDropdown(
+    label: String,
+    minute: Int,
+    onMinuteChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("$label: ${OfferTime.formatMinute(minute)}", fontSize = 13.sp)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            (0 until 48).forEach { slot ->
+                val m = slot * 30
+                DropdownMenuItem(
+                    text = { Text(OfferTime.formatMinute(m)) },
+                    onClick = {
+                        onMinuteChange(m)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}

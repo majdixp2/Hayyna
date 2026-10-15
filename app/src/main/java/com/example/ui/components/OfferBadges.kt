@@ -1,0 +1,60 @@
+package com.example.ui.components
+
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.model.OfferTime
+import com.example.data.model.RestaurantOffer
+
+/** شارة العد التنازلي "⏰ باقي 3 ساعات". لا تظهر إذا العرض بلا وقت انتهاء. */
+@Composable
+fun OfferExpiryChip(
+    offer: RestaurantOffer,
+    nowMillis: Long = System.currentTimeMillis(),
+    modifier: Modifier = Modifier
+) {
+    val text = OfferTime.remainingText(offer, nowMillis) ?: return
+    val expired = OfferTime.isExpired(offer, nowMillis)
+    val soon = OfferTime.isEndingSoon(offer, nowMillis)
+    val (bg, fg) = when {
+        expired -> Color(0xFFE5E7EB) to Color(0xFF6B7280)
+        soon -> Color(0xFFFDE8E6) to Color(0xFFB42318)
+        else -> Color(0xFFFFF4E0) to Color(0xFF8A5A00)
+    }
+    Surface(shape = RoundedCornerShape(8.dp), color = bg, modifier = modifier) {
+        Text(
+            text = "⏰ $text",
+            color = fg,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+        )
+    }
+}
+
+/** شارة "مفتوح الآن" / "مغلق الآن". لا تظهر إذا أوقات الدوام غير محددة. */
+@Composable
+fun OpenNowChip(offer: RestaurantOffer, modifier: Modifier = Modifier) {
+    val open = OfferTime.isOpenNow(offer) ?: return
+    val (bg, fg, label) = if (open) {
+        Triple(Color(0xFFE7F6EC), Color(0xFF15803D), "● مفتوح الآن")
+    } else {
+        Triple(Color(0xFFF3F4F6), Color(0xFF6B7280), "● مغلق الآن")
+    }
+    Surface(shape = RoundedCornerShape(8.dp), color = bg, modifier = modifier) {
+        Text(
+            text = label,
+            color = fg,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+        )
+    }
+}

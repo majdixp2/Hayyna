@@ -289,6 +289,13 @@ fun SelectedRestaurantOfferCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    androidx.compose.foundation.layout.Row(
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        OpenNowChip(offer = offer)
+                        OfferExpiryChip(offer = offer)
+                    }
 
                     Spacer(modifier = Modifier.height(3.dp))
 
@@ -359,6 +366,7 @@ fun SelectedRestaurantOfferCard(
                 // Button 1: Navigate to Restaurant
                 Button(
                     onClick = {
+                        com.example.data.OfferTracker.directions(offer.id)
                         openDirectionsInGoogleMaps(context, offer.latitude, offer.longitude)
                     },
                     modifier = Modifier
@@ -417,6 +425,7 @@ fun SelectedRestaurantOfferCard(
                         .size(38.dp)
                         .clickable {
                             val message = "مرحباً ${offer.restaurantName}، أود الاستفسار عن عرض: ${offer.offerTitle}"
+                            com.example.data.OfferTracker.whatsapp(offer.id)
                             openWhatsApp(context, offer.phone, message)
                         }
                         .testTag("quick_whatsapp_btn")

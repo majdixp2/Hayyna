@@ -41,7 +41,15 @@ data class RestaurantOffer(
     val isApproved: Boolean = true,
     @get:PropertyName("isFeatured") @field:PropertyName("isFeatured")
     val isFeatured: Boolean = false,
-    val viewsCount: Int = 1,
+    val viewsCount: Int = 0,
+    // عدد مرات الضغط على "الاتجاه" و"واتساب" (إحصائيات حقيقية للتاجر)
+    val directionsCount: Int = 0,
+    val whatsappCount: Int = 0,
+    // وقت الدوام بالدقائق من منتصف الليل (-1 = غير محدد). يدعم الدوام بعد منتصف الليل (مثلاً 13:00 حتى 02:00)
+    val openMinute: Int = -1,
+    val closeMinute: Int = -1,
+    // وقت انتهاء العرض (null = بدون انتهاء)
+    val expiresAt: Timestamp? = null,
     @ServerTimestamp
     val createdAt: Timestamp? = null
 )

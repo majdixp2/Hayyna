@@ -183,6 +183,13 @@ fun RestaurantOfferDetailSheet(
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+            androidx.compose.foundation.layout.Row(
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                OpenNowChip(offer = offer)
+                OfferExpiryChip(offer = offer)
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -288,7 +295,8 @@ fun RestaurantOfferDetailSheet(
             // Big CTA: التوجه إلى المطعم (Google Maps Directions)
             Button(
                 onClick = {
-                    openDirectionsInGoogleMaps(context, offer.latitude, offer.longitude)
+                    com.example.data.OfferTracker.directions(offer.id)
+                        openDirectionsInGoogleMaps(context, offer.latitude, offer.longitude)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -334,7 +342,8 @@ fun RestaurantOfferDetailSheet(
                 Button(
                     onClick = {
                         val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} بسعر ${offer.price} ر.س المعلن عنه في تطبيق عروض المطاعم."
-                        openWhatsApp(context, offer.phone, message)
+                        com.example.data.OfferTracker.whatsapp(offer.id)
+                            openWhatsApp(context, offer.phone, message)
                     },
                     modifier = Modifier
                         .weight(1f)

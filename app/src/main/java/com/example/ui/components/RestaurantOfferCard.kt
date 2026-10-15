@@ -192,6 +192,13 @@ fun RestaurantOfferCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                androidx.compose.foundation.layout.Row(
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    OpenNowChip(offer = offer)
+                    OfferExpiryChip(offer = offer)
+                }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -318,7 +325,8 @@ fun RestaurantOfferCard(
                     // Big Directions Button (التوجه إلى المطعم)
                     Button(
                         onClick = {
-                            openDirectionsInGoogleMaps(context, offer.latitude, offer.longitude)
+                            com.example.data.OfferTracker.directions(offer.id)
+                        openDirectionsInGoogleMaps(context, offer.latitude, offer.longitude)
                         },
                         modifier = Modifier
                             .weight(1.1f)
