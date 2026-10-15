@@ -1,5 +1,14 @@
 package com.example.ui.components
 
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.rememberCoroutineScope
 import com.google.android.gms.location.Priority
 import com.example.data.ReverseGeocoder
@@ -100,7 +109,6 @@ fun AddRestaurantOfferSheet(
     isSaving: Boolean = false,
     defaultRestaurantName: String = ""
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
 
 
@@ -217,35 +225,61 @@ fun AddRestaurantOfferSheet(
         LocationPresets.regions.find { it.name == selectedRegion }?.districts ?: emptyList()
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.testTag("add_restaurant_offer_sheet")
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    val hasUnsavedInput = offerTitle.isNotBlank() || mediaUri.isNotBlank() || priceText.isNotBlank() || description.isNotBlank()
+    fun requestClose() {
+        when {
+            isSaving -> Unit
+            hasUnsavedInput -> showDiscardDialog = true
+            else -> onDismiss()
+        }
+    }
+
+    // صفحة كاملة بدل نافذة سفلية: ما تنقفل بالسحب بالغلط، والخريطة الصغيرة تتحرك براحتها
+    Dialog(
+        onDismissRequest = { requestClose() },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        Column(
+      CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 36.dp)
+                .fillMaxSize()
+                .testTag("add_restaurant_offer_sheet")
         ) {
+          Column(
+              modifier = Modifier
+                  .fillMaxSize()
+                  .systemBarsPadding()
+                  .imePadding()
+          ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "إضافة عرض جديد للمطعم 🍽️",
+                    text = "عرض جديد",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onDismiss) {
+                IconButton(onClick = { requestClose() }) {
                     Icon(imageVector = Icons.Default.Close, contentDescription = "إغلاق")
                 }
             }
+            androidx.compose.material3.HorizontalDivider()
 
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 12.dp, bottom = 36.dp)
+        ) {
             Text(
                 text = "سجل عرض مطعمك، أرفق صورة أو فيديو إعلاني، وحدد الحي وموقع الخريطة.",
                 fontSize = 12.sp,
@@ -656,6 +690,26 @@ fun AddRestaurantOfferSheet(
                     Text("انشر العرض ✨", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
             }
+        }
+          }
+        }
+      }
+
+        if (showDiscardDialog) {
+            AlertDialog(
+                onDismissRequest = { showDiscardDialog = false },
+                title = { Text("تجاهل العرض؟") },
+                text = { Text("المعلومات اللي كتبتها بتضيع.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDiscardDialog = false
+                        onDismiss()
+                    }) { Text("تجاهل", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDiscardDialog = false }) { Text("كمّل التعبئة") }
+                }
+            )
         }
     }
 }

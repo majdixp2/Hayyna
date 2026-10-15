@@ -276,10 +276,6 @@ class MerchantViewModel(
                 val cloudUrl = FirebaseStorageHelper.uploadOfferMedia(
                     getApplication(), offer.mediaUri, offer.mediaType == MediaType.VIDEO
                 )
-                if (cloudUrl.startsWith("content://") || cloudUrl.startsWith("file://")) {
-                    toast("تعذّر رفع الصورة/الفيديو. تأكد من الإنترنت وحاول مرة ثانية.")
-                    return@launch
-                }
                 repository.insertOffer(
                     offer.copy(
                         merchantId = user.uid,
@@ -297,7 +293,14 @@ class MerchantViewModel(
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "saveOffer failed: ${e.message}", e)
-                toast("تعذّر نشر العرض. تأكد من الإنترنت وحاول مرة ثانية.")
+                val msg = when {
+                    e is FirebaseStorageHelper.UploadException -> e.message
+                    e is com.google.firebase.firestore.FirebaseFirestoreException &&
+                        e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                        "رفض Firestore حفظ العرض (صلاحيات). تأكد من نشر قواعد Firestore الجديدة."
+                    else -> "تعذّر نشر العرض: ${e.message ?: "خطأ غير معروف"}"
+                }
+                toast(msg ?: "تعذّر نشر العرض.")
             } finally {
                 isUploadingMedia.value = false
             }
