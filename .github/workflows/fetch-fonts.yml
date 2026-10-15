@@ -1,0 +1,31 @@
+name: Fetch Arabic fonts
+
+# تشغيل يدوي لمرة واحدة: يحمّل خط Tajawal (رخصة OFL) من مستودع Google Fonts ويحفظه في المشروع
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Tajawal
+        run: |
+          mkdir -p app/src/main/res/font
+          base=https://raw.githubusercontent.com/google/fonts/main/ofl/tajawal
+          curl -fsSL "$base/Tajawal-Regular.ttf" -o app/src/main/res/font/tajawal_regular.ttf
+          curl -fsSL "$base/Tajawal-Medium.ttf"  -o app/src/main/res/font/tajawal_medium.ttf
+          curl -fsSL "$base/Tajawal-Bold.ttf"    -o app/src/main/res/font/tajawal_bold.ttf
+          curl -fsSL "$base/Tajawal-ExtraBold.ttf" -o app/src/main/res/font/tajawal_extrabold.ttf
+          curl -fsSL "$base/OFL.txt" -o app/src/main/res/font/../../../../../FONT_LICENSE_Tajawal.txt
+          ls -la app/src/main/res/font
+      - name: Commit fonts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/res/font FONT_LICENSE_Tajawal.txt
+          git commit -m "Add Tajawal Arabic font (OFL)" || echo "nothing to commit"
+          git push
