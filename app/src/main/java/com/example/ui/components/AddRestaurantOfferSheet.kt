@@ -793,21 +793,12 @@ fun PresetMediaChip(
 /** خيارات مدة العرض. */
 private data class ExpiryOption(val label: String, val expiresAt: () -> com.google.firebase.Timestamp?)
 
-private val EXPIRY_OPTIONS: List<ExpiryOption> = listOf(
-    ExpiryOption("بدون انتهاء") { null },
-    ExpiryOption("3 ساعات") { timestampAfterHours(3) },
-    ExpiryOption("6 ساعات") { timestampAfterHours(6) },
-    ExpiryOption("لين آخر اليوم") {
-        val cal = java.util.Calendar.getInstance().apply {
-            set(java.util.Calendar.HOUR_OF_DAY, 23)
-            set(java.util.Calendar.MINUTE, 59)
-            set(java.util.Calendar.SECOND, 0)
+// الخيارات تُبنى من ملف OfferDurations.kt (عدّل الأيام هناك)
+private val EXPIRY_OPTIONS: List<ExpiryOption> =
+    (if (com.example.ui.ALLOW_NO_EXPIRY) listOf(ExpiryOption("بدون انتهاء") { null }) else emptyList()) +
+        com.example.ui.OFFER_DURATION_DAYS.filter { it > 0 }.map { days ->
+            ExpiryOption(com.example.ui.durationLabel(days)) { timestampAfterHours(days * 24) }
         }
-        com.google.firebase.Timestamp(cal.time)
-    },
-    ExpiryOption("3 أيام") { timestampAfterHours(72) },
-    ExpiryOption("أسبوع") { timestampAfterHours(24 * 7) }
-)
 
 private fun timestampAfterHours(hours: Int): com.google.firebase.Timestamp =
     com.google.firebase.Timestamp(java.util.Date(System.currentTimeMillis() + hours * 3_600_000L))
