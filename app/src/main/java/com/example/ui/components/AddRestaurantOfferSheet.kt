@@ -103,6 +103,35 @@ fun AddRestaurantOfferSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
 
+
+    var restaurantName by remember { mutableStateOf(defaultRestaurantName) }
+    var offerTitle by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var cuisineType by remember { mutableStateOf(LocationPresets.cuisines[1]) }
+    var priceText by remember { mutableStateOf("") }
+    var originalPriceText by remember { mutableStateOf("") }
+    var discountBadge by remember { mutableStateOf(LocationPresets.offerBadges[0]) }
+
+    var mediaType by remember { mutableStateOf(MediaType.IMAGE) }
+    var mediaUri by remember { mutableStateOf("") }
+    var isPromotionalVideo by remember { mutableStateOf(false) }
+
+    // Location
+    var selectedRegion by remember { mutableStateOf("") }
+    var districtText by remember { mutableStateOf("") }
+    var isLocating by remember { mutableStateOf(false) }
+    var locationStatus by remember { mutableStateOf("") }
+    var latitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].latitude) }
+    var longitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].longitude) }
+
+    var phone by remember { mutableStateOf("") }
+
+    // مدة العرض (index في EXPIRY_OPTIONS) وأوقات الدوام بالدقائق من منتصف الليل
+    var expiryOptionIndex by remember { mutableStateOf(0) }
+    var openMinute by remember { mutableStateOf(12 * 60) }
+    var closeMinute by remember { mutableStateOf(0) }
+    var isOpen24h by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
 
     // يجيب موقع الجهاز الحالي ويحرّك الدبوس عليه
@@ -161,34 +190,6 @@ fun AddRestaurantOfferSheet(
         }
     }
 
-
-    var restaurantName by remember { mutableStateOf(defaultRestaurantName) }
-    var offerTitle by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var cuisineType by remember { mutableStateOf(LocationPresets.cuisines[1]) }
-    var priceText by remember { mutableStateOf("") }
-    var originalPriceText by remember { mutableStateOf("") }
-    var discountBadge by remember { mutableStateOf(LocationPresets.offerBadges[0]) }
-
-    var mediaType by remember { mutableStateOf(MediaType.IMAGE) }
-    var mediaUri by remember { mutableStateOf("") }
-    var isPromotionalVideo by remember { mutableStateOf(false) }
-
-    // Location
-    var selectedRegion by remember { mutableStateOf("") }
-    var districtText by remember { mutableStateOf("") }
-    var isLocating by remember { mutableStateOf(false) }
-    var locationStatus by remember { mutableStateOf("") }
-    var latitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].latitude) }
-    var longitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].longitude) }
-
-    var phone by remember { mutableStateOf("") }
-
-    // مدة العرض (index في EXPIRY_OPTIONS) وأوقات الدوام بالدقائق من منتصف الليل
-    var expiryOptionIndex by remember { mutableStateOf(0) }
-    var openMinute by remember { mutableStateOf(12 * 60) }
-    var closeMinute by remember { mutableStateOf(0) }
-    var isOpen24h by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
