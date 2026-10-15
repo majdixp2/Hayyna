@@ -1,5 +1,9 @@
 package com.example.ui.components
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.runtime.SideEffect
@@ -240,15 +244,11 @@ fun AddRestaurantOfferSheet(
     }
 
     // صفحة كاملة بدل نافذة سفلية: ما تنقفل بالسحب بالغلط، والخريطة الصغيرة تتحرك براحتها
-    Dialog(
-        onDismissRequest = { requestClose() },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)
-    ) {
-      // النافذة تترك مكان شريط الحالة وشريط التنقل، وتنضغط مع الكيبورد بدل ما يغطي الحقول
-      val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-      SideEffect {
-          dialogWindow?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-      }
+    // زر الرجوع في الجوال يقفل الصفحة (مع سؤال لو فيه بيانات)
+    BackHandler { requestClose() }
+
+    // صفحة كاملة فوق التطبيق (مو نافذة منفصلة) عشان تحترم شريط الحالة وشريط التنقل والكيبورد بدقة
+    Box(modifier = Modifier.fillMaxSize()) {
       CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Surface(
             color = MaterialTheme.colorScheme.surface,
@@ -257,7 +257,9 @@ fun AddRestaurantOfferSheet(
                 .testTag("add_restaurant_offer_sheet")
         ) {
           Column(
-              modifier = Modifier.fillMaxSize()
+              modifier = Modifier
+                  .fillMaxSize()
+                  .windowInsetsPadding(WindowInsets.safeDrawing)
           ) {
             Row(
                 modifier = Modifier
