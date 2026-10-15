@@ -511,17 +511,17 @@ fun MapQuickGuidePill(
 ) {
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = Color.White.copy(alpha = 0.95f),
+        color = Color.White.copy(alpha = 0.96f),
         shadowElevation = 5.dp,
         border = BorderStroke(1.dp, Color(0xFFE2DDD5)),
         modifier = modifier
             .padding(bottom = 14.dp, start = 16.dp, end = 16.dp)
+            .clickable { onOpenList() }
             .testTag("map_quick_guide_pill")
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.TouchApp,
@@ -529,40 +529,15 @@ fun MapQuickGuidePill(
                 tint = CalmSagePrimary,
                 modifier = Modifier.size(18.dp)
             )
-
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "اضغط على أي مطعم بالخريطة لعرض إعلانه",
-                fontSize = 11.sp,
+                text = if (offersCount == 0) "ما فيه عروض هنا للحين" else "اضغط على أي عرض في الخريطة ($offersCount)",
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF262A33)
+                color = Color(0xFF262A33),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = CalmSagePrimary,
-                modifier = Modifier
-                    .clickable { onOpenList() }
-                    .testTag("open_restaurant_list_pill_btn")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MenuBook,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "قائمة المطاعم ($offersCount)",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-            }
         }
     }
 }

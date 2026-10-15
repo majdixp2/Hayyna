@@ -234,6 +234,13 @@ fun MerchantStoreScreen(
                                                 // Regions Selector
                                                 Text("المنطقة:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+                                                    item {
+                                                        FilterChip(
+                                                            selected = selectedRegion == "الكل",
+                                                            onClick = { viewModel.onRegionSelect("الكل") },
+                                                            label = { Text("كل المناطق", fontSize = 11.sp) }
+                                                        )
+                                                    }
                                                     items(LocationPresets.regions) { reg ->
                                                         FilterChip(
                                                             selected = selectedRegion == reg.name,
@@ -406,7 +413,8 @@ fun MerchantStoreScreen(
                                 AnimatedVisibility(
                                     visible = selectedOfferOnMap == null,
                                     enter = fadeIn(),
-                                    exit = fadeOut()
+                                    exit = fadeOut(),
+                                    modifier = Modifier.align(Alignment.Center)
                                 ) {
                                     MapQuickGuidePill(
                                         offersCount = filteredCustomerOffers.size,

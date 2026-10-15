@@ -113,7 +113,7 @@ class MerchantViewModel(
     // ---------------- الفلاتر ----------------
 
     val searchQuery = MutableStateFlow("")
-    val selectedRegion = MutableStateFlow(LocationPresets.regions[0].name)
+    val selectedRegion = MutableStateFlow("الكل") // الافتراضي: كل العروض، والترتيب حسب الأقرب لموقعك
     val selectedDistrict = MutableStateFlow("الكل")
     val selectedCuisine = MutableStateFlow("الكل")
     val selectedMediaType = MutableStateFlow("الكل")
@@ -152,8 +152,11 @@ class MerchantViewModel(
     ) { offers, params, now ->
         val filtered = offers.filter { offer ->
             if (OfferTime.isExpired(offer, now)) return@filter false
-            val matchesRegion = params.region == "الكل" || offer.region.contains(params.region)
-            val matchesDistrict = params.district == "الكل" || offer.district == params.district
+            val matchesRegion = params.region == "الكل" || regionKey(params.region).let { key ->
+                offer.region.contains(key) || offer.district.contains(key)
+            }
+            val matchesDistrict = params.district == "الكل" ||
+                normalizeDistrict(offer.district) == normalizeDistrict(params.district)
             val cleanCuisine = params.cuisine.replace(Regex("[^\\p{L}\\s]"), "").trim()
             val matchesCuisine = params.cuisine == "الكل" || offer.cuisineType.contains(cleanCuisine)
             val matchesMedia = when (params.mediaFilter) {
@@ -318,6 +321,14 @@ class MerchantViewModel(
     }
 
     // ---------------- أدوات ----------------
+
+    /** "منطقة مكة المكرمة - جدة" -> "مكة المكرمة" عشان تطابق اسم المنطقة الراجع من Google. */
+    private fun regionKey(presetName: String): String =
+        presetName.substringBefore(" - ").removePrefix("منطقة ").trim()
+
+    /** "حي الملقا" و "الملقا" يعتبرون نفس الحي. */
+    private fun normalizeDistrict(name: String): String =
+        name.trim().removePrefix("حي ").trim()
 
     private fun toast(message: String) {
         Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()

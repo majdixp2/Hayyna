@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.ReverseGeocoder
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -191,6 +192,16 @@ fun FullScreenRestaurantMap(
         )
     }
 
+    // اسم الحي اللي فيه المستخدم الحين (يتحدّث إذا تحرّك أكثر من ~300م)
+    var userPlaceName by remember { mutableStateOf("") }
+    val roundedLat = userLocation?.let { Math.round(it.latitude * 300) }
+    val roundedLng = userLocation?.let { Math.round(it.longitude * 300) }
+    LaunchedEffect(roundedLat, roundedLng) {
+        val loc = userLocation ?: return@LaunchedEffect
+        val place = ReverseGeocoder.lookup(context, loc.latitude, loc.longitude)
+        userPlaceName = place?.district?.ifBlank { place.region }.orEmpty()
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         GoogleMap(
             modifier = Modifier
@@ -198,7 +209,9 @@ fun FullScreenRestaurantMap(
                 .testTag("full_google_map_view"),
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
-                isMyLocationEnabled = hasLocationPermission
+                isMyLocationEnabled = hasLocationPermission,
+                mapStyleOptions = CleanMapStyle.options,
+                isBuildingEnabled = false
             ),
             uiSettings = MapUiSettings(
                 zoomControlsEnabled = false,
@@ -330,32 +343,35 @@ fun FullScreenRestaurantMap(
             }
         }
 
-        // District Indicator Chip on Map
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = Color.White.copy(alpha = 0.92f),
-            shadowElevation = 4.dp,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 14.dp, bottom = 210.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+        // اسم حي المستخدم الحقيقي (من Google) — يظهر فقط إذا عرفناه
+        if (userPlaceName.isNotBlank()) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White.copy(alpha = 0.94f),
+                shadowElevation = 4.dp,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 14.dp, bottom = 80.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    tint = CalmSagePrimary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "أنت في: $currentDistrictName",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF262A33)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = CalmSagePrimary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "أنت في: $userPlaceName",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF262A33),
+                        maxLines = 1
+                    )
+                }
             }
         }
     }

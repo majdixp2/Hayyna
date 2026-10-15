@@ -1,5 +1,8 @@
 package com.example.ui.components
 
+import androidx.compose.runtime.rememberCoroutineScope
+import com.google.android.gms.location.Priority
+import com.example.data.ReverseGeocoder
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -100,21 +103,64 @@ fun AddRestaurantOfferSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
 
+    val scope = rememberCoroutineScope()
+
+    // يجيب موقع الجهاز الحالي ويحرّك الدبوس عليه
+    fun fetchCurrentLocation() {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!granted) return
+        isLocating = true
+        locationStatus = "جاري تحديد موقعك..."
+        try {
+            LocationServices.getFusedLocationProviderClient(context)
+                .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener { loc ->
+                    isLocating = false
+                    if (loc != null) {
+                        latitude = loc.latitude
+                        longitude = loc.longitude
+                    } else {
+                        locationStatus = "ما قدرنا نحدد موقعك. تأكد إن الـ GPS شغّال، أو حرّك الدبوس يدوياً."
+                    }
+                }
+                .addOnFailureListener {
+                    isLocating = false
+                    locationStatus = "ما قدرنا نحدد موقعك. حرّك الدبوس يدوياً."
+                }
+        } catch (e: SecurityException) {
+            isLocating = false
+        }
+    }
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { perms ->
-        if (perms[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            perms[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        ) {
-            try {
-                LocationServices.getFusedLocationProviderClient(context).lastLocation.addOnSuccessListener { loc ->
-                    if (loc != null) {
-                        // Will update state in location handler
-                    }
-                }
-            } catch (e: SecurityException) {}
+        if (perms.values.any { it }) fetchCurrentLocation()
+        else locationStatus = "بدون صلاحية الموقع: حرّك الدبوس على مكان محلك."
+    }
+
+    // عند فتح الشاشة: نحدد موقع التاجر تلقائياً
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (granted) fetchCurrentLocation()
+        else locationPermissionLauncher.launch(
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        )
+    }
+
+    // كل ما تغيّر مكان الدبوس: نجيب المنطقة والحي من Google تلقائياً
+    LaunchedEffect(latitude, longitude) {
+        kotlinx.coroutines.delay(500)
+        val place = ReverseGeocoder.lookup(context, latitude, longitude)
+        if (place != null) {
+            if (place.region.isNotBlank()) selectedRegion = place.region
+            if (place.district.isNotBlank()) districtText = place.district
+            locationStatus = if (place.district.isNotBlank()) "✓ تم تحديد الحي تلقائياً" else "اكتب اسم الحي"
         }
     }
+
 
     var restaurantName by remember { mutableStateOf(defaultRestaurantName) }
     var offerTitle by remember { mutableStateOf("") }
@@ -129,8 +175,10 @@ fun AddRestaurantOfferSheet(
     var isPromotionalVideo by remember { mutableStateOf(false) }
 
     // Location
-    var selectedRegion by remember { mutableStateOf(LocationPresets.regions[0].name) }
-    var districtText by remember { mutableStateOf(LocationPresets.regions[0].districts[0].name) }
+    var selectedRegion by remember { mutableStateOf("") }
+    var districtText by remember { mutableStateOf("") }
+    var isLocating by remember { mutableStateOf(false) }
+    var locationStatus by remember { mutableStateOf("") }
     var latitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].latitude) }
     var longitude by remember { mutableDoubleStateOf(LocationPresets.regions[0].districts[0].longitude) }
 
@@ -356,80 +404,69 @@ fun AddRestaurantOfferSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Location Section (الموقع الدقيق للمطعم عبر الخريطة التفاعلية والدبوس المتحرك)
+            // موقع المحل: يتحدد تلقائياً من الـ GPS، والتاجر يقدر يحرّك الدبوس
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = CalmSagePrimary, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("موقع المحل الدقيق على الخريطة:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = CalmSagePrimary)
-                        }
-
-                        // Button: استخدم موقعي الحالي (Use my current location)
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = CalmSagePrimary,
-                            modifier = Modifier
-                                .clickable {
-                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                                        LocationServices.getFusedLocationProviderClient(context).lastLocation.addOnSuccessListener { loc ->
-                                            if (loc != null) {
-                                                latitude = loc.latitude
-                                                longitude = loc.longitude
-                                            }
-                                        }
-                                    } else {
-                                        locationPermissionLauncher.launch(
-                                            arrayOf(
-                                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                                Manifest.permission.ACCESS_COARSE_LOCATION
-                                            )
-                                        )
-                                    }
-                                }
-                                .testTag("use_my_location_btn")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.MyLocation, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("استخدم موقعي الحالي 📍", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = CalmSagePrimary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("موقع المحل", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = CalmSagePrimary)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Mini Interactive Google Map for Pin Placement
+                    Button(
+                        onClick = {
+                            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                            if (granted) fetchCurrentLocation()
+                            else locationPermissionLauncher.launch(
+                                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                            )
+                        },
+                        enabled = !isLocating,
+                        colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("use_my_location_btn")
+                    ) {
+                        if (isLocating) {
+                            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                        } else {
+                            Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("استخدم موقعي الحالي", fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(180.dp)
+                            .height(200.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .border(1.dp, CalmSagePrimary.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                     ) {
                         val miniMapCameraState = rememberCameraPositionState {
-                            position = CameraPosition.fromLatLngZoom(LatLng(latitude, longitude), 14.5f)
+                            position = CameraPosition.fromLatLngZoom(LatLng(latitude, longitude), 16f)
                         }
 
                         LaunchedEffect(latitude, longitude) {
-                            miniMapCameraState.position = CameraPosition.fromLatLngZoom(LatLng(latitude, longitude), 15f)
+                            miniMapCameraState.position = CameraPosition.fromLatLngZoom(LatLng(latitude, longitude), 16f)
                         }
 
                         GoogleMap(
                             modifier = Modifier.fillMaxSize(),
                             cameraPositionState = miniMapCameraState,
+                            properties = com.google.maps.android.compose.MapProperties(
+                                mapStyleOptions = CleanMapStyle.options
+                            ),
                             onMapClick = { clickedLatLng ->
                                 latitude = clickedLatLng.latitude
                                 longitude = clickedLatLng.longitude
@@ -444,7 +481,7 @@ fun AddRestaurantOfferSheet(
                             LaunchedEffect(latitude, longitude) {
                                 pinState.position = LatLng(latitude, longitude)
                             }
-                            // عند انتهاء سحب الدبوس نحفظ موقعه الجديد (بدون هذا يضيع السحب ويُحفظ الموقع القديم)
+                            // عند انتهاء سحب الدبوس نحفظ موقعه الجديد
                             LaunchedEffect(pinState) {
                                 androidx.compose.runtime.snapshotFlow { pinState.isDragging to pinState.position }
                                     .collect { (dragging, pos) ->
@@ -457,93 +494,37 @@ fun AddRestaurantOfferSheet(
                             Marker(
                                 state = pinState,
                                 draggable = true,
-                                title = restaurantName.ifBlank { "موقع المحل" },
-                                snippet = "انقر على الخريطة أو اسحب الدبوس لتعديل موقع محلك"
-                            )
-                        }
-
-                        // Top Helper Pill
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.Black.copy(alpha = 0.65f),
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(6.dp)
-                        ) {
-                            Text(
-                                text = "حرك أو انقر على الخريطة لتحديد موقع محلك بدقة 📍",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                title = restaurantName.ifBlank { "موقع المحل" }
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = locationStatus.ifBlank { "اضغط على الخريطة أو اسحب الدبوس لتعديل مكان محلك" },
+                        fontSize = 12.sp,
+                        color = if (locationStatus.startsWith("✓")) Color(0xFF15803D) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 8.dp)
+                    )
 
-                    // Region selection
-                    Text("1. المنطقة:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 4.dp)) {
-                        items(LocationPresets.regions) { reg ->
-                            FilterChip(
-                                selected = selectedRegion == reg.name,
-                                onClick = {
-                                    selectedRegion = reg.name
-                                    val firstDist = reg.districts.firstOrNull()
-                                    if (firstDist != null) {
-                                        districtText = firstDist.name
-                                        latitude = firstDist.latitude
-                                        longitude = firstDist.longitude
-                                    }
-                                },
-                                label = { Text(reg.name, fontSize = 11.sp) }
-                            )
-                        }
-                    }
-
-                    // District input
                     OutlinedTextField(
                         value = districtText,
                         onValueChange = { districtText = it },
-                        label = { Text("2. اسم الحي (الحي السكني أو التجاري) *") },
+                        label = { Text("الحي *") },
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Default.LocationCity, contentDescription = null) },
                         modifier = Modifier.fillMaxWidth().testTag("input_restaurant_district")
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                    // Quick district chips
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-                        items(currentRegionDistricts) { dist ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (districtText == dist.name) CalmSagePrimary else MaterialTheme.colorScheme.surface,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                modifier = Modifier.clickable {
-                                    districtText = dist.name
-                                    latitude = dist.latitude
-                                    longitude = dist.longitude
-                                }
-                            ) {
-                                Text(
-                                    text = dist.name,
-                                    fontSize = 11.sp,
-                                    color = if (districtText == dist.name) Color.White else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Coordinates display
-                    Text(
-                        text = "إحداثيات GPS المحددة: ${String.format("%.5f", latitude)}, ${String.format("%.5f", longitude)}",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    OutlinedTextField(
+                        value = selectedRegion,
+                        onValueChange = { selectedRegion = it },
+                        label = { Text("المنطقة / المدينة") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
+
                 }
             }
 

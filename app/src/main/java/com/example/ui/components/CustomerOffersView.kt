@@ -233,6 +233,13 @@ fun CustomerOffersView(
                             // Regions
                             Text("المنطقة:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+                                item {
+                                    FilterChip(
+                                        selected = selectedRegion == "الكل",
+                                        onClick = { onRegionSelect("الكل") },
+                                        label = { Text("كل المناطق", fontSize = 11.sp) }
+                                    )
+                                }
                                 items(LocationPresets.regions) { reg ->
                                     FilterChip(
                                         selected = selectedRegion == reg.name,
