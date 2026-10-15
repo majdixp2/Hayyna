@@ -8,7 +8,7 @@ import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AdminConfig
-import com.example.data.FirebaseStorageHelper
+import com.example.data.MediaUploader
 import com.example.data.GoogleSignInHelper
 import com.example.data.OfferTracker
 import com.example.data.UserLocationManager
@@ -273,7 +273,7 @@ class MerchantViewModel(
         viewModelScope.launch {
             isUploadingMedia.value = true
             try {
-                val cloudUrl = FirebaseStorageHelper.uploadOfferMedia(
+                val cloudUrl = MediaUploader.uploadOfferMedia(
                     getApplication(), offer.mediaUri, offer.mediaType == MediaType.VIDEO
                 )
                 repository.insertOffer(
@@ -294,7 +294,7 @@ class MerchantViewModel(
             } catch (e: Exception) {
                 Log.w(TAG, "saveOffer failed: ${e.message}", e)
                 val msg = when {
-                    e is FirebaseStorageHelper.UploadException -> e.message
+                    e is MediaUploader.UploadException -> e.message
                     e is com.google.firebase.firestore.FirebaseFirestoreException &&
                         e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED ->
                         "رفض Firestore حفظ العرض (صلاحيات). تأكد من نشر قواعد Firestore الجديدة."

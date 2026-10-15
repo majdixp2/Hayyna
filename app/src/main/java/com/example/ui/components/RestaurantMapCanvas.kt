@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.CloudinaryUrls
 import com.example.data.ReverseGeocoder
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.ImageBitmap
@@ -174,13 +175,18 @@ fun FullScreenRestaurantMap(
 
     // صور العروض تُحمّل مسبقاً كـ Bitmap، لأن أيقونات الخريطة تُرسم مرة واحدة ولا تنتظر تحميل الصور من الإنترنت
     val markerBitmaps = remember { mutableStateMapOf<String, ImageBitmap>() }
-    val imageUrls = offers
-        .filter { it.mediaType == MediaType.IMAGE && it.mediaUri.startsWith("http") }
-        .map { it.mediaUri }
-        .distinct()
-    LaunchedEffect(imageUrls) {
-        imageUrls.filter { it !in markerBitmaps }.forEach { url ->
-            loadMarkerBitmap(context, url)?.let { markerBitmaps[url] = it }
+    // صورة الأيقونة: الصورة نفسها (مصغّرة)، أو غلاف الفيديو من Cloudinary
+    val markerSources: Map<String, String> = offers
+        .filter { it.mediaUri.startsWith("http") }
+        .mapNotNull { offer ->
+            val src = if (offer.mediaType == MediaType.VIDEO) CloudinaryUrls.videoThumbnail(offer.mediaUri, 200)
+            else CloudinaryUrls.image(offer.mediaUri, 200)
+            src?.let { offer.mediaUri to it }
+        }
+        .toMap()
+    LaunchedEffect(markerSources.keys) {
+        markerSources.filterKeys { it !in markerBitmaps }.forEach { (key, url) ->
+            loadMarkerBitmap(context, url)?.let { markerBitmaps[key] = it }
         }
     }
 
