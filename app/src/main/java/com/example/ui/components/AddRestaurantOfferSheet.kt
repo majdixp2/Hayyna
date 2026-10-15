@@ -1,5 +1,8 @@
 package com.example.ui.components
 
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -239,8 +242,13 @@ fun AddRestaurantOfferSheet(
     // صفحة كاملة بدل نافذة سفلية: ما تنقفل بالسحب بالغلط، والخريطة الصغيرة تتحرك براحتها
     Dialog(
         onDismissRequest = { requestClose() },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)
     ) {
+      // النافذة تترك مكان شريط الحالة وشريط التنقل، وتنضغط مع الكيبورد بدل ما يغطي الحقول
+      val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+      SideEffect {
+          dialogWindow?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+      }
       CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Surface(
             color = MaterialTheme.colorScheme.surface,
@@ -249,10 +257,7 @@ fun AddRestaurantOfferSheet(
                 .testTag("add_restaurant_offer_sheet")
         ) {
           Column(
-              modifier = Modifier
-                  .fillMaxSize()
-                  .systemBarsPadding()
-                  .imePadding()
+              modifier = Modifier.fillMaxSize()
           ) {
             Row(
                 modifier = Modifier
@@ -635,7 +640,7 @@ fun AddRestaurantOfferSheet(
                 shadowElevation = 8.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp)) {
                 if (errorMessage.isNotBlank()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
