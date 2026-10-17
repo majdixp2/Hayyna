@@ -141,6 +141,16 @@ class MerchantViewModel(
     val selectedMediaType = MutableStateFlow("الكل")
     val customerSortBy = MutableStateFlow("NEAREST") // NEAREST, RATING, PRICE_LOW, DISCOUNT
     val openNowOnly = MutableStateFlow(false)
+
+    // ---------------- تصفّح حي آخر ----------------
+    data class BrowsePlace(val name: String, val latitude: Double, val longitude: Double, val subtitle: String = "")
+
+    /** الحي/المكان اللي يتصفحه المستخدم (null = حول موقعه). */
+    val browsePlace = MutableStateFlow<BrowsePlace?>(null)
+    val placeSuggestions = MutableStateFlow<List<BrowsePlace>>(emptyList())
+    private var placeSearchJob: kotlinx.coroutines.Job? = null
+
+    data class DistrictCount(val name: String, val count: Int, val latitude: Double, val longitude: Double)
     val favoritesOnly = MutableStateFlow(false)
 
     // ---------------- المفضلة ----------------
@@ -188,9 +198,11 @@ class MerchantViewModel(
     }
 
     /** العروض الظاهرة للعملاء: معتمدة، غير منتهية، ومطابقة للفلاتر. */
+    private val favoritesAndBrowse = combine(favoritesOnly, favoriteIds, browsePlace) { a, b, c -> Triple(a, b, c) }
+
     val filteredCustomerOffers: StateFlow<List<RestaurantOffer>> = combine(
-        approvedOffers, filterParams, nowMillis, favoritesOnly, favoriteIds
-    ) { offers, baseParams, now, favOnly, favIds ->
+        approvedOffers, filterParams, nowMillis, favoritesAndBrowse
+    ) { offers, baseParams, now, (favOnly, favIds, browse) ->
         val params = baseParams.copy(favoritesOnly = favOnly)
         val filtered = offers.filter { offer ->
             if (OfferTime.isExpired(offer, now)) return@filter false
@@ -222,9 +234,29 @@ class MerchantViewModel(
             "RATING" -> filtered.sortedByDescending { it.rating }
             "PRICE_LOW" -> filtered.sortedBy { it.price }
             "DISCOUNT" -> filtered.sortedByDescending { (it.originalPrice ?: it.price) - it.price }
-            else -> filtered.sortedBy { it.distanceKm }
+            else -> if (browse != null) {
+                // يتصفح حي ثاني: الترتيب حسب القرب من ذاك الحي (المسافة المعروضة تظل من موقعه هو)
+                filtered.sortedBy { o ->
+                    o.effectiveBranches.minOf {
+                        UserLocationManager.calculateDistanceKm(browse.latitude, browse.longitude, it.latitude, it.longitude)
+                    }
+                }
+            } else filtered.sortedBy { it.distanceKm }
         }
         sorted.sortedByDescending { it.isFeatured }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** الأحياء اللي فيها عروض فعلاً، مع عددها (للفلاتر). */
+    val districtCounts: StateFlow<List<DistrictCount>> = combine(approvedOffers, nowMillis) { offers, now ->
+        offers.filter { !OfferTime.isExpired(it, now) }
+            .flatMap { o -> o.effectiveBranches.map { b -> b } }
+            .filter { it.district.isNotBlank() }
+            .groupBy { normalizeDistrict(it.district) }
+            .map { (_, list) ->
+                val first = list.first()
+                DistrictCount(first.district, list.size, first.latitude, first.longitude)
+            }
+            .sortedByDescending { it.count }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
@@ -279,7 +311,48 @@ class MerchantViewModel(
     }
 
     fun requestLocationUpdates() = locationManager.requestLocationUpdates()
-    fun onSearchQueryChange(query: String) { searchQuery.value = query }
+    fun onSearchQueryChange(query: String) {
+        searchQuery.value = query
+        placeSearchJob?.cancel()
+        val q = query.trim()
+        if (q.length < 2) {
+            placeSuggestions.value = emptyList()
+            return
+        }
+        placeSearchJob = viewModelScope.launch {
+            delay(450)
+            val key = normalizeDistrict(q)
+            // أولاً: أحياء فيها عروض فعلاً
+            val local = districtCounts.value
+                .filter { normalizeDistrict(it.name).contains(key) }
+                .take(3)
+                .map { BrowsePlace(it.name, it.latitude, it.longitude, "${it.count} عرض") }
+            // ثانياً: أي حي أو مدينة من خرائط Google
+            val remote = runCatching { com.example.data.ReverseGeocoder.search(getApplication(), q) }
+                .getOrDefault(emptyList())
+                .map { BrowsePlace(it.name, it.latitude, it.longitude, it.subtitle) }
+            placeSuggestions.value = (local + remote)
+                .distinctBy { normalizeDistrict(it.name) }
+                .take(6)
+        }
+    }
+
+    /** ينقل الخريطة لحي/مكان ويرتّب العروض حسب القرب منه. */
+    fun browseTo(place: BrowsePlace, filterDistrict: Boolean = false) {
+        browsePlace.value = place
+        placeSearchJob?.cancel()
+        placeSuggestions.value = emptyList()
+        searchQuery.value = ""
+        selectedRegion.value = "الكل"
+        selectedDistrict.value = if (filterDistrict) place.name else "الكل"
+        selectedOfferOnMap.value = null
+    }
+
+    /** يرجع للتصفّح حول موقع المستخدم. */
+    fun clearBrowse() {
+        browsePlace.value = null
+        selectedDistrict.value = "الكل"
+    }
     fun onRegionSelect(region: String) {
         selectedRegion.value = region
         selectedDistrict.value = "الكل"

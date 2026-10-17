@@ -77,10 +77,12 @@ fun CustomerOffersView(
     onShowOnMap: (RestaurantOffer) -> Unit,
     openNowOnly: Boolean = false,
     onToggleOpenNow: () -> Unit = {},
+    districts: List<Pair<String, Int>> = emptyList(),
+    browseName: String? = null,
+    onClearBrowse: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isFilterExpanded by remember { mutableStateOf(false) }
-    val currentRegionDistricts = LocationPresets.regions.find { it.name == selectedRegion }?.districts ?: emptyList()
 
     LazyColumn(
         modifier = modifier
@@ -231,28 +233,7 @@ fun CustomerOffersView(
                     // Expandable filters drawer
                     AnimatedVisibility(visible = isFilterExpanded) {
                         Column(modifier = Modifier.padding(top = 10.dp)) {
-                            // Regions
-                            Text("المنطقة:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-                                item {
-                                    FilterChip(
-                                        selected = selectedRegion == "الكل",
-                                        onClick = { onRegionSelect("الكل") },
-                                        label = { Text("كل المناطق", fontSize = 11.sp) }
-                                    )
-                                }
-                                items(LocationPresets.regions) { reg ->
-                                    FilterChip(
-                                        selected = selectedRegion == reg.name,
-                                        onClick = { onRegionSelect(reg.name) },
-                                        label = { Text(reg.name, fontSize = 11.sp) }
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // Districts
+                            // الأحياء اللي فيها عروض فعلاً
                             Text("الحي:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
                                 item {
@@ -262,11 +243,11 @@ fun CustomerOffersView(
                                         label = { Text("كل الأحياء", fontSize = 11.sp) }
                                     )
                                 }
-                                items(currentRegionDistricts) { dist ->
+                                items(districts) { (name, count) ->
                                     FilterChip(
-                                        selected = selectedDistrict == dist.name,
-                                        onClick = { onDistrictSelect(dist.name) },
-                                        label = { Text(dist.name, fontSize = 11.sp) }
+                                        selected = selectedDistrict == name,
+                                        onClick = { onDistrictSelect(name) },
+                                        label = { Text("$name ($count)", fontSize = 11.sp) }
                                     )
                                 }
                             }
@@ -329,6 +310,15 @@ fun CustomerOffersView(
                 }
             }
         } else {
+            if (browseName != null) {
+                item {
+                    androidx.compose.material3.AssistChip(
+                        onClick = onClearBrowse,
+                        label = { Text("📍 مرتبة حسب القرب من: $browseName  ✕", fontSize = 12.sp) },
+                        modifier = Modifier.padding(horizontal = 14.dp)
+                    )
+                }
+            }
             items(offers, key = { it.id }) { offer ->
                 Box(modifier = Modifier.padding(horizontal = 14.dp)) {
                     RestaurantOfferCard(

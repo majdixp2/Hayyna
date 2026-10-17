@@ -138,7 +138,9 @@ fun MerchantStoreScreen(
     // عروض مطعم واحد في نفس المكان (لما يضغط على أيقونة فيها +N)
     var markerGroupOffers by remember { mutableStateOf<List<RestaurantOffer>?>(null) }
 
-    val currentRegionDistricts = LocationPresets.regions.find { it.name == selectedRegion }?.districts ?: emptyList()
+    val browsePlace by viewModel.browsePlace.collectAsStateWithLifecycle()
+    val placeSuggestions by viewModel.placeSuggestions.collectAsStateWithLifecycle()
+    val districtCounts by viewModel.districtCounts.collectAsStateWithLifecycle()
 
     // Full RTL Arabic Experience
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -169,7 +171,9 @@ fun MerchantStoreScreen(
                                     viewModel.deselectOfferOnMap()
                                 },
                                 currentDistrictName = if (selectedDistrict == "الكل") selectedRegion else selectedDistrict,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                focusPoint = browsePlace?.let { it.latitude to it.longitude },
+                                onMyLocationClick = { viewModel.clearBrowse() }
                             )
 
                             // TOP FLOATING CONTROLS OVER MAP
@@ -204,7 +208,7 @@ fun MerchantStoreScreen(
                                             OutlinedTextField(
                                                 value = searchQuery,
                                                 onValueChange = { viewModel.onSearchQueryChange(it) },
-                                                placeholder = { Text("ابحث عن متجر أو عرض...", fontSize = 12.sp) },
+                                                placeholder = { Text("ابحث عن متجر، عرض، أو حي...", fontSize = 12.sp) },
                                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                                 trailingIcon = {
                                                     if (searchQuery.isNotBlank()) {
@@ -240,45 +244,70 @@ fun MerchantStoreScreen(
                                             }
                                         }
 
+                                        // اقتراحات الأحياء/الأماكن أثناء الكتابة
+                                        if (placeSuggestions.isNotEmpty()) {
+                                            Column(modifier = Modifier.padding(top = 6.dp)) {
+                                                Text(
+                                                    "📍 روح لحي:",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                placeSuggestions.forEach { place ->
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .clickable { viewModel.browseTo(place) }
+                                                            .padding(horizontal = 6.dp, vertical = 8.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.LocationOn,
+                                                            contentDescription = null,
+                                                            tint = CalmSagePrimary,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Text(place.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                                            if (place.subtitle.isNotBlank()) {
+                                                                Text(
+                                                                    place.subtitle,
+                                                                    fontSize = 11.sp,
+                                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                    maxLines = 1
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         // Expandable Filter Drawer over the map
                                         AnimatedVisibility(visible = isFilterExpanded) {
                                             Column(modifier = Modifier.padding(top = 8.dp)) {
-                                                // Regions Selector
-                                                Text("المنطقة:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-                                                    item {
-                                                        FilterChip(
-                                                            selected = selectedRegion == "الكل",
-                                                            onClick = { viewModel.onRegionSelect("الكل") },
-                                                            label = { Text("كل المناطق", fontSize = 11.sp) }
-                                                        )
-                                                    }
-                                                    items(LocationPresets.regions) { reg ->
-                                                        FilterChip(
-                                                            selected = selectedRegion == reg.name,
-                                                            onClick = { viewModel.onRegionSelect(reg.name) },
-                                                            label = { Text(reg.name, fontSize = 11.sp) }
-                                                        )
-                                                    }
-                                                }
-
-                                                Spacer(modifier = Modifier.height(4.dp))
-
-                                                // Districts Selector (الأحياء)
-                                                Text("الحي المطلوب:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                // الأحياء اللي فيها عروض فعلاً (مع العدد)
+                                                Text("أحياء فيها عروض:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
                                                     item {
                                                         FilterChip(
                                                             selected = selectedDistrict == "الكل",
-                                                            onClick = { viewModel.onDistrictSelect("الكل") },
-                                                            label = { Text("جميع الأحياء", fontSize = 11.sp) }
+                                                            onClick = { viewModel.clearBrowse() },
+                                                            label = { Text("الكل (حولي)", fontSize = 11.sp) }
                                                         )
                                                     }
-                                                    items(currentRegionDistricts) { dist ->
+                                                    items(districtCounts) { d ->
                                                         FilterChip(
-                                                            selected = selectedDistrict == dist.name,
-                                                            onClick = { viewModel.onDistrictSelect(dist.name) },
-                                                            label = { Text(dist.name, fontSize = 11.sp) }
+                                                            selected = selectedDistrict == d.name,
+                                                            onClick = {
+                                                                viewModel.browseTo(
+                                                                    MerchantViewModel.BrowsePlace(d.name, d.latitude, d.longitude),
+                                                                    filterDistrict = true
+                                                                )
+                                                            },
+                                                            label = { Text("${d.name} (${d.count})", fontSize = 11.sp) }
                                                         )
                                                     }
                                                 }
@@ -315,6 +344,38 @@ fun MerchantStoreScreen(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         modifier = Modifier.padding(top = 6.dp)
                                     ) {
+                                        // شريط "تتصفح: حي X" مع زر رجوع لموقعي
+                                        browsePlace?.let { place ->
+                                            item {
+                                                Surface(
+                                                    shape = RoundedCornerShape(16.dp),
+                                                    color = CalmSagePrimary,
+                                                    shadowElevation = 2.dp,
+                                                    modifier = Modifier.clickable { viewModel.clearBrowse() }
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "📍 تتصفح: ${place.name}",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color.White,
+                                                            maxLines = 1
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Icon(
+                                                            Icons.Default.Clear,
+                                                            contentDescription = "رجوع لموقعي",
+                                                            tint = Color.White,
+                                                            modifier = Modifier.size(14.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         // Quick Restaurant List trigger
                                         item {
                                             Surface(
@@ -379,10 +440,10 @@ fun MerchantStoreScreen(
                                                 shape = RoundedCornerShape(16.dp),
                                                 color = if (selectedDistrict == "الكل") CalmSagePrimary else Color.White.copy(alpha = 0.9f),
                                                 shadowElevation = 2.dp,
-                                                modifier = Modifier.clickable { viewModel.onDistrictSelect("الكل") }
+                                                modifier = Modifier.clickable { viewModel.clearBrowse() }
                                             ) {
                                                 Text(
-                                                    text = "📍 كل الأحياء",
+                                                    text = "📍 حولي",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (selectedDistrict == "الكل") Color.White else Color(0xFF262A33),
@@ -390,16 +451,21 @@ fun MerchantStoreScreen(
                                                 )
                                             }
                                         }
-                                        items(currentRegionDistricts) { dist ->
+                                        items(districtCounts.take(8)) { dist ->
                                             val isSel = selectedDistrict == dist.name
                                             Surface(
                                                 shape = RoundedCornerShape(16.dp),
                                                 color = if (isSel) CalmSagePrimary else Color.White.copy(alpha = 0.9f),
                                                 shadowElevation = 2.dp,
-                                                modifier = Modifier.clickable { viewModel.onDistrictSelect(dist.name) }
+                                                modifier = Modifier.clickable {
+                                                    viewModel.browseTo(
+                                                        MerchantViewModel.BrowsePlace(dist.name, dist.latitude, dist.longitude),
+                                                        filterDistrict = true
+                                                    )
+                                                }
                                             ) {
                                                 Text(
-                                                    text = dist.name,
+                                                    text = "${dist.name} (${dist.count})",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (isSel) Color.White else Color(0xFF262A33),
@@ -495,6 +561,9 @@ fun MerchantStoreScreen(
                                 },
                                 openNowOnly = openNowOnly,
                                 onToggleOpenNow = { viewModel.toggleOpenNow() },
+                                districts = districtCounts.map { it.name to it.count },
+                                browseName = browsePlace?.name,
+                                onClearBrowse = { viewModel.clearBrowse() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

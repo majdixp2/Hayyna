@@ -98,7 +98,10 @@ fun FullScreenRestaurantMap(
     onBackgroundClick: () -> Unit = {},
     onLocationPermissionGranted: () -> Unit = {},
     currentDistrictName: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // مكان يتصفحه المستخدم (حي آخر) — الخريطة تنتقل له
+    focusPoint: Pair<Double, Double>? = null,
+    onMyLocationClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -162,6 +165,11 @@ fun FullScreenRestaurantMap(
                 )
             )
         }
+    }
+
+    LaunchedEffect(focusPoint) {
+        val p = focusPoint ?: return@LaunchedEffect
+        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(LatLng(p.first, p.second), 14f))
     }
 
     // Animate camera when user focuses a specific offer
@@ -356,6 +364,7 @@ fun FullScreenRestaurantMap(
                 modifier = Modifier
                     .size(44.dp)
                     .clickable {
+                        onMyLocationClick()
                         if (hasLocationPermission && userLocation != null) {
                             coroutineScope.launch {
                                 cameraPositionState.animate(

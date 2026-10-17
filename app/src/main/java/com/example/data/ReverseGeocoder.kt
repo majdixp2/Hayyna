@@ -39,4 +39,29 @@ object ReverseGeocoder {
             null
         }
     }
+
+    /** نتيجة بحث عن مكان (حي/مدينة). */
+    data class SearchPlace(val name: String, val subtitle: String, val latitude: Double, val longitude: Double)
+
+    /** يبحث عن حي أو مدينة بالاسم داخل السعودية. */
+    suspend fun search(context: Context, query: String): List<SearchPlace> = withContext(Dispatchers.IO) {
+        if (!Geocoder.isPresent() || query.isBlank()) return@withContext emptyList()
+        try {
+            @Suppress("DEPRECATION")
+            val results = Geocoder(context, Locale("ar")).getFromLocationName(
+                query, 6,
+                16.0, 34.0,   // جنوب غرب السعودية
+                32.5, 56.0    // شمال شرق السعودية
+            ).orEmpty()
+            results.mapNotNull { a ->
+                val name = (a.subLocality ?: a.locality ?: a.featureName ?: a.subAdminArea ?: a.adminArea)?.trim()
+                    ?: return@mapNotNull null
+                val subtitle = listOfNotNull(a.locality, a.adminArea)
+                    .map { it.trim() }.filter { it.isNotBlank() && it != name }.distinct().joinToString(" - ")
+                SearchPlace(name, subtitle, a.latitude, a.longitude)
+            }.distinctBy { it.name + it.subtitle }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 }
