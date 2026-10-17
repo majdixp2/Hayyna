@@ -6,6 +6,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -82,10 +85,37 @@ fun MerchantPortalView(
     onManageBranches: () -> Unit = {},
     isSuspended: Boolean = false,
     isTrusted: Boolean = true,
+    // حسابي: عميل أو تاجر
+    isMerchantAccount: Boolean = true,
+    isRoleLoading: Boolean = false,
+    onCustomerSignIn: () -> Unit = {},
+    onBecomeMerchant: () -> Unit = {},
+    favoritesCount: Int = 0,
+    onShowFavorites: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (!isLoggedIn) {
-        MerchantLoginView(isSigningIn = isSigningIn, onGoogleSignIn = onGoogleSignIn, modifier = modifier)
+        MerchantLoginView(
+            isSigningIn = isSigningIn,
+            onGoogleSignIn = onGoogleSignIn,
+            onCustomerSignIn = onCustomerSignIn,
+            modifier = modifier
+        )
+    } else if (isRoleLoading) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = CalmSagePrimary)
+        }
+    } else if (!isMerchantAccount) {
+        CustomerAccountView(
+            email = merchantEmail.orEmpty(),
+            name = merchantRestaurantName,
+            favoritesCount = favoritesCount,
+            onShowFavorites = onShowFavorites,
+            onBecomeMerchant = onBecomeMerchant,
+            onLogout = onLogout,
+            onDeleteAccount = onDeleteAccount,
+            modifier = modifier
+        )
     } else {
         MerchantDashboard(
             merchantEmail = merchantEmail.orEmpty(),
@@ -111,61 +141,232 @@ fun MerchantPortalView(
 private fun MerchantLoginView(
     isSigningIn: Boolean,
     onGoogleSignIn: () -> Unit,
+    onCustomerSignIn: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(24.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp)
             .testTag("merchant_login_view"),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Surface(shape = CircleShape, color = CalmSagePrimary.copy(alpha = 0.12f), modifier = Modifier.size(84.dp)) {
-            Icon(
-                imageVector = Icons.Default.Storefront,
-                contentDescription = null,
-                tint = CalmSagePrimary,
-                modifier = Modifier.padding(20.dp)
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = "عندك متجر أو محل؟",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.ExtraBold,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center
-        )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "انشر عروضك بالصورة أو الفيديو، وخلّ أهل الحي يشوفونها على الخريطة ويوصلون لك مباشرة.",
-            fontSize = 14.sp,
+            text = "حسابي",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            text = "اختر نوع حسابك — الدخول بحساب Google، مجاناً وبدون كلمة مرور",
+            fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(28.dp))
-        Button(
+
+        AccountChoiceCard(
+            emoji = "🙋",
+            title = "دخول كعميل",
+            subtitle = "احفظ عروضك المفضلة وتابع متاجر حيّك",
+            buttonText = "الدخول كعميل",
+            filled = false,
+            isSigningIn = isSigningIn,
+            onClick = onCustomerSignIn,
+            testTag = "customer_google_sign_in_btn"
+        )
+        AccountChoiceCard(
+            emoji = "🏪",
+            title = "عندك متجر أو محل؟",
+            subtitle = "سجّل متجرك، وانشر عروضك والمنيو، وخلّ أهل الحي يوصلون لك من الخريطة",
+            buttonText = "تسجيل التاجر",
+            filled = true,
+            isSigningIn = isSigningIn,
             onClick = onGoogleSignIn,
-            enabled = !isSigningIn,
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 54.dp)
-                .testTag("merchant_google_sign_in_btn")
-        ) {
-            if (isSigningIn) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+            testTag = "merchant_google_sign_in_btn"
+        )
+
+        Text(
+            text = "تقدر تتصفح العروض والخريطة بدون تسجيل دخول",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun AccountChoiceCard(
+    emoji: String,
+    title: String,
+    subtitle: String,
+    buttonText: String,
+    filled: Boolean,
+    isSigningIn: Boolean,
+    onClick: () -> Unit,
+    testTag: String
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("$emoji  $title", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(12.dp))
+            val content: @Composable () -> Unit = {
+                if (isSigningIn) {
+                    CircularProgressIndicator(
+                        color = if (filled) Color.White else CalmSagePrimary,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else {
+                    Text(buttonText, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (filled) {
+                Button(
+                    onClick = onClick,
+                    enabled = !isSigningIn,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp).testTag(testTag)
+                ) { content() }
             } else {
-                Text("الدخول بحساب Google", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                OutlinedButton(
+                    onClick = onClick,
+                    enabled = !isSigningIn,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp).testTag(testTag)
+                ) { content() }
             }
         }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = "مجاناً • بدون كلمة مرور",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+    }
+}
+
+/** حساب العميل: المفضلة، وتحويل الحساب لتاجر، والخروج. */
+@Composable
+private fun CustomerAccountView(
+    email: String,
+    name: String,
+    favoritesCount: Int,
+    onShowFavorites: () -> Unit,
+    onBecomeMerchant: () -> Unit,
+    onLogout: () -> Unit,
+    onDeleteAccount: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showPrivacy by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var confirmMerchant by remember { mutableStateOf(false) }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = CircleShape, color = CalmSagePrimary.copy(alpha = 0.12f), modifier = Modifier.size(52.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Text("🙋", fontSize = 24.sp) }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name.ifBlank { "أهلاً بك" }, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                OutlinedButton(
+                    onClick = onLogout,
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                ) { Text("خروج", fontSize = 12.sp) }
+            }
+        }
+
+        Card(
+            onClick = onShowFavorites,
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("❤️", fontSize = 22.sp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("المفضلة ($favoritesCount)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("اعرض عروضك المحفوظة على الخريطة", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("›", fontSize = 22.sp, color = CalmSagePrimary)
+            }
+        }
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = CalmSagePrimary.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text("🏪 عندك متجر أو محل؟", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                Text(
+                    "حوّل حسابك لحساب تاجر وانشر عروضك والمنيو على خريطة حيّنا.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+                )
+                Button(
+                    onClick = { confirmMerchant = true },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) { Text("سجّل متجرك", fontWeight = FontWeight.Bold) }
+            }
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = { showPrivacy = true }) { Text("سياسة الخصوصية") }
+            TextButton(onClick = { confirmDelete = true }) { Text("حذف حسابي", color = MaterialTheme.colorScheme.error) }
+        }
+    }
+
+    if (showPrivacy) PrivacyPolicyDialog(onDismiss = { showPrivacy = false })
+    if (confirmMerchant) {
+        AlertDialog(
+            onDismissRequest = { confirmMerchant = false },
+            title = { Text("تحويل الحساب لتاجر؟") },
+            text = { Text("بتصير عندك لوحة التاجر لنشر العروض وصفحة متجرك. عروضك الأولى تتم مراجعتها قبل الظهور.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmMerchant = false
+                    onBecomeMerchant()
+                }) { Text("نعم، سجّل متجري", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { confirmMerchant = false }) { Text("إلغاء") } }
+        )
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("حذف الحساب نهائياً؟") },
+            text = { Text("بيتم حذف حسابك نهائياً.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDeleteAccount()
+                }) { Text("احذف نهائياً", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("إلغاء") } }
         )
     }
 }

@@ -140,6 +140,8 @@ fun MerchantStoreScreen(
 
     val browsePlace by viewModel.browsePlace.collectAsStateWithLifecycle()
     val myStatus by viewModel.myStatus.collectAsStateWithLifecycle()
+    val userRole by viewModel.userRole.collectAsStateWithLifecycle()
+    val isRoleLoading by viewModel.isRoleLoading.collectAsStateWithLifecycle()
     val approvedStores by viewModel.approvedStores.collectAsStateWithLifecycle()
     val pendingStores by viewModel.pendingStores.collectAsStateWithLifecycle()
     val openStore by viewModel.openStore.collectAsStateWithLifecycle()
@@ -626,8 +628,21 @@ fun MerchantStoreScreen(
                                 nowMillis = nowMillis,
                                 onGoogleSignIn = {
                                     (context as? android.app.Activity)?.let { activity ->
-                                        viewModel.signInWithGoogle(activity)
+                                        viewModel.signInWithGoogle(activity, asMerchant = true)
                                     }
+                                },
+                                onCustomerSignIn = {
+                                    (context as? android.app.Activity)?.let { activity ->
+                                        viewModel.signInWithGoogle(activity, asMerchant = false)
+                                    }
+                                },
+                                isMerchantAccount = isAdmin || userRole == MerchantViewModel.ROLE_MERCHANT,
+                                isRoleLoading = isRoleLoading,
+                                onBecomeMerchant = { viewModel.becomeMerchant() },
+                                favoritesCount = favoriteIds.size,
+                                onShowFavorites = {
+                                    if (!favoritesOnly) viewModel.toggleFavoritesOnly()
+                                    viewModel.setRole(AppRole.CUSTOMER_MAP)
                                 },
                                 onLogout = { viewModel.logoutMerchant() },
                                 onOpenAddOfferSheet = { viewModel.openAddOfferSheet() },
@@ -796,7 +811,7 @@ fun GlobalAppRoleBar(
             testTag = "customer_offers_role_tab"
         )
         RoleTabButton(
-            title = "التاجر 🏪",
+            title = "حسابي 👤",
             isSelected = currentRole == AppRole.MERCHANT_PORTAL,
             onClick = { onRoleSelected(AppRole.MERCHANT_PORTAL) },
             modifier = Modifier.weight(1.2f),

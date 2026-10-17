@@ -210,6 +210,19 @@ class RestaurantOfferRepository(
         offersCollection.document(offerId).update("reportsCount", 0).await()
     }
 
+    // ---------------- نوع الحساب: عميل أو تاجر ----------------
+
+    private val usersCollection = db.collection("users")
+
+    suspend fun getUserRole(uid: String): String? =
+        usersCollection.document(uid).get().await().getString("role")
+
+    suspend fun setUserRole(uid: String, role: String) {
+        usersCollection.document(uid).set(
+            hashMapOf("role" to role, "updatedAt" to FieldValue.serverTimestamp())
+        ).await()
+    }
+
     // ---------------- صفحات المتاجر (عامة) ----------------
 
     private val storesCollection = db.collection("stores")
@@ -453,6 +466,7 @@ class RestaurantOfferRepository(
         for (doc in offers.documents) doc.reference.delete().await()
         merchantsCollection.document(uid).delete().await()
         runCatching { storesCollection.document(uid).delete().await() }
+        runCatching { usersCollection.document(uid).delete().await() }
     }
 }
 

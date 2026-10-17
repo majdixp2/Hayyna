@@ -312,12 +312,19 @@ class MerchantViewModel(
             .sortedByDescending { it.count }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** نوع الحساب: "customer" أو "merchant" (null = غير مسجّل أو لسا ما انقرأ). */
+    val userRole = MutableStateFlow<String?>(null)
+    val isRoleLoading = MutableStateFlow(false)
+    private var pendingRole: String? = null
+
     init {
         auth?.addAuthStateListener(authListener)
         viewModelScope.launch {
             currentUser.collect { user ->
                 merchantProfile.value = null
+                userRole.value = null
                 if (user != null) {
+                    resolveRole(user.uid)
                     merchantProfile.value = runCatching { repository.getMerchantProfile(user.uid) }.getOrNull()
                 }
             }
@@ -330,8 +337,41 @@ class MerchantViewModel(
 
     // ---------------- تسجيل الدخول ----------------
 
-    fun signInWithGoogle(activity: Activity) {
+
+    private suspend fun resolveRole(uid: String) {
+        isRoleLoading.value = true
+        try {
+            val saved = runCatching { repository.getUserRole(uid) }.getOrNull()
+            val role = when {
+                saved != null -> saved
+                // حسابات قديمة: عنده ملف متجر = تاجر
+                pendingRole == null && runCatching { repository.getMerchantProfile(uid) }.getOrNull() != null -> ROLE_MERCHANT
+                else -> pendingRole ?: ROLE_CUSTOMER
+            }
+            userRole.value = role
+            if (saved == null) runCatching { repository.setUserRole(uid, role) }
+        } finally {
+            pendingRole = null
+            isRoleLoading.value = false
+        }
+    }
+
+    /** يحوّل حساب العميل لحساب تاجر. */
+    fun becomeMerchant() {
+        val user = currentUser.value ?: return
+        launchSafely("تعذّر تحويل الحساب.") {
+            repository.setUserRole(user.uid, ROLE_MERCHANT)
+            userRole.value = ROLE_MERCHANT
+            toast("أهلاً بك كتاجر في حيّنا 🏪")
+        }
+    }
+
+    val isMerchantAccount: Boolean get() = userRole.value == ROLE_MERCHANT || isAdmin.value
+
+    /** تسجيل دخول كعميل (asMerchant=false) أو كتاجر (asMerchant=true). */
+    fun signInWithGoogle(activity: Activity, asMerchant: Boolean = true) {
         if (isSigningIn.value) return
+        pendingRole = if (asMerchant) ROLE_MERCHANT else ROLE_CUSTOMER
         isSigningIn.value = true
         viewModelScope.launch {
             try {
@@ -432,6 +472,10 @@ class MerchantViewModel(
     fun openAddOfferSheet() {
         if (currentUser.value == null) {
             toast("سجّل الدخول بحساب Google أولاً لإضافة عرض")
+            return
+        }
+        if (!isMerchantAccount) {
+            toast("سجّل متجرك أولاً من صفحة حسابي")
             return
         }
         editingOffer.value = null
@@ -772,6 +816,8 @@ class MerchantViewModel(
         private const val TAG = "MerchantViewModel"
         /** عدد البلاغات اللي يختفي بعدها العرض تلقائياً لين يراجعه الأدمن. */
         const val AUTO_HIDE_REPORTS = 3
+        const val ROLE_CUSTOMER = "customer"
+        const val ROLE_MERCHANT = "merchant"
         /** حد العروض اليومية للتاجر الجديد (غير الموثوق). */
         const val NEW_MERCHANT_DAILY_LIMIT = 3
     }

@@ -99,6 +99,13 @@ service cloud.firestore {
         && request.resource.data.get('reportsCount', 0) == resource.data.get('reportsCount', 0);
     }
 
+    // نوع الحساب (عميل / تاجر): صاحبه فقط
+    match /users/{uid} {
+      allow read, delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if isAuthenticated() && request.auth.uid == uid
+        && request.resource.data.role in ['customer', 'merchant'];
+    }
+
     // صفحة المتجر العامة: الكل يشوف المعتمدة، وصاحبها يعدّل (غير الموثوق تروح للمراجعة)
     match /stores/{uid} {
       allow read: if resource.data.approved == true
