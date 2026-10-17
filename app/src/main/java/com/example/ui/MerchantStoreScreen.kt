@@ -135,6 +135,8 @@ fun MerchantStoreScreen(
 
     var isFilterExpanded by remember { mutableStateOf(false) }
     var isRestaurantListSheetOpen by remember { mutableStateOf(false) }
+    // عروض مطعم واحد في نفس المكان (لما يضغط على أيقونة فيها +N)
+    var markerGroupOffers by remember { mutableStateOf<List<RestaurantOffer>?>(null) }
 
     val currentRegionDistricts = LocationPresets.regions.find { it.name == selectedRegion }?.districts ?: emptyList()
 
@@ -162,6 +164,7 @@ fun MerchantStoreScreen(
                                 onSelectOffer = { offer ->
                                     viewModel.selectOfferOnMap(offer)
                                 },
+                                onSelectGroup = { group -> markerGroupOffers = group },
                                 onBackgroundClick = {
                                     viewModel.deselectOfferOnMap()
                                 },
@@ -583,7 +586,10 @@ fun MerchantStoreScreen(
                 isOwner = currentUser?.uid != null && currentUser?.uid == offer.merchantId,
                 onToggleFavorite = { viewModel.toggleFavorite(offer.id) },
                 onReport = { reason -> viewModel.reportOffer(offer, reason) },
-                onEdit = { viewModel.startEditOffer(offer) }
+                onEdit = { viewModel.startEditOffer(offer) },
+                branchOffers = if (offer.branches.size > 1) {
+                    offer.branches.map { viewModel.offerAtBranch(offer, it) }.sortedBy { it.distanceKm }
+                } else emptyList()
             )
         }
 
@@ -610,6 +616,20 @@ fun MerchantStoreScreen(
                 isSaving = isSavingBranches,
                 onSave = { p, logo -> viewModel.saveBranches(p, logo) },
                 onClose = { viewModel.closeBranchesPage() }
+            )
+        }
+
+        markerGroupOffers?.let { group ->
+            RestaurantListSheet(
+                offers = group,
+                selectedDistrict = group.first().district,
+                onSelectOffer = { offer ->
+                    markerGroupOffers = null
+                    viewModel.selectOfferOnMap(offer)
+                },
+                onDismiss = { markerGroupOffers = null },
+                title = "عروض ${group.first().restaurantName} (${group.size})",
+                subtitle = group.first().district.ifBlank { "اختر العرض اللي يعجبك" }
             )
         }
 

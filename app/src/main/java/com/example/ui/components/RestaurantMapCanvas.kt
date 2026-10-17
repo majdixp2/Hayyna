@@ -69,6 +69,8 @@ import coil.request.ImageRequest
 import com.example.R
 import com.example.data.model.MediaType
 import com.example.data.model.RestaurantOffer
+import com.example.data.model.atBranch
+import com.example.data.model.effectiveBranches
 import com.example.ui.theme.CalmSagePrimary
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -92,6 +94,7 @@ fun FullScreenRestaurantMap(
     selectedOffer: RestaurantOffer?,
     userLocation: Location? = null,
     onSelectOffer: (RestaurantOffer) -> Unit,
+    onSelectGroup: (List<RestaurantOffer>) -> Unit = { it.firstOrNull()?.let(onSelectOffer) },
     onBackgroundClick: () -> Unit = {},
     onLocationPermissionGranted: () -> Unit = {},
     currentDistrictName: String,
@@ -162,7 +165,7 @@ fun FullScreenRestaurantMap(
     }
 
     // Animate camera when user focuses a specific offer
-    LaunchedEffect(selectedOffer?.id) {
+    LaunchedEffect(selectedOffer?.id, selectedOffer?.latitude, selectedOffer?.longitude) {
         if (selectedOffer != null) {
             cameraPositionState.animate(
                 CameraUpdateFactory.newLatLngZoom(
@@ -173,28 +176,59 @@ fun FullScreenRestaurantMap(
         }
     }
 
-    // صور العروض تُحمّل مسبقاً كـ Bitmap، لأن أيقونات الخريطة تُرسم مرة واحدة ولا تنتظر تحميل الصور من الإنترنت
+    // كل عرض يظهر عند كل فرع من فروعه، وعروض نفس المطعم في نفس الفرع تتجمع في أيقونة وحدة (+N)
+    val markerGroups: List<List<RestaurantOffer>> = remember(offers) {
+        offers
+            .flatMap { offer ->
+                if (offer.branches.isEmpty()) listOf(offer) else offer.effectiveBranches.map { offer.atBranch(it) }
+            }
+            .groupBy { o ->
+                Triple(
+                    o.merchantId.ifBlank { o.restaurantName },
+                    Math.round(o.latitude * 20000),
+                    Math.round(o.longitude * 20000)
+                )
+            }
+            .values
+            .map { group ->
+                group.sortedWith(
+                    compareByDescending<RestaurantOffer> { it.isFeatured }
+                        .thenByDescending { (it.originalPrice ?: it.price) - it.price }
+                )
+            }
+    }
+
+    // صور العروض والشعارات تُحمّل مسبقاً كـ Bitmap، لأن أيقونات الخريطة تُرسم مرة واحدة ولا تنتظر تحميل الصور من الإنترنت
     val markerBitmaps = remember { mutableStateMapOf<String, ImageBitmap>() }
     // صورة الأيقونة: الصورة نفسها (مصغّرة)، أو غلاف الفيديو من Cloudinary
-    val markerSources: Map<String, String> = offers
-        .filter { it.mediaUri.startsWith("http") }
-        .mapNotNull { offer ->
-            val src = if (offer.mediaType == MediaType.VIDEO) CloudinaryUrls.videoThumbnail(offer.mediaUri, 200)
-            else CloudinaryUrls.image(offer.mediaUri, 200)
-            src?.let { offer.mediaUri to it }
-        }
-        .toMap()
+    val markerSources: Map<String, String> = (
+        offers
+            .filter { it.mediaUri.startsWith("http") }
+            .mapNotNull { offer ->
+                val src = if (offer.mediaType == MediaType.VIDEO) CloudinaryUrls.videoThumbnail(offer.mediaUri, 200)
+                else CloudinaryUrls.image(offer.mediaUri, 200)
+                src?.let { offer.mediaUri to it }
+            } +
+            offers
+                .filter { it.logoUrl.startsWith("http") }
+                .mapNotNull { offer -> CloudinaryUrls.image(offer.logoUrl, 96)?.let { offer.logoUrl to it } }
+        ).toMap()
     LaunchedEffect(markerSources.keys) {
         markerSources.filterKeys { it !in markerBitmaps }.forEach { (key, url) ->
             loadMarkerBitmap(context, url)?.let { markerBitmaps[key] = it }
         }
     }
 
-    val clusterItems = offers.map { offer ->
+    val clusterItems = markerGroups.map { group ->
+        val top = group.first()
+        val selected = selectedOffer != null && group.any { it.id == selectedOffer.id } &&
+            (selectedOffer.selectedBranchId.isBlank() || selectedOffer.selectedBranchId == top.selectedBranchId)
         OfferClusterItem(
-            offer = offer,
-            isSelected = selectedOffer?.id == offer.id,
-            bitmap = markerBitmaps[offer.mediaUri]
+            offer = top,
+            isSelected = selected,
+            bitmap = markerBitmaps[top.mediaUri],
+            logo = markerBitmaps[top.logoUrl],
+            groupOffers = group
         )
     }
 
@@ -244,7 +278,7 @@ fun FullScreenRestaurantMap(
                     true
                 },
                 onClusterItemClick = { item ->
-                    onSelectOffer(item.offer)
+                    if (item.groupOffers.size > 1) onSelectGroup(item.groupOffers) else onSelectOffer(item.offer)
                     true
                 },
                 clusterContent = { cluster ->
@@ -254,7 +288,9 @@ fun FullScreenRestaurantMap(
                     OfferCircleMarker(
                         offer = item.offer,
                         isSelected = item.isSelected,
-                        bitmap = item.bitmap
+                        bitmap = item.bitmap,
+                        logo = item.logo,
+                        extraCount = item.groupOffers.size - 1
                     )
                 }
             )
@@ -387,7 +423,9 @@ fun FullScreenRestaurantMap(
 data class OfferClusterItem(
     val offer: RestaurantOffer,
     val isSelected: Boolean,
-    val bitmap: ImageBitmap?
+    val bitmap: ImageBitmap?,
+    val logo: ImageBitmap? = null,
+    val groupOffers: List<RestaurantOffer> = listOf(offer)
 ) : ClusterItem {
     override fun getPosition(): LatLng = LatLng(offer.latitude, offer.longitude)
     override fun getTitle(): String? = offer.restaurantName
@@ -444,7 +482,9 @@ fun OfferClusterBubble(count: Int) {
 fun OfferCircleMarker(
     offer: RestaurantOffer,
     isSelected: Boolean,
-    bitmap: ImageBitmap? = null
+    bitmap: ImageBitmap? = null,
+    logo: ImageBitmap? = null,
+    extraCount: Int = 0
 ) {
     val context = LocalContext.current
     val ringColor = when {
@@ -524,6 +564,43 @@ fun OfferCircleMarker(
                 }
             }
 
+            // شعار المطعم صغير في الزاوية
+            if (logo != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color.White,
+                    border = BorderStroke(1.5.dp, Color.White),
+                    shadowElevation = 3.dp,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(20.dp)
+                ) {
+                    Image(
+                        bitmap = logo,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            // عدد العروض الإضافية لنفس المطعم في نفس المكان
+            if (extraCount > 0) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF262A33),
+                    border = BorderStroke(1.dp, Color.White),
+                    modifier = Modifier.align(Alignment.TopStart)
+                ) {
+                    Text(
+                        text = "+$extraCount",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 5.dp)
+                    )
+                }
+            }
         }
 
         // نسبة الخصم تحت الدائرة (ما تغطي صورة العرض)

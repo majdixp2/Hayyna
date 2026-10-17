@@ -290,14 +290,14 @@ class MerchantViewModel(
     fun toggleOpenNow() { openNowOnly.value = !openNowOnly.value }
 
     fun selectOfferOnMap(offer: RestaurantOffer?) {
-        selectedOfferOnMap.value = offer
+        selectedOfferOnMap.value = offer?.let { withDistanceTo(it, userLocation.value) }
         if (offer != null) launchSafely { repository.incrementViews(offer.id) }
     }
 
     fun deselectOfferOnMap() { selectedOfferOnMap.value = null }
 
     fun openOfferDetail(offer: RestaurantOffer) {
-        activeDetailOffer.value = offer
+        activeDetailOffer.value = withDistanceTo(offer, userLocation.value)
         launchSafely { repository.incrementViews(offer.id) }
     }
 

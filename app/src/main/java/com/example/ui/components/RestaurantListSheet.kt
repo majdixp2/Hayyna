@@ -58,7 +58,9 @@ fun RestaurantListSheet(
     offers: List<RestaurantOffer>,
     selectedDistrict: String,
     onSelectOffer: (RestaurantOffer) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    title: String = "قائمة مطاعم وعروض الحي 🍽️",
+    subtitle: String = "اضغط على أي مطعم لعرض موقعه وإعلانه على الخريطة"
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
@@ -82,13 +84,13 @@ fun RestaurantListSheet(
             ) {
                 Column {
                     Text(
-                        text = "قائمة مطاعم وعروض الحي 🍽️",
+                        text = title,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF262A33)
                     )
                     Text(
-                        text = "اضغط على أي مطعم لعرض موقعه وإعلانه على الخريطة",
+                        text = subtitle,
                         fontSize = 11.sp,
                         color = Color(0xFF6B7280)
                     )

@@ -52,6 +52,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.MediaType
 import com.example.data.model.RestaurantOffer
+import com.example.data.model.gallery
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.example.ui.theme.CalmSagePrimary
 import com.example.ui.theme.SoftTerracotta
 
@@ -64,9 +67,16 @@ fun RestaurantOfferDetailSheet(
     isOwner: Boolean = false,
     onToggleFavorite: () -> Unit = {},
     onReport: (String) -> Unit = {},
-    onEdit: () -> Unit = {}
+    onEdit: () -> Unit = {},
+    // نفس العرض في كل فرع (مرتّب من الأقرب). فاضي = فرع واحد.
+    branchOffers: List<RestaurantOffer> = emptyList()
 ) {
     val context = LocalContext.current
+    // الفرع المعروض حالياً (افتراضياً الأقرب أو اللي ضغط عليه في الخريطة)
+    var shown by androidx.compose.runtime.remember(offer.id, offer.selectedBranchId) {
+        androidx.compose.runtime.mutableStateOf(offer)
+    }
+    val branchName = offer.branches.firstOrNull { it.id == shown.selectedBranchId }?.displayName
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -144,14 +154,49 @@ fun RestaurantOfferDetailSheet(
                     .fillMaxWidth()
                     .height(240.dp)
             ) {
-                ProductMediaViewer(
-                    mediaUri = offer.mediaUri,
-                    mediaType = offer.mediaType,
-                    isPromotionalVideo = offer.isPromotionalVideo,
-                    promotionalBadge = offer.discountBadge,
-                    autoPlayVideo = offer.mediaType == MediaType.VIDEO,
-                    modifier = Modifier.fillMaxSize()
-                )
+                val gallery = offer.gallery
+                if (offer.mediaType == MediaType.IMAGE && gallery.size > 1) {
+                    val pagerState = androidx.compose.foundation.pager.rememberPagerState { gallery.size }
+                    androidx.compose.foundation.pager.HorizontalPager(
+                        state = pagerState,
+                        pageSpacing = 8.dp,
+                        modifier = Modifier.fillMaxSize()
+                    ) { page ->
+                        ProductMediaViewer(
+                            mediaUri = gallery[page],
+                            mediaType = MediaType.IMAGE,
+                            promotionalBadge = if (page == 0) offer.discountBadge else "",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    // نقاط الصور
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 8.dp)
+                    ) {
+                        repeat(gallery.size) { i ->
+                            Box(
+                                Modifier
+                                    .size(if (i == pagerState.currentPage) 8.dp else 6.dp)
+                                    .background(
+                                        if (i == pagerState.currentPage) Color.White else Color.White.copy(alpha = 0.5f),
+                                        androidx.compose.foundation.shape.CircleShape
+                                    )
+                            )
+                        }
+                    }
+                } else {
+                    ProductMediaViewer(
+                        mediaUri = offer.mediaUri,
+                        mediaType = offer.mediaType,
+                        isPromotionalVideo = offer.isPromotionalVideo,
+                        promotionalBadge = offer.discountBadge,
+                        autoPlayVideo = offer.mediaType == MediaType.VIDEO,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -193,7 +238,7 @@ fun RestaurantOfferDetailSheet(
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
                 modifier = Modifier.padding(top = 4.dp)
             ) {
-                OpenNowChip(offer = offer)
+                OpenNowChip(offer = shown)
                 OfferExpiryChip(offer = offer)
             }
 
@@ -256,8 +301,56 @@ fun RestaurantOfferDetailSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            // الفروع: لو العرض متوفر في أكثر من فرع
+            if (branchOffers.size > 1) {
+                Text(
+                    text = "متوفر في ${branchOffers.size} فروع 📍",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                branchOffers.forEachIndexed { index, b ->
+                    val name = offer.branches.firstOrNull { it.id == b.selectedBranchId }?.displayName ?: b.district
+                    val isShown = b.selectedBranchId == shown.selectedBranchId
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isShown) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .clickable { shown = b }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = CalmSagePrimary, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                                Text(
+                                    text = listOfNotNull(
+                                        distanceText(b),
+                                        if (index == 0 && b.distanceKm > 0) "الأقرب لك" else null
+                                    ).joinToString(" • ").ifBlank { b.region },
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = {
+                                com.example.data.OfferTracker.directions(offer.id)
+                                openDirectionsInGoogleMaps(context, b.latitude, b.longitude)
+                            }) {
+                                Icon(Icons.Default.Directions, contentDescription = "الاتجاه", tint = CalmSagePrimary)
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
             // Prominent Distance Banner (كم يبعد المحل عن العميل)
-            Surface(
+            if (shown.distanceKm > 0) Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = Color(0xFFF0FDF4),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC)),
@@ -278,12 +371,12 @@ fun RestaurantOfferDetailSheet(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "كم يبعد المحل عنك الآن:",
+                                text = if (branchName != null) "كم يبعد $branchName عنك:" else "كم يبعد المحل عنك الآن:",
                                 fontSize = 11.sp,
                                 color = Color(0xFF166534)
                             )
                             Text(
-                                text = "${if (offer.distanceKm < 1.0) "${(offer.distanceKm * 1000).toInt()} متر" else "${offer.distanceKm} كم"} فقط",
+                                text = "${distanceText(shown)} فقط",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF15803D)
@@ -296,7 +389,7 @@ fun RestaurantOfferDetailSheet(
                         color = Color(0xFFDCFCE7)
                     ) {
                         Text(
-                            text = "🚗 ${offer.driveTimeMinutes} دقائق قيادة",
+                            text = "🚗 ${shown.driveTimeMinutes} دقائق قيادة",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF15803D),
@@ -312,7 +405,7 @@ fun RestaurantOfferDetailSheet(
             Button(
                 onClick = {
                     com.example.data.OfferTracker.directions(offer.id)
-                        openDirectionsInGoogleMaps(context, offer.latitude, offer.longitude)
+                        openDirectionsInGoogleMaps(context, shown.latitude, shown.longitude)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -340,10 +433,10 @@ fun RestaurantOfferDetailSheet(
 
             // Location Map Card showing district and region
             LocationMapCard(
-                district = offer.district,
-                region = offer.region,
-                latitude = offer.latitude,
-                longitude = offer.longitude,
+                district = shown.district,
+                region = shown.region,
+                latitude = shown.latitude,
+                longitude = shown.longitude,
                 storeOrItemName = offer.restaurantName,
                 isInteractive = true
             )
@@ -359,7 +452,7 @@ fun RestaurantOfferDetailSheet(
                     onClick = {
                         val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} بسعر ${offer.price} ر.س المعلن عنه في تطبيق عروض المطاعم."
                         com.example.data.OfferTracker.whatsapp(offer.id)
-                            openWhatsApp(context, offer.phone, message)
+                            openWhatsApp(context, shown.phone, message)
                     },
                     modifier = Modifier
                         .weight(1f)
@@ -376,7 +469,7 @@ fun RestaurantOfferDetailSheet(
 
                 OutlinedButton(
                     onClick = {
-                        callPhone(context, offer.phone)
+                        callPhone(context, shown.phone)
                     },
                     modifier = Modifier
                         .weight(0.8f)
@@ -390,4 +483,11 @@ fun RestaurantOfferDetailSheet(
             }
         }
     }
+}
+
+/** "850 متر" أو "3.2 كم" (null إذا المسافة غير معروفة). */
+private fun distanceText(offer: RestaurantOffer): String? = when {
+    offer.distanceKm <= 0.0 -> null
+    offer.distanceKm < 1.0 -> "${(offer.distanceKm * 1000).toInt()} متر"
+    else -> "${"%.1f".format(java.util.Locale.US, offer.distanceKm)} كم"
 }
