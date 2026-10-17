@@ -47,6 +47,7 @@ service cloud.firestore {
         && (!('isApproved' in data) || data.isApproved is bool)
         && (!('isFeatured' in data) || data.isFeatured is bool)
         && optInt(data, 'viewsCount') && optInt(data, 'directionsCount') && optInt(data, 'whatsappCount')
+        && optInt(data, 'reportsCount')
         && (!('mediaUris' in data) || (data.mediaUris is list && data.mediaUris.size() <= 3))
         && (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 2000))
         && (!('branches' in data) || (data.branches is list && data.branches.size() <= 50))
@@ -59,11 +60,34 @@ service cloud.firestore {
         && request.resource.data[field] == resource.data.get(field, 0) + 1;
     }
 
-    // الزوار (حتى بدون تسجيل) يقدرون يزيدون المشاهدات / الاتجاه / واتساب فقط
+    // الزوار (حتى بدون تسجيل) يقدرون يزيدون المشاهدات / الاتجاه / واتساب / البلاغات فقط
     function isCounterIncrement() {
       return incrementsOnly('viewsCount')
         || incrementsOnly('directionsCount')
-        || incrementsOnly('whatsappCount');
+        || incrementsOnly('whatsappCount')
+        || incrementsOnly('reportsCount');
+    }
+
+    // ---------- حالة التاجر (يكتبها الأدمن فقط) ----------
+    function statusPath(uid) {
+      return /databases/$(database)/documents/merchantStatus/$(uid);
+    }
+
+    function isSuspended(uid) {
+      return exists(statusPath(uid)) && get(statusPath(uid)).data.get('suspended', false) == true;
+    }
+
+    // الموثوق ينشر مباشرة، غيره عروضه تروح للمراجعة
+    function isTrusted(uid) {
+      return isAdmin()
+        || (exists(statusPath(uid))
+            && get(statusPath(uid)).data.get('trusted', false) == true
+            && get(statusPath(uid)).data.get('suspended', false) != true);
+    }
+
+    // غير الموثوق لازم ينشر/يعدّل والعرض "بانتظار المراجعة"
+    function approvalAllowed(uid) {
+      return isTrusted(uid) || request.resource.data.get('isApproved', false) == false;
     }
 
     function keepsProtectedFields() {
@@ -71,7 +95,14 @@ service cloud.firestore {
         && request.resource.data.get('isFeatured', false) == resource.data.get('isFeatured', false)
         && request.resource.data.get('viewsCount', 0) == resource.data.get('viewsCount', 0)
         && request.resource.data.get('directionsCount', 0) == resource.data.get('directionsCount', 0)
-        && request.resource.data.get('whatsappCount', 0) == resource.data.get('whatsappCount', 0);
+        && request.resource.data.get('whatsappCount', 0) == resource.data.get('whatsappCount', 0)
+        && request.resource.data.get('reportsCount', 0) == resource.data.get('reportsCount', 0);
+    }
+
+    // حالة التاجر: موثوق / موقوف — التاجر يقرأ حالته، والأدمن فقط يكتب
+    match /merchantStatus/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
     }
 
     // ملف المطعم: صاحبه فقط يقرأ ويكتب
@@ -93,8 +124,10 @@ service cloud.firestore {
     }
 
     match /offers/{offerId} {
-      // أي أحد يقدر يتصفح العروض
-      allow read: if true;
+      // أي أحد يتصفح العروض المعتمدة، وصاحب العرض والأدمن يشوفون اللي بانتظار المراجعة
+      allow read: if resource.data.isApproved == true
+        || (isAuthenticated() && resource.data.merchantId == request.auth.uid)
+        || isAdmin();
 
       // التاجر المسجّل ينشر عرض باسمه، بدون "مميز" وبعدّادات صفر
       allow create: if isAuthenticated()
@@ -103,7 +136,10 @@ service cloud.firestore {
         && request.resource.data.get('viewsCount', 0) == 0
         && request.resource.data.get('directionsCount', 0) == 0
         && request.resource.data.get('whatsappCount', 0) == 0
+        && request.resource.data.get('reportsCount', 0) == 0
         && request.resource.data.createdAt == request.time
+        && !isSuspended(request.auth.uid)
+        && approvalAllowed(request.auth.uid)
         && isValidOffer(request.resource.data);
 
       // صاحب العرض يعدّل عرضه (بدون "مميز" والعدّادات)، والأدمن يعدّل أي شي، والزوار يزيدون العدّادات فقط
@@ -111,6 +147,8 @@ service cloud.firestore {
         (isAuthenticated()
           && resource.data.merchantId == request.auth.uid
           && keepsProtectedFields()
+          && !isSuspended(request.auth.uid)
+          && approvalAllowed(request.auth.uid)
           && isValidOffer(request.resource.data))
         || isAdmin()
         || isCounterIncrement();

@@ -80,6 +80,8 @@ fun MerchantPortalView(
     onDeleteAccount: () -> Unit = {},
     branchesCount: Int = 0,
     onManageBranches: () -> Unit = {},
+    isSuspended: Boolean = false,
+    isTrusted: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (!isLoggedIn) {
@@ -98,6 +100,8 @@ fun MerchantPortalView(
             onDeleteAccount = onDeleteAccount,
             branchesCount = branchesCount,
             onManageBranches = onManageBranches,
+            isSuspended = isSuspended,
+            isTrusted = isTrusted,
             modifier = modifier
         )
     }
@@ -180,6 +184,8 @@ private fun MerchantDashboard(
     onDeleteAccount: () -> Unit,
     branchesCount: Int,
     onManageBranches: () -> Unit,
+    isSuspended: Boolean,
+    isTrusted: Boolean,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -258,6 +264,27 @@ private fun MerchantDashboard(
                             fontSize = 14.sp
                         )
                     }
+                }
+            }
+        }
+
+        // حالة الحساب: موقوف / جديد (عروضه تُراجع)
+        if (isSuspended || !isTrusted) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSuspended) Color(0xFFFDE8E6) else Color(0xFFFFF4E0),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = if (isSuspended)
+                            "⛔ حسابك موقوف حالياً، وعروضك مخفية. تواصل مع إدارة حيّنا."
+                        else
+                            "⏳ حسابك جديد: عروضك تتم مراجعتها قبل ما تظهر على الخريطة. بعد اعتماد أول عرضين بتنشر مباشرة.",
+                        fontSize = 13.sp,
+                        color = if (isSuspended) Color(0xFFB42318) else Color(0xFF8A5A00),
+                        modifier = Modifier.padding(12.dp)
+                    )
                 }
             }
         }
@@ -399,7 +426,17 @@ private fun MerchantOfferRow(
                     color = if (expired) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (offer.expiresAt == null) {
+                    if (!offer.isApproved || offer.reportsCount >= com.example.ui.MerchantViewModel.AUTO_HIDE_REPORTS) {
+                        Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFFF4E0)) {
+                            Text(
+                                if (!offer.isApproved) "⏳ بانتظار المراجعة" else "🚩 مخفي للمراجعة",
+                                color = Color(0xFF8A5A00),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    } else if (offer.expiresAt == null) {
                         Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFE7F6EC)) {
                             Text(
                                 "نشط",

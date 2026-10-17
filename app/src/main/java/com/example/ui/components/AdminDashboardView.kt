@@ -16,6 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Restaurant
@@ -54,12 +57,99 @@ fun AdminDashboardView(
     onDeleteOffer: (String) -> Unit,
     reports: List<OfferReport> = emptyList(),
     onDismissReport: (String) -> Unit = {},
+    merchantStatuses: List<com.example.data.repository.MerchantStatus> = emptyList(),
+    onApprove: (RestaurantOffer) -> Unit = {},
+    onTrustMerchant: (RestaurantOffer) -> Unit = {},
+    onSuspendMerchant: (String, String) -> Unit = { _, _ -> },
+    onUnsuspend: (com.example.data.repository.MerchantStatus) -> Unit = {},
+    onKeepReported: (RestaurantOffer) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val pending = offers.filter { !it.isApproved && merchantStatuses.none { s -> s.uid == it.merchantId && s.suspended } }
+    val hiddenByReports = offers.filter { it.isApproved && it.reportsCount >= com.example.ui.MerchantViewModel.AUTO_HIDE_REPORTS }
+    val suspended = merchantStatuses.filter { it.suspended }
+    var confirmSuspend by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<RestaurantOffer?>(null) }
+
+    confirmSuspend?.let { o ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmSuspend = null },
+            title = { Text("إيقاف ${o.restaurantName}؟") },
+            text = { Text("بتختفي كل عروضه، وما يقدر ينشر لين تلغي الإيقاف.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    onSuspendMerchant(o.merchantId, o.restaurantName)
+                    confirmSuspend = null
+                }) { Text("أوقفه", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmSuspend = null }) { Text("إلغاء") } }
+        )
+    }
+
     LazyColumn(
         modifier = modifier.testTag("admin_dashboard_view"),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // ⏳ بانتظار المراجعة
+        item {
+            Text(
+                text = if (pending.isEmpty()) "بانتظار المراجعة: لا يوجد ✅" else "⏳ بانتظار المراجعة (${pending.size})",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = if (pending.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF8A5A00)
+            )
+        }
+        items(pending, key = { "p_" + it.id }) { o ->
+            ReviewCard(
+                offer = o,
+                note = null,
+                primaryLabel = "اعتماد ✓",
+                onPrimary = { onApprove(o) },
+                secondaryLabel = "اعتماد + توثيق التاجر",
+                onSecondary = { onTrustMerchant(o) },
+                onDelete = { onDeleteOffer(o.id) },
+                onSuspend = { confirmSuspend = o }
+            )
+        }
+
+        // 🚩 مخفية بسبب البلاغات
+        if (hiddenByReports.isNotEmpty()) {
+            item {
+                Text(
+                    text = "🚩 مخفية بسبب البلاغات (${hiddenByReports.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            items(hiddenByReports, key = { "r_" + it.id }) { o ->
+                ReviewCard(
+                    offer = o,
+                    note = "${o.reportsCount} بلاغات: " + reports.filter { it.offerId == o.id }.joinToString("، ") { it.reason }.take(200),
+                    primaryLabel = "سليم، رجّعه",
+                    onPrimary = { onKeepReported(o) },
+                    secondaryLabel = null,
+                    onSecondary = {},
+                    onDelete = { onDeleteOffer(o.id) },
+                    onSuspend = { confirmSuspend = o }
+                )
+            }
+        }
+
+        // ⛔ الحسابات الموقوفة
+        if (suspended.isNotEmpty()) {
+            item {
+                Text("⛔ حسابات موقوفة (${suspended.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+            items(suspended, key = { "s_" + it.uid }) { st ->
+                Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(st.name.ifBlank { st.uid.take(8) }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        androidx.compose.material3.TextButton(onClick = { onUnsuspend(st) }) { Text("إلغاء الإيقاف") }
+                    }
+                }
+            }
+        }
+
         // البلاغات أولاً — تحتاج مراجعة
         item {
             Text(
@@ -311,6 +401,90 @@ fun AdminStatCard(
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = value, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             Text(text = title, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+    }
+}
+
+/** بطاقة مراجعة عرض: صورته وبياناته وأزرار الاعتماد/الحذف/الإيقاف. */
+@Composable
+private fun ReviewCard(
+    offer: RestaurantOffer,
+    note: String?,
+    primaryLabel: String,
+    onPrimary: () -> Unit,
+    secondaryLabel: String?,
+    onSecondary: () -> Unit,
+    onDelete: () -> Unit,
+    onSuspend: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProductMediaViewer(
+                    mediaUri = offer.mediaUri,
+                    mediaType = offer.mediaType,
+                    modifier = Modifier.size(90.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(offer.restaurantName, fontWeight = FontWeight.Bold, color = CalmSagePrimary, fontSize = 14.sp)
+                    Text(offer.offerTitle, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${offer.price} ر.س • ${offer.district}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (offer.description.isNotBlank()) {
+                        Text(
+                            offer.description,
+                            fontSize = 11.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            if (note != null) {
+                Text(note, fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) {
+                androidx.compose.material3.Button(
+                    onClick = onPrimary,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+                ) { Text(primaryLabel, fontSize = 12.sp, maxLines = 1) }
+                if (secondaryLabel != null) {
+                    OutlinedButton(
+                        onClick = onSecondary,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) { Text(secondaryLabel, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "حذف العرض", tint = MaterialTheme.colorScheme.error)
+                }
+                IconButton(onClick = onSuspend) {
+                    Icon(
+                        Icons.Default.Block,
+                        contentDescription = "إيقاف التاجر",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
         }
     }
 }

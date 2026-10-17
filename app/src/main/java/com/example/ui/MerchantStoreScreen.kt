@@ -139,6 +139,8 @@ fun MerchantStoreScreen(
     var markerGroupOffers by remember { mutableStateOf<List<RestaurantOffer>?>(null) }
 
     val browsePlace by viewModel.browsePlace.collectAsStateWithLifecycle()
+    val myStatus by viewModel.myStatus.collectAsStateWithLifecycle()
+    val merchantStatuses by viewModel.merchantStatuses.collectAsStateWithLifecycle()
     val placeSuggestions by viewModel.placeSuggestions.collectAsStateWithLifecycle()
     val districtCounts by viewModel.districtCounts.collectAsStateWithLifecycle()
 
@@ -607,6 +609,8 @@ fun MerchantStoreScreen(
                                 onDeleteAccount = { viewModel.deleteAccount() },
                                 branchesCount = merchantProfile?.branches?.size ?: 0,
                                 onManageBranches = { viewModel.openBranchesPage() },
+                                isSuspended = myStatus?.suspended == true,
+                                isTrusted = isAdmin || (myStatus?.trusted == true && myStatus?.suspended != true),
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -636,6 +640,12 @@ fun MerchantStoreScreen(
                                 onDeleteOffer = { id -> viewModel.deleteOffer(id) },
                                 reports = reports,
                                 onDismissReport = { viewModel.dismissReport(it) },
+                                merchantStatuses = merchantStatuses,
+                                onApprove = { viewModel.approveOffer(it) },
+                                onTrustMerchant = { viewModel.trustMerchant(it) },
+                                onSuspendMerchant = { id, name -> viewModel.suspendMerchant(id, name) },
+                                onUnsuspend = { viewModel.unsuspendMerchant(it) },
+                                onKeepReported = { viewModel.keepReportedOffer(it) },
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(14.dp)

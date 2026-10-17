@@ -122,6 +122,94 @@ class RestaurantOfferRepository(
         awaitClose { listener?.remove() }
     }
 
+    private fun parseOffers(snapshot: com.google.firebase.firestore.QuerySnapshot?): List<RestaurantOffer> =
+        snapshot?.documents?.mapNotNull { doc ->
+            try {
+                doc.toObject(RestaurantOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
+            } catch (e: Exception) {
+                null
+            }
+        } ?: emptyList()
+
+    /** عروض تاجر معيّن (تشمل اللي بانتظار المراجعة — يسمح بها صاحبها والأدمن). */
+    fun offersByMerchant(uid: String): Flow<List<RestaurantOffer>> = callbackFlow {
+        val listener = offersCollection.whereEqualTo("merchantId", uid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w(TAG, "merchant offers: ${error.message}")
+                    return@addSnapshotListener
+                }
+                trySend(parseOffers(snapshot))
+            }
+        awaitClose { listener.remove() }
+    }
+
+    // ---------------- حالة التاجر (موثوق / موقوف) ----------------
+
+    private val statusCollection = db.collection("merchantStatus")
+
+    fun merchantStatus(uid: String): Flow<MerchantStatus> = callbackFlow {
+        val listener = statusCollection.document(uid).addSnapshotListener { snap, error ->
+            if (error != null) {
+                trySend(MerchantStatus(uid))
+                return@addSnapshotListener
+            }
+            trySend(
+                MerchantStatus(
+                    uid = uid,
+                    trusted = snap?.getBoolean("trusted") ?: false,
+                    suspended = snap?.getBoolean("suspended") ?: false,
+                    name = snap?.getString("name").orEmpty()
+                )
+            )
+        }
+        awaitClose { listener.remove() }
+    }
+
+    /** كل حالات التجار (للأدمن فقط). */
+    val allMerchantStatuses: Flow<List<MerchantStatus>> = callbackFlow {
+        val listener = statusCollection.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                trySend(emptyList())
+                return@addSnapshotListener
+            }
+            trySend(snapshot?.documents?.map { d ->
+                MerchantStatus(
+                    uid = d.id,
+                    trusted = d.getBoolean("trusted") ?: false,
+                    suspended = d.getBoolean("suspended") ?: false,
+                    name = d.getString("name").orEmpty()
+                )
+            } ?: emptyList())
+        }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setMerchantStatus(status: MerchantStatus) {
+        statusCollection.document(status.uid).set(
+            hashMapOf(
+                "trusted" to status.trusted,
+                "suspended" to status.suspended,
+                "name" to status.name,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        ).await()
+    }
+
+    /** يخفي كل عروض تاجر (عند إيقافه). */
+    suspend fun unapproveMerchantOffers(uid: String) {
+        val docs = offersCollection.whereEqualTo("merchantId", uid).get().await().documents
+        for (d in docs) runCatching { d.reference.update("isApproved", false).await() }
+    }
+
+    /** عدد العروض المعتمدة لتاجر (لترقيته لموثوق تلقائياً). */
+    suspend fun approvedCountFor(uid: String): Int =
+        offersCollection.whereEqualTo("merchantId", uid).whereEqualTo("isApproved", true).get().await().size()
+
+    suspend fun resetReportsCount(offerId: String) {
+        offersCollection.document(offerId).update("reportsCount", 0).await()
+    }
+
     private fun RestaurantOffer.toFirestoreMap(docId: String, createdAtValue: Any?): HashMap<String, Any?> =
         hashMapOf(
             "id" to docId,
@@ -152,6 +240,7 @@ class RestaurantOfferRepository(
             "viewsCount" to viewsCount,
             "directionsCount" to directionsCount,
             "whatsappCount" to whatsappCount,
+            "reportsCount" to reportsCount,
             "mediaUris" to mediaUris.take(3),
             "logoUrl" to logoUrl,
             "branches" to branches.take(50).map { it.toMap() },
@@ -184,7 +273,7 @@ class RestaurantOfferRepository(
 
     /** يزيد عدّاد إحصائية واحدة (viewsCount / directionsCount / whatsappCount) بمقدار 1. */
     suspend fun incrementCounter(id: String, field: String) {
-        require(field in setOf("viewsCount", "directionsCount", "whatsappCount"))
+        require(field in setOf("viewsCount", "directionsCount", "whatsappCount", "reportsCount"))
         offersCollection.document(id).update(field, FieldValue.increment(1)).await()
     }
 
@@ -220,7 +309,7 @@ class RestaurantOfferRepository(
      * بعد تعديل الفروع أو الشعار: نحدّث نسخها داخل كل عروض التاجر،
      * عشان يتغيّر الموقع/الرقم/الدوام/الشعار في كل العروض مرة وحدة.
      */
-    suspend fun syncMerchantOffers(uid: String, profile: MerchantProfile) {
+    suspend fun syncMerchantOffers(uid: String, profile: MerchantProfile, keepApproval: Boolean = true) {
         val byId = profile.branches.associateBy { it.id }
         val docs = offersCollection.whereEqualTo("merchantId", uid).get().await().documents
         for (doc in docs) {
@@ -239,7 +328,9 @@ class RestaurantOfferRepository(
                 district = primary?.district?.ifBlank { null } ?: offer.district,
                 phone = primary?.phone?.ifBlank { null } ?: offer.phone,
                 openMinute = primary?.openMinute ?: offer.openMinute,
-                closeMinute = primary?.closeMinute ?: offer.closeMinute
+                closeMinute = primary?.closeMinute ?: offer.closeMinute,
+                // التاجر غير الموثوق: أي تعديل يرجّع العرض للمراجعة
+                isApproved = if (keepApproval) offer.isApproved else false
             )
             if (updated != offer) runCatching { updateOffer(updated) }
         }
@@ -301,6 +392,13 @@ class RestaurantOfferRepository(
         merchantsCollection.document(uid).delete().await()
     }
 }
+
+data class MerchantStatus(
+    val uid: String,
+    val trusted: Boolean = false,
+    val suspended: Boolean = false,
+    val name: String = ""
+)
 
 data class OfferReport(
     val id: String,

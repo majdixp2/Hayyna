@@ -45,6 +45,8 @@ data class RestaurantOffer(
     // عدد مرات الضغط على "الاتجاه" و"واتساب" (إحصائيات حقيقية للتاجر)
     val directionsCount: Int = 0,
     val whatsappCount: Int = 0,
+    // عدد البلاغات (3 أو أكثر = يختفي تلقائياً لين يراجعه الأدمن)
+    val reportsCount: Int = 0,
     // وقت الدوام بالدقائق من منتصف الليل (-1 = غير محدد). يدعم الدوام بعد منتصف الليل (مثلاً 13:00 حتى 02:00)
     val openMinute: Int = -1,
     val closeMinute: Int = -1,

@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -117,16 +119,39 @@ class MerchantViewModel(
     fun offerAtBranch(offer: RestaurantOffer, branch: com.example.data.model.Branch): RestaurantOffer =
         withDistanceTo(if (offer.branches.isEmpty()) offer else offer.atBranch(branch), userLocation.value)
 
-    /** كل العروض (للأدمن وللتاجر) مع المسافة الحقيقية. */
-    val allOffers: StateFlow<List<RestaurantOffer>> = combine(repository.allOffers, userLocation) { offers, loc ->
-        withDistance(offers, loc)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** كل العروض — للأدمن فقط (تشمل اللي بانتظار المراجعة). */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allOffers: StateFlow<List<RestaurantOffer>> = isAdmin
+        .flatMapLatest { admin -> if (admin) repository.allOffers else flowOf(emptyList()) }
+        .combine(userLocation) { offers, loc -> withDistance(offers, loc) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** عروض التاجر الحالي فقط. */
-    val merchantOffers: StateFlow<List<RestaurantOffer>> = combine(allOffers, currentUser) { offers, user ->
-        if (user == null) emptyList() else offers.filter { it.merchantId == user.uid }
-            .sortedByDescending { it.createdAt?.toDate()?.time ?: 0L }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** عروض التاجر الحالي فقط (المعتمدة واللي بانتظار المراجعة). */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val merchantOffers: StateFlow<List<RestaurantOffer>> = currentUser
+        .flatMapLatest { user -> if (user == null) flowOf(emptyList()) else repository.offersByMerchant(user.uid) }
+        .combine(userLocation) { offers, loc ->
+            withDistance(offers, loc).sortedByDescending { it.createdAt?.toDate()?.time ?: 0L }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // ---------------- الحماية: حالة التاجر ----------------
+
+    /** حالة التاجر الحالي (موثوق / موقوف). */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val myStatus: StateFlow<com.example.data.repository.MerchantStatus?> = currentUser
+        .flatMapLatest { user -> if (user == null) flowOf(null) else repository.merchantStatus(user.uid) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** الأدمن والتاجر الموثوق ينشرون مباشرة. */
+    private val canPublishDirectly: Boolean
+        get() = isAdmin.value || (myStatus.value?.trusted == true && myStatus.value?.suspended != true)
+
+    /** حالات كل التجار (للأدمن). */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val merchantStatuses: StateFlow<List<com.example.data.repository.MerchantStatus>> = isAdmin
+        .flatMapLatest { admin -> if (admin) repository.allMerchantStatuses else flowOf(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val approvedOffers: StateFlow<List<RestaurantOffer>> =
         combine(repository.approvedOffers, userLocation) { offers, loc -> withDistance(offers, loc) }
@@ -206,6 +231,7 @@ class MerchantViewModel(
         val params = baseParams.copy(favoritesOnly = favOnly)
         val filtered = offers.filter { offer ->
             if (OfferTime.isExpired(offer, now)) return@filter false
+            if (offer.reportsCount >= AUTO_HIDE_REPORTS) return@filter false
             if (params.favoritesOnly && offer.id !in favIds) return@filter false
             val matchesRegion = params.region == "الكل" || regionKey(params.region).let { key ->
                 offer.region.contains(key) || offer.district.contains(key)
@@ -407,6 +433,19 @@ class MerchantViewModel(
             toast("سجّل الدخول بحساب Google أولاً لإضافة عرض")
             return
         }
+        if (myStatus.value?.suspended == true) {
+            toast("حسابك موقوف حالياً. تواصل مع إدارة حيّنا.")
+            return
+        }
+        val direct = canPublishDirectly
+        if (!direct && offer.id.isBlank()) {
+            val dayAgo = System.currentTimeMillis() - 24 * 3_600_000L
+            val today = merchantOffers.value.count { (it.createdAt?.toDate()?.time ?: 0L) > dayAgo }
+            if (today >= NEW_MERCHANT_DAILY_LIMIT) {
+                toast("وصلت للحد اليومي ($NEW_MERCHANT_DAILY_LIMIT عروض) للحسابات الجديدة. جرّب بكرة 🙏")
+                return
+            }
+        }
         viewModelScope.launch {
             isUploadingMedia.value = true
             try {
@@ -418,7 +457,10 @@ class MerchantViewModel(
                 val cloudUrl = uploaded.firstOrNull() ?: throw MediaUploader.UploadException("يرجى إرفاق صورة أو فيديو للعرض.")
                 val isUpdate = offer.id.isNotBlank()
                 if (isUpdate) {
-                    repository.updateOffer(offer.copy(mediaUri = cloudUrl, mediaUris = uploaded))
+                    // تعديل التاجر غير الموثوق يرجّع العرض للمراجعة
+                    repository.updateOffer(
+                        offer.copy(mediaUri = cloudUrl, mediaUris = uploaded, isApproved = if (direct) offer.isApproved else false)
+                    )
                 } else {
                     repository.insertOffer(
                         offer.copy(
@@ -426,7 +468,8 @@ class MerchantViewModel(
                             mediaUri = cloudUrl,
                             mediaUris = uploaded,
                             isFeatured = false,
-                            isApproved = true,
+                            isApproved = direct,
+                            reportsCount = 0,
                             viewsCount = 0,
                             directionsCount = 0,
                             whatsappCount = 0
@@ -451,7 +494,13 @@ class MerchantViewModel(
                 merchantProfile.value = profile
                 runCatching { repository.saveMerchantProfile(user.uid, profile) }
                 closeAddOfferSheet()
-                toast(if (isUpdate) "تم حفظ التعديلات ✅" else "تم نشر العرض ✅")
+                toast(
+                    when {
+                        !direct -> "وصل عرضك للمراجعة ⏳ بيظهر على الخريطة بعد الموافقة"
+                        isUpdate -> "تم حفظ التعديلات ✅"
+                        else -> "تم نشر العرض ✅"
+                    }
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -505,7 +554,7 @@ class MerchantViewModel(
                 )
                 repository.saveMerchantProfile(user.uid, updated)
                 merchantProfile.value = updated
-                runCatching { repository.syncMerchantOffers(user.uid, updated) }
+                runCatching { repository.syncMerchantOffers(user.uid, updated, keepApproval = canPublishDirectly) }
                 isBranchesPageOpen.value = false
                 toast("تم حفظ متجرك وفروعك ✅")
             } catch (e: CancellationException) {
@@ -526,10 +575,74 @@ class MerchantViewModel(
         }
     }
 
+    private val reportedPrefs = application.getSharedPreferences("hayyna_reported", android.content.Context.MODE_PRIVATE)
+
     fun reportOffer(offer: RestaurantOffer, reason: String) {
         launchSafely("تعذّر إرسال البلاغ. حاول مرة ثانية.") {
             repository.reportOffer(offer, reason, currentUser.value?.uid)
+            // كل جهاز يحسب بلاغ واحد فقط لكل عرض
+            if (!reportedPrefs.getBoolean(offer.id, false)) {
+                reportedPrefs.edit().putBoolean(offer.id, true).apply()
+                runCatching { repository.incrementCounter(offer.id, "reportsCount") }
+            }
             toast("وصل بلاغك، شكراً لك 🙏")
+        }
+    }
+
+    // ---------------- أدوات الأدمن: المراجعة والتوثيق والإيقاف ----------------
+
+    /** يعتمد العرض، وبعد عرضين معتمدين يصير التاجر موثوق تلقائياً. */
+    fun approveOffer(offer: RestaurantOffer) {
+        launchSafely("تعذّر اعتماد العرض.") {
+            repository.setOfferApproved(offer.id, true)
+            val count = runCatching { repository.approvedCountFor(offer.merchantId) }.getOrDefault(0)
+            val current = merchantStatuses.value.firstOrNull { it.uid == offer.merchantId }
+            if (count >= 2 && current?.trusted != true && current?.suspended != true) {
+                repository.setMerchantStatus(
+                    com.example.data.repository.MerchantStatus(offer.merchantId, trusted = true, name = offer.restaurantName)
+                )
+                toast("تم الاعتماد ✅ وصار ${offer.restaurantName} موثوق (ينشر مباشرة)")
+            } else {
+                toast("تم اعتماد العرض ✅")
+            }
+        }
+    }
+
+    /** يوثّق التاجر مباشرة ويعتمد العرض. */
+    fun trustMerchant(offer: RestaurantOffer) {
+        launchSafely("تعذّر توثيق التاجر.") {
+            repository.setMerchantStatus(
+                com.example.data.repository.MerchantStatus(offer.merchantId, trusted = true, name = offer.restaurantName)
+            )
+            repository.setOfferApproved(offer.id, true)
+            toast("صار ${offer.restaurantName} موثوق ✅")
+        }
+    }
+
+    /** يوقف التاجر ويخفي كل عروضه. */
+    fun suspendMerchant(merchantId: String, name: String) {
+        launchSafely("تعذّر إيقاف الحساب.") {
+            repository.setMerchantStatus(
+                com.example.data.repository.MerchantStatus(merchantId, trusted = false, suspended = true, name = name)
+            )
+            repository.unapproveMerchantOffers(merchantId)
+            toast("تم إيقاف $name وإخفاء عروضه")
+        }
+    }
+
+    fun unsuspendMerchant(status: com.example.data.repository.MerchantStatus) {
+        launchSafely("تعذّر إلغاء الإيقاف.") {
+            repository.setMerchantStatus(status.copy(suspended = false, trusted = false))
+            toast("تم إلغاء الإيقاف — عروضه الجاية تمر بالمراجعة")
+        }
+    }
+
+    /** العرض المبلّغ عنه سليم: يرجع يظهر ويتصفّر عدّاد البلاغات. */
+    fun keepReportedOffer(offer: RestaurantOffer) {
+        launchSafely("تعذّر تحديث العرض.") {
+            repository.resetReportsCount(offer.id)
+            reports.value.filter { it.offerId == offer.id }.forEach { runCatching { repository.deleteReport(it.id) } }
+            toast("رجع العرض يظهر ✅")
         }
     }
 
@@ -609,5 +722,9 @@ class MerchantViewModel(
 
     companion object {
         private const val TAG = "MerchantViewModel"
+        /** عدد البلاغات اللي يختفي بعدها العرض تلقائياً لين يراجعه الأدمن. */
+        const val AUTO_HIDE_REPORTS = 3
+        /** حد العروض اليومية للتاجر الجديد (غير الموثوق). */
+        const val NEW_MERCHANT_DAILY_LIMIT = 3
     }
 }
