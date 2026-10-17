@@ -50,6 +50,15 @@ data class RestaurantOffer(
     val closeMinute: Int = -1,
     // وقت انتهاء العرض (null = بدون انتهاء)
     val expiresAt: Timestamp? = null,
+    // صور العرض (حتى 3). mediaUri يبقى الصورة الأولى/الغلاف للتوافق مع العروض القديمة.
+    val mediaUris: List<String> = emptyList(),
+    // شعار المطعم (يظهر صغير على أيقونة الخريطة)
+    val logoUrl: String = "",
+    // الفروع اللي يشملها العرض (نسخة من ملف المطعم وقت النشر)
+    val branches: List<Branch> = emptyList(),
     @ServerTimestamp
-    val createdAt: Timestamp? = null
+    val createdAt: Timestamp? = null,
+    // محلي فقط (ما ينحفظ): الفرع اللي اختاره المستخدم أو الأقرب له
+    @get:com.google.firebase.firestore.Exclude
+    val selectedBranchId: String = ""
 )

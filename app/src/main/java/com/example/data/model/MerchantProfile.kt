@@ -13,7 +13,9 @@ data class MerchantProfile(
     val district: String = "",
     val cuisineType: String = "",
     val openMinute: Int = -1,
-    val closeMinute: Int = -1
+    val closeMinute: Int = -1,
+    val logoUrl: String = "",
+    val branches: List<Branch> = emptyList()
 ) {
     val hasLocation: Boolean get() = latitude != 0.0 || longitude != 0.0
 }

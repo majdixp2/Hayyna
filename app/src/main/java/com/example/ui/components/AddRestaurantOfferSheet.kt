@@ -1,96 +1,59 @@
 package com.example.ui.components
 
-import com.example.data.model.MerchantProfile
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.compose.runtime.SideEffect
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.rememberCoroutineScope
-import com.google.android.gms.location.Priority
-import com.example.data.ReverseGeocoder
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.foundation.background
-import com.example.data.model.OfferTime
-import android.Manifest
-import android.content.pm.PackageManager
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.LocationCity
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Videocam
-import androidx.core.content.ContextCompat
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.rememberCameraPositionState
-import com.google.maps.android.compose.rememberMarkerState
-
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -98,37 +61,42 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.Branch
 import com.example.data.model.LocationPresets
 import com.example.data.model.MediaType
+import com.example.data.model.MerchantProfile
+import com.example.data.model.OfferTime
 import com.example.data.model.RestaurantOffer
+import com.example.data.model.gallery
 import com.example.ui.theme.CalmSagePrimary
 
-@OptIn(ExperimentalMaterial3Api::class)
+private const val MAX_IMAGES = 3
+
+/**
+ * صفحة إضافة/تعديل عرض.
+ * - إذا التاجر عنده فروع: يختار "كل الفروع" أو فروع معيّنة.
+ * - إذا ما عنده فروع: يحدد موقع المحل هنا، ويصير أول فرع له تلقائياً.
+ */
 @Composable
 fun AddRestaurantOfferSheet(
     onDismiss: () -> Unit,
     onSaveOffer: (RestaurantOffer) -> Unit,
     isSaving: Boolean = false,
     editingOffer: RestaurantOffer? = null,
-    profile: MerchantProfile? = null
+    profile: MerchantProfile? = null,
+    onManageBranches: () -> Unit = {}
 ) {
     val isEditing = editingOffer != null
-    // القيم الأولية: من العرض اللي نعدّله، وإلا من ملف المطعم المحفوظ
-    val startLat = editingOffer?.latitude ?: profile?.takeIf { it.hasLocation }?.latitude
-    val startLng = editingOffer?.longitude ?: profile?.takeIf { it.hasLocation }?.longitude
-    val startOpen = editingOffer?.openMinute?.takeIf { it >= 0 } ?: profile?.openMinute?.takeIf { it >= 0 }
-    val startClose = editingOffer?.closeMinute?.takeIf { it >= 0 } ?: profile?.closeMinute?.takeIf { it >= 0 }
+    val profileBranches = profile?.branches.orEmpty()
+    val hasBranches = profileBranches.isNotEmpty()
 
-    val context = LocalContext.current
-
-
+    // ---------- بيانات العرض ----------
     var restaurantName by remember { mutableStateOf(editingOffer?.restaurantName ?: profile?.restaurantName.orEmpty()) }
     var offerTitle by remember { mutableStateOf(editingOffer?.offerTitle.orEmpty()) }
     var description by remember { mutableStateOf(editingOffer?.description.orEmpty()) }
@@ -137,127 +105,57 @@ fun AddRestaurantOfferSheet(
     }
     var priceText by remember { mutableStateOf(editingOffer?.price?.let { formatPrice(it) }.orEmpty()) }
     var originalPriceText by remember { mutableStateOf(editingOffer?.originalPrice?.let { formatPrice(it) }.orEmpty()) }
-    var discountBadge by remember { mutableStateOf(editingOffer?.discountBadge ?: LocationPresets.offerBadges[0]) }
 
+    // ---------- الصور / الفيديو ----------
     var mediaType by remember { mutableStateOf(editingOffer?.mediaType ?: MediaType.IMAGE) }
-    var mediaUri by remember { mutableStateOf(editingOffer?.mediaUri.orEmpty()) }
-    var isPromotionalVideo by remember { mutableStateOf(editingOffer?.isPromotionalVideo ?: false) }
+    val media = remember { mutableStateListOf<String>().apply { editingOffer?.let { addAll(it.gallery) } } }
 
-    // Location
-    var selectedRegion by remember { mutableStateOf(editingOffer?.region ?: profile?.region.orEmpty()) }
-    var districtText by remember { mutableStateOf(editingOffer?.district ?: profile?.district.orEmpty()) }
-    var isLocating by remember { mutableStateOf(false) }
-    var locationStatus by remember { mutableStateOf("") }
-    var latitude by remember { mutableDoubleStateOf(startLat ?: LocationPresets.regions[0].districts[0].latitude) }
-    var longitude by remember { mutableDoubleStateOf(startLng ?: LocationPresets.regions[0].districts[0].longitude) }
-    // أول مرة نجيب الحي من Google فقط إذا ما عندنا حي محفوظ
-    var skipNextGeocode by remember { mutableStateOf(startLat != null && districtText.isNotBlank()) }
+    // ---------- الفروع ----------
+    val initiallySelected = editingOffer?.branches?.map { it.id }?.toSet().orEmpty()
+    var allBranches by remember {
+        mutableStateOf(!isEditing || initiallySelected.isEmpty() || profileBranches.all { it.id in initiallySelected })
+    }
+    val selectedIds = remember { mutableStateListOf<String>().apply { addAll(initiallySelected) } }
 
-    var phone by remember { mutableStateOf((editingOffer?.phone ?: profile?.phone.orEmpty()).let(::toLocalPhone)) }
-
-    // مدة العرض (index في EXPIRY_OPTIONS) وأوقات الدوام بالدقائق من منتصف الليل
-    var expiryOptionIndex by remember { mutableStateOf(0) }
-    // عند التعديل: الافتراضي إبقاء مدة العرض كما هي
-    var keepCurrentExpiry by remember { mutableStateOf(isEditing) }
+    // ---------- موقع (لما ما فيه فروع) ----------
+    val startLat = editingOffer?.latitude ?: profile?.takeIf { it.hasLocation }?.latitude
+    val startLng = editingOffer?.longitude ?: profile?.takeIf { it.hasLocation }?.longitude
+    var latitude by remember { mutableStateOf(startLat ?: 24.7136) }
+    var longitude by remember { mutableStateOf(startLng ?: 46.6753) }
+    var region by remember { mutableStateOf(editingOffer?.region ?: profile?.region.orEmpty()) }
+    var district by remember { mutableStateOf(editingOffer?.district ?: profile?.district.orEmpty()) }
+    var phone by remember { mutableStateOf(toLocalPhone(editingOffer?.phone ?: profile?.phone.orEmpty())) }
+    val startOpen = editingOffer?.openMinute?.takeIf { it >= 0 } ?: profile?.openMinute?.takeIf { it >= 0 }
+    val startClose = editingOffer?.closeMinute?.takeIf { it >= 0 } ?: profile?.closeMinute?.takeIf { it >= 0 }
     var openMinute by remember { mutableStateOf(startOpen ?: (12 * 60)) }
     var closeMinute by remember { mutableStateOf(startClose ?: 0) }
     var isOpen24h by remember { mutableStateOf(startOpen != null && startOpen == startClose) }
 
-    val scope = rememberCoroutineScope()
-
-    // يجيب موقع الجهاز الحالي ويحرّك الدبوس عليه
-    fun fetchCurrentLocation() {
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!granted) return
-        isLocating = true
-        locationStatus = "جاري تحديد موقعك..."
-        try {
-            LocationServices.getFusedLocationProviderClient(context)
-                .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                .addOnSuccessListener { loc ->
-                    isLocating = false
-                    if (loc != null) {
-                        latitude = loc.latitude
-                        longitude = loc.longitude
-                    } else {
-                        locationStatus = "ما قدرنا نحدد موقعك. تأكد إن الـ GPS شغّال، أو حرّك الدبوس يدوياً."
-                    }
-                }
-                .addOnFailureListener {
-                    isLocating = false
-                    locationStatus = "ما قدرنا نحدد موقعك. حرّك الدبوس يدوياً."
-                }
-        } catch (e: SecurityException) {
-            isLocating = false
-        }
-    }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { perms ->
-        if (perms.values.any { it }) fetchCurrentLocation()
-        else locationStatus = "بدون صلاحية الموقع: حرّك الدبوس على مكان محلك."
-    }
-
-    // عند فتح الشاشة: نحدد موقع التاجر تلقائياً
-    LaunchedEffect(Unit) {
-        if (startLat != null) {
-            locationStatus = if (isEditing) "موقع العرض الحالي" else "✓ موقع محلك المحفوظ"
-            return@LaunchedEffect
-        }
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (granted) fetchCurrentLocation()
-        else locationPermissionLauncher.launch(
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-        )
-    }
-
-    // كل ما تغيّر مكان الدبوس: نجيب المنطقة والحي من Google تلقائياً
-    LaunchedEffect(latitude, longitude) {
-        if (skipNextGeocode) {
-            skipNextGeocode = false
-            return@LaunchedEffect
-        }
-        kotlinx.coroutines.delay(500)
-        val place = ReverseGeocoder.lookup(context, latitude, longitude)
-        if (place != null) {
-            if (place.region.isNotBlank()) selectedRegion = place.region
-            if (place.district.isNotBlank()) districtText = place.district
-            locationStatus = if (place.district.isNotBlank()) "✓ تم تحديد الحي تلقائياً" else "اكتب اسم الحي"
-        }
-    }
+    // ---------- المدة ----------
+    var expiryOptionIndex by remember { mutableStateOf(0) }
+    var keepCurrentExpiry by remember { mutableStateOf(isEditing) }
 
     var errorMessage by remember { mutableStateOf("") }
-
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            mediaUri = uri.toString()
-            mediaType = MediaType.IMAGE
-            isPromotionalVideo = false
-        }
-    }
-
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            mediaUri = uri.toString()
-            mediaType = MediaType.VIDEO
-            isPromotionalVideo = true
-            discountBadge = "فيديو إعلاني حصري 🎬"
-        }
-    }
-
-    val currentRegionDistricts = remember(selectedRegion) {
-        LocationPresets.regions.find { it.name == selectedRegion }?.districts ?: emptyList()
-    }
-
     var showDiscardDialog by remember { mutableStateOf(false) }
-    val hasUnsavedInput = offerTitle.isNotBlank() || mediaUri.isNotBlank() || priceText.isNotBlank() || description.isNotBlank()
+
+    val imagesPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_IMAGES)
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            if (mediaType != MediaType.IMAGE) media.clear()
+            mediaType = MediaType.IMAGE
+            uris.forEach { if (media.size < MAX_IMAGES) media.add(it.toString()) }
+        }
+    }
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
+        if (uri != null) {
+            media.clear()
+            media.add(uri.toString())
+            mediaType = MediaType.VIDEO
+        }
+    }
+
+    val hasUnsavedInput = offerTitle.isNotBlank() || media.isNotEmpty() || priceText.isNotBlank() || description.isNotBlank()
     fun requestClose() {
         when {
             isSaving -> Unit
@@ -266,486 +164,369 @@ fun AddRestaurantOfferSheet(
         }
     }
 
-    // صفحة كاملة بدل نافذة سفلية: ما تنقفل بالسحب بالغلط، والخريطة الصغيرة تتحرك براحتها
-    // زر الرجوع في الجوال يقفل الصفحة (مع سؤال لو فيه بيانات)
+    fun submit() {
+        val price = priceText.toDoubleOrNull()
+        val original = originalPriceText.toDoubleOrNull()
+        val chosenBranches: List<Branch> = if (hasBranches) {
+            if (allBranches) profileBranches else profileBranches.filter { it.id in selectedIds }
+        } else {
+            val normalized = normalizeSaudiPhone(phone)
+            if (normalized == null || district.isBlank()) emptyList()
+            else listOf(
+                Branch(
+                    id = "main",
+                    name = "الفرع الرئيسي",
+                    latitude = latitude,
+                    longitude = longitude,
+                    region = region.trim(),
+                    district = district.trim(),
+                    phone = normalized,
+                    openMinute = if (isOpen24h) 0 else openMinute,
+                    closeMinute = if (isOpen24h) 0 else closeMinute
+                )
+            )
+        }
+        errorMessage = when {
+            restaurantName.isBlank() -> "يرجى كتابة اسم المطعم."
+            offerTitle.isBlank() -> "يرجى كتابة عنوان العرض."
+            price == null || price <= 0 -> "يرجى إدخال سعر صحيح للعرض."
+            media.isEmpty() -> "يرجى إرفاق صورة أو فيديو للعرض."
+            !hasBranches && district.isBlank() -> "حدد موقع المحل واكتب الحي."
+            !hasBranches && normalizeSaudiPhone(phone) == null -> "يرجى كتابة رقم جوال صحيح مثل 05xxxxxxxx."
+            chosenBranches.isEmpty() -> "اختر فرع واحد على الأقل."
+            else -> ""
+        }
+        if (errorMessage.isNotBlank() || price == null) return
+
+        val primary = chosenBranches.first()
+        val discountPct = if (original != null && original > price) ((original - price) / original * 100).toInt() else 0
+        val badge = when {
+            discountPct >= 1 -> "خصم $discountPct% 🔥"
+            mediaType == MediaType.VIDEO -> "فيديو إعلاني 🎬"
+            else -> ""
+        }
+        val offer = (editingOffer ?: RestaurantOffer()).copy(
+            restaurantName = restaurantName.trim(),
+            offerTitle = offerTitle.trim(),
+            description = description.trim().ifBlank { "عرض متاح لجميع زبائن المطعم." },
+            cuisineType = cuisineType,
+            price = price,
+            originalPrice = original,
+            discountBadge = badge,
+            mediaType = mediaType,
+            mediaUri = media.first(),
+            mediaUris = media.toList(),
+            isPromotionalVideo = mediaType == MediaType.VIDEO,
+            branches = chosenBranches,
+            latitude = primary.latitude,
+            longitude = primary.longitude,
+            region = primary.region,
+            district = primary.district,
+            phone = primary.phone,
+            openMinute = primary.openMinute,
+            closeMinute = primary.closeMinute,
+            workingHours = OfferTime.hoursText(RestaurantOffer(openMinute = primary.openMinute, closeMinute = primary.closeMinute)),
+            logoUrl = profile?.logoUrl.orEmpty(),
+            expiresAt = if (keepCurrentExpiry) editingOffer?.expiresAt else EXPIRY_OPTIONS[expiryOptionIndex].expiresAt()
+        )
+        onSaveOffer(offer)
+    }
+
     BackHandler { requestClose() }
 
-    // صفحة كاملة فوق التطبيق (مو نافذة منفصلة) عشان تحترم شريط الحالة وشريط التنقل والكيبورد بدقة
+    // صفحة كاملة فوق التطبيق، تحترم شريط الحالة وشريط التنقل والكيبورد
     Box(modifier = Modifier.fillMaxSize()) {
-      CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Surface(
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("add_restaurant_offer_sheet")
         ) {
-          Column(
-              modifier = Modifier
-                  .fillMaxSize()
-                  .windowInsetsPadding(WindowInsets.safeDrawing)
-          ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (isEditing) "تعديل العرض" else "عرض جديد",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = { requestClose() }) {
-                    Icon(imageVector = Icons.Default.Close, contentDescription = "إغلاق")
-                }
-            }
-            androidx.compose.material3.HorizontalDivider()
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(top = 12.dp, bottom = 36.dp)
-        ) {
-            Text(
-                text = "سجل عرض مطعمك، أرفق صورة أو فيديو إعلاني، وحدد الحي وموقع الخريطة.",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 14.dp)
-            )
-
-            // Restaurant Name
-            OutlinedTextField(
-                value = restaurantName,
-                onValueChange = { restaurantName = it },
-                label = { Text("اسم المطعم *") },
-                placeholder = { Text("مثال: برجر هاوس، شاورما السلطان...") },
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null) },
-                modifier = Modifier.fillMaxWidth().testTag("input_restaurant_name")
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Offer Title
-            OutlinedTextField(
-                value = offerTitle,
-                onValueChange = { offerTitle = it },
-                label = { Text("عنوان العرض الترويجي *") },
-                placeholder = { Text("مثال: وجبة برجر + بطاطس ومشروب مجاناً") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("input_offer_title")
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Cuisine Type chips
-            Text("نوع المأكولات:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 4.dp)) {
-                items(LocationPresets.cuisines.filter { it != "الكل" }) { cui ->
-                    FilterChip(
-                        selected = cuisineType == cui,
-                        onClick = { cuisineType = cui },
-                        label = { Text(cui, fontSize = 11.sp) }
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isEditing) "تعديل العرض" else "عرض جديد",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
                     )
+                    IconButton(onClick = { requestClose() }) { Icon(Icons.Default.Close, contentDescription = "إغلاق") }
                 }
-            }
+                HorizontalDivider()
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Price & Original Price
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = priceText,
-                    onValueChange = { priceText = it },
-                    label = { Text("سعر العرض (ر.س) *") },
-                    placeholder = { Text("45") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f).testTag("input_offer_price")
-                )
-
-                OutlinedTextField(
-                    value = originalPriceText,
-                    onValueChange = { originalPriceText = it },
-                    label = { Text("قبل الخصم (اختياري)") },
-                    placeholder = { Text("60") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Description
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("تفاصيل العرض ومحتويات الوجبة *") },
-                minLines = 2,
-                maxLines = 4,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Media attachment box (يرفق صورة أو فيديو إعلاني)
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("إرفاق الوسائط (صورة أو فيديو إعلاني):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (mediaType == MediaType.IMAGE) CalmSagePrimary else MaterialTheme.colorScheme.outlineVariant
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("إرفاق صورة 📷", fontSize = 11.sp)
-                        }
-
-                        Button(
-                            onClick = { videoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (mediaType == MediaType.VIDEO) Color(0xFFE05A47) else MaterialTheme.colorScheme.outlineVariant
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("إرفاق فيديو 🎬", fontSize = 11.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Media preview
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(130.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 12.dp, bottom = 36.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // ---------- الصور / الفيديو ----------
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        if (mediaUri.isBlank()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "أرفق صورة أو فيديو للعرض 📷",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        Column(Modifier.padding(12.dp)) {
+                            Text("صور العرض (حتى $MAX_IMAGES) أو فيديو", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { imagesPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                    enabled = !(mediaType == MediaType.IMAGE && media.size >= MAX_IMAGES),
+                                    colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("صور 📷", fontSize = 13.sp)
+                                }
+                                Button(
+                                    onClick = { videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE05A47)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("فيديو 🎬", fontSize = 13.sp)
+                                }
                             }
-                        } else {
-                            ProductMediaViewer(
-                                mediaUri = mediaUri,
-                                mediaType = mediaType,
-                                isPromotionalVideo = isPromotionalVideo,
-                                promotionalBadge = discountBadge,
-                                autoPlayVideo = false,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // موقع المحل: يتحدد تلقائياً من الـ GPS، والتاجر يقدر يحرّك الدبوس
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = CalmSagePrimary, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("موقع المحل", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = CalmSagePrimary)
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Button(
-                        onClick = {
-                            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                            if (granted) fetchCurrentLocation()
-                            else locationPermissionLauncher.launch(
-                                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                            )
-                        },
-                        enabled = !isLocating,
-                        colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("use_my_location_btn")
-                    ) {
-                        if (isLocating) {
-                            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                        } else {
-                            Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("استخدم موقعي الحالي", fontWeight = FontWeight.Bold, maxLines = 1)
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, CalmSagePrimary.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    ) {
-                        val miniMapCameraState = rememberCameraPositionState {
-                            position = CameraPosition.fromLatLngZoom(LatLng(latitude, longitude), 16f)
-                        }
-
-                        LaunchedEffect(latitude, longitude) {
-                            miniMapCameraState.position = CameraPosition.fromLatLngZoom(LatLng(latitude, longitude), 16f)
-                        }
-
-                        GoogleMap(
-                            modifier = Modifier.fillMaxSize(),
-                            cameraPositionState = miniMapCameraState,
-                            properties = com.google.maps.android.compose.MapProperties(
-                                mapStyleOptions = CleanMapStyle.options
-                            ),
-                            onMapClick = { clickedLatLng ->
-                                latitude = clickedLatLng.latitude
-                                longitude = clickedLatLng.longitude
-                            },
-                            uiSettings = MapUiSettings(
-                                zoomControlsEnabled = false,
-                                myLocationButtonEnabled = false,
-                                mapToolbarEnabled = false
-                            )
-                        ) {
-                            val pinState = rememberMarkerState(position = LatLng(latitude, longitude))
-                            LaunchedEffect(latitude, longitude) {
-                                pinState.position = LatLng(latitude, longitude)
-                            }
-                            // عند انتهاء سحب الدبوس نحفظ موقعه الجديد
-                            LaunchedEffect(pinState) {
-                                androidx.compose.runtime.snapshotFlow { pinState.isDragging to pinState.position }
-                                    .collect { (dragging, pos) ->
-                                        if (!dragging && (pos.latitude != latitude || pos.longitude != longitude)) {
-                                            latitude = pos.latitude
-                                            longitude = pos.longitude
+                            Spacer(Modifier.height(10.dp))
+                            if (media.isEmpty()) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(110.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("أرفق صور العرض أو فيديو 📷", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            } else {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(media.toList()) { uri ->
+                                        Box(Modifier.size(width = 120.dp, height = 110.dp)) {
+                                            ProductMediaViewer(
+                                                mediaUri = uri,
+                                                mediaType = mediaType,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = Color.Black.copy(alpha = 0.6f),
+                                                modifier = Modifier
+                                                    .align(Alignment.TopStart)
+                                                    .padding(4.dp)
+                                                    .size(26.dp)
+                                            ) {
+                                                IconButton(onClick = { media.remove(uri) }) {
+                                                    Icon(Icons.Default.Close, contentDescription = "إزالة", tint = Color.White, modifier = Modifier.size(16.dp))
+                                                }
+                                            }
                                         }
                                     }
+                                }
+                                if (mediaType == MediaType.IMAGE) {
+                                    Text(
+                                        "أول صورة هي الغلاف اللي يطلع على الخريطة.",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 6.dp)
+                                    )
+                                }
                             }
-                            Marker(
-                                state = pinState,
-                                draggable = true,
-                                title = restaurantName.ifBlank { "موقع المحل" }
-                            )
                         }
                     }
 
-                    Text(
-                        text = locationStatus.ifBlank { "اضغط على الخريطة أو اسحب الدبوس لتعديل مكان محلك" },
-                        fontSize = 12.sp,
-                        color = if (locationStatus.startsWith("✓")) Color(0xFF15803D) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp, bottom = 8.dp)
+                    OutlinedTextField(
+                        value = offerTitle,
+                        onValueChange = { offerTitle = it },
+                        label = { Text("عنوان العرض *") },
+                        placeholder = { Text("مثال: وجبة برجر + بطاطس ومشروب مجاناً") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("input_offer_title")
                     )
 
-                    OutlinedTextField(
-                        value = districtText,
-                        onValueChange = { districtText = it },
-                        label = { Text("الحي *") },
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Default.LocationCity, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth().testTag("input_restaurant_district")
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = priceText,
+                            onValueChange = { priceText = it },
+                            label = { Text("السعر (ر.س) *") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("input_offer_price")
+                        )
+                        OutlinedTextField(
+                            value = originalPriceText,
+                            onValueChange = { originalPriceText = it },
+                            label = { Text("قبل الخصم") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.height(6.dp))
-
                     OutlinedTextField(
-                        value = selectedRegion,
-                        onValueChange = { selectedRegion = it },
-                        label = { Text("المنطقة / المدينة") },
-                        singleLine = true,
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("تفاصيل العرض") },
+                        minLines = 2,
+                        maxLines = 4,
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // مدة العرض
-            Text("مدة العرض ⏰", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                if (isEditing) {
-                    item {
-                        val current = editingOffer?.let { OfferTime.remainingText(it) } ?: "بدون انتهاء"
-                        FilterChip(
-                            selected = keepCurrentExpiry,
-                            onClick = { keepCurrentExpiry = true },
-                            label = { Text("بدون تغيير ($current)", fontSize = 12.sp) }
-                        )
-                    }
-                }
-                items(EXPIRY_OPTIONS.size) { index ->
-                    FilterChip(
-                        selected = !keepCurrentExpiry && expiryOptionIndex == index,
-                        onClick = {
-                            keepCurrentExpiry = false
-                            expiryOptionIndex = index
-                        },
-                        label = { Text(EXPIRY_OPTIONS[index].label, fontSize = 12.sp) }
-                    )
-                }
-            }
-            Text(
-                "بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة.",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // أوقات الدوام (لفلتر "مفتوح الآن")
-            Text("أوقات الدوام 🕐", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(vertical = 4.dp)
-            ) {
-                Checkbox(checked = isOpen24h, onCheckedChange = { isOpen24h = it })
-                Text("مفتوح 24 ساعة", fontSize = 13.sp)
-            }
-            if (!isOpen24h) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TimeDropdown(
-                        label = "يفتح",
-                        minute = openMinute,
-                        onMinuteChange = { openMinute = it },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TimeDropdown(
-                        label = "يقفل",
-                        minute = closeMinute,
-                        onMinuteChange = { closeMinute = it },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Phone
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text("رقم واتساب / جوال المطعم *") },
-                placeholder = { Text("05xxxxxxxx") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-            // زر النشر ثابت أسفل الصفحة، يظهر دائماً
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 8.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp)) {
-                if (errorMessage.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Button(
-                    onClick = {
-                        val price = priceText.toDoubleOrNull()
-                        if (restaurantName.isBlank()) {
-                            errorMessage = "يرجى كتابة اسم المطعم."
-                        } else if (offerTitle.isBlank()) {
-                            errorMessage = "يرجى كتابة عنوان العرض."
-                        } else if (price == null || price <= 0) {
-                            errorMessage = "يرجى إدخال سعر صحيح للعرض."
-                        } else if (districtText.isBlank()) {
-                            errorMessage = "يرجى كتابة اسم الحي."
-                        } else if (mediaUri.isBlank()) {
-                            errorMessage = "يرجى إرفاق صورة أو فيديو للعرض."
-                        } else if (normalizeSaudiPhone(phone) == null) {
-                            errorMessage = "يرجى كتابة رقم جوال صحيح مثل 05xxxxxxxx."
-                        } else {
-                            val finalOpen = if (isOpen24h) 0 else openMinute
-                            val finalClose = if (isOpen24h) 0 else closeMinute
-                            val hoursOffer = RestaurantOffer(openMinute = finalOpen, closeMinute = finalClose)
-                            val newExpiry = if (keepCurrentExpiry) editingOffer?.expiresAt else EXPIRY_OPTIONS[expiryOptionIndex].expiresAt()
-                            val offer = (editingOffer ?: RestaurantOffer()).copy(
-                                restaurantName = restaurantName.trim(),
-                                offerTitle = offerTitle.trim(),
-                                description = description.trim().ifBlank { "عرض استثنائي ولذيذ متاح لجميع زبائن المطعم مع إمكانية التوجه مباشرة للفرع." },
-                                cuisineType = cuisineType,
-                                price = price,
-                                originalPrice = originalPriceText.toDoubleOrNull(),
-                                discountBadge = discountBadge,
-                                mediaType = mediaType,
-                                mediaUri = mediaUri,
-                                isPromotionalVideo = isPromotionalVideo,
-                                district = districtText.trim(),
-                                region = selectedRegion,
-                                latitude = latitude,
-                                longitude = longitude,
-                                phone = normalizeSaudiPhone(phone) ?: phone.trim(),
-                                openMinute = finalOpen,
-                                closeMinute = finalClose,
-                                workingHours = OfferTime.hoursText(hoursOffer),
-                                expiresAt = newExpiry
-                            )
-                            onSaveOffer(offer)
+                    Text("نوع المأكولات", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(LocationPresets.cuisines.filter { it != "الكل" }) { cui ->
+                            FilterChip(selected = cuisineType == cui, onClick = { cuisineType = cui }, label = { Text(cui, fontSize = 12.sp) })
                         }
-                    },
-                    enabled = !isSaving,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("save_restaurant_offer_btn"),
-                    colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    if (isSaving) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(if (isEditing) "جاري الحفظ..." else "جاري رفع العرض...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+
+                    OutlinedTextField(
+                        value = restaurantName,
+                        onValueChange = { restaurantName = it },
+                        label = { Text("اسم المطعم *") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth().testTag("input_restaurant_name")
+                    )
+
+                    // ---------- الفروع أو الموقع ----------
+                    if (hasBranches) {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Storefront, contentDescription = null, tint = CalmSagePrimary, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("وين يظهر العرض؟", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = CalmSagePrimary, modifier = Modifier.weight(1f))
+                                    TextButton(onClick = onManageBranches) { Text("إدارة الفروع") }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = allBranches, onCheckedChange = { allBranches = it })
+                                    Text("كل الفروع (${profileBranches.size})", fontWeight = FontWeight.Bold)
+                                }
+                                if (!allBranches) {
+                                    profileBranches.forEach { b ->
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp)) {
+                                            Checkbox(
+                                                checked = b.id in selectedIds,
+                                                onCheckedChange = { checked -> if (checked) selectedIds.add(b.id) else selectedIds.remove(b.id) }
+                                            )
+                                            Column {
+                                                Text(b.displayName, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                Text(b.region, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                            }
+                                        }
+                                    }
+                                }
+                                Text(
+                                    "الرقم والدوام يكونون حسب كل فرع.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     } else {
-                        Text(if (isEditing) "حفظ التعديلات ✓" else "انشر العرض ✨", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        LocationPickerCard(
+                            latitude = latitude,
+                            longitude = longitude,
+                            onLocationChange = { a, b -> latitude = a; longitude = b },
+                            district = district,
+                            onDistrictChange = { district = it },
+                            region = region,
+                            onRegionChange = { region = it },
+                            autoLocate = startLat == null
+                        )
+                        OutlinedTextField(
+                            value = phone,
+                            onValueChange = { phone = it },
+                            label = { Text("رقم واتساب / جوال المطعم *") },
+                            placeholder = { Text("05xxxxxxxx") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text("أوقات الدوام 🕐", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isOpen24h, onCheckedChange = { isOpen24h = it })
+                            Text("مفتوح 24 ساعة", fontSize = 13.sp)
+                        }
+                        if (!isOpen24h) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                TimeDropdown("يفتح", openMinute, { openMinute = it }, Modifier.weight(1f))
+                                TimeDropdown("يقفل", closeMinute, { closeMinute = it }, Modifier.weight(1f))
+                            }
+                        }
+                        OutlinedButton(onClick = onManageBranches, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            Text("عندك أكثر من فرع؟ أضف فروعك")
+                        }
+                    }
+
+                    // ---------- المدة ----------
+                    Text("مدة العرض ⏰", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (isEditing) {
+                            item {
+                                val current = editingOffer?.let { OfferTime.remainingText(it) } ?: "بدون انتهاء"
+                                FilterChip(
+                                    selected = keepCurrentExpiry,
+                                    onClick = { keepCurrentExpiry = true },
+                                    label = { Text("بدون تغيير ($current)", fontSize = 12.sp) }
+                                )
+                            }
+                        }
+                        items(EXPIRY_OPTIONS.size) { index ->
+                            FilterChip(
+                                selected = !keepCurrentExpiry && expiryOptionIndex == index,
+                                onClick = {
+                                    keepCurrentExpiry = false
+                                    expiryOptionIndex = index
+                                },
+                                label = { Text(EXPIRY_OPTIONS[index].label, fontSize = 12.sp) }
+                            )
+                        }
+                    }
+                    Text("بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                // زر النشر ثابت أسفل الصفحة
+                Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp)) {
+                        if (errorMessage.isNotBlank()) {
+                            Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        Button(
+                            onClick = { submit() },
+                            enabled = !isSaving,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("save_restaurant_offer_btn"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isSaving) {
+                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text(if (isEditing) "جاري الحفظ..." else "جاري رفع العرض...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            } else {
+                                Text(if (isEditing) "حفظ التعديلات ✓" else "انشر العرض ✨", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            }
+                        }
                     }
                 }
-                }
             }
-          }
         }
-      }
 
         if (showDiscardDialog) {
             AlertDialog(
@@ -758,37 +539,11 @@ fun AddRestaurantOfferSheet(
                         onDismiss()
                     }) { Text("تجاهل", color = MaterialTheme.colorScheme.error) }
                 },
-                dismissButton = {
-                    TextButton(onClick = { showDiscardDialog = false }) { Text("كمّل التعبئة") }
-                }
+                dismissButton = { TextButton(onClick = { showDiscardDialog = false }) { Text("كمّل التعبئة") } }
             )
         }
     }
 }
-
-@Composable
-fun PresetMediaChip(
-    title: String,
-    uri: String,
-    type: MediaType,
-    onSelect: (String, MediaType) -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.clickable { onSelect(uri, type) }
-    ) {
-        Text(
-            text = title,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-        )
-    }
-}
-
-
 
 /** خيارات مدة العرض. */
 private data class ExpiryOption(val label: String, val expiresAt: () -> com.google.firebase.Timestamp?)
@@ -803,58 +558,5 @@ private val EXPIRY_OPTIONS: List<ExpiryOption> =
 private fun timestampAfterHours(hours: Int): com.google.firebase.Timestamp =
     com.google.firebase.Timestamp(java.util.Date(System.currentTimeMillis() + hours * 3_600_000L))
 
-/** يحوّل 05xxxxxxxx أو 9665xxxxxxxx أو +9665xxxxxxxx إلى +9665xxxxxxxx. يرجع null إذا الرقم غير صحيح. */
-internal fun normalizeSaudiPhone(raw: String): String? {
-    val digits = raw.filter { it.isDigit() }
-        .map { c -> // تحويل الأرقام العربية الهندية إن وجدت
-            val v = Character.getNumericValue(c)
-            if (v in 0..9) ('0' + v) else c
-        }.joinToString("")
-    val local = when {
-        digits.startsWith("9665") && digits.length == 12 -> digits.substring(3)
-        digits.startsWith("05") && digits.length == 10 -> digits.substring(1)
-        digits.startsWith("5") && digits.length == 9 -> digits
-        else -> return if (digits.length in 8..15) "+$digits" else null
-    }
-    return "+966$local"
-}
-
-/** قائمة منسدلة لاختيار الوقت كل نصف ساعة. */
-@Composable
-private fun TimeDropdown(
-    label: String,
-    minute: Int,
-    onMinuteChange: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier = modifier) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("$label: ${OfferTime.formatMinute(minute)}", fontSize = 13.sp)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            (0 until 48).forEach { slot ->
-                val m = slot * 30
-                DropdownMenuItem(
-                    text = { Text(OfferTime.formatMinute(m)) },
-                    onClick = {
-                        onMinuteChange(m)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-
 private fun formatPrice(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
-
-/** +9665xxxxxxxx -> 05xxxxxxxx لعرضه للتاجر بالشكل المألوف. */
-private fun toLocalPhone(phone: String): String =
-    if (phone.startsWith("+9665") && phone.length == 13) "0" + phone.substring(4) else phone

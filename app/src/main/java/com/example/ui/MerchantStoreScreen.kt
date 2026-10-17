@@ -130,6 +130,8 @@ fun MerchantStoreScreen(
     val selectedOfferOnMap by viewModel.selectedOfferOnMap.collectAsStateWithLifecycle()
     val activeDetailOffer by viewModel.activeDetailOffer.collectAsStateWithLifecycle()
     val isAddOfferSheetOpen by viewModel.isAddOfferSheetOpen.collectAsStateWithLifecycle()
+    val isBranchesPageOpen by viewModel.isBranchesPageOpen.collectAsStateWithLifecycle()
+    val isSavingBranches by viewModel.isSavingBranches.collectAsStateWithLifecycle()
 
     var isFilterExpanded by remember { mutableStateOf(false) }
     var isRestaurantListSheetOpen by remember { mutableStateOf(false) }
@@ -531,6 +533,8 @@ fun MerchantStoreScreen(
                                 onDeleteOffer = { viewModel.deleteOffer(it) },
                                 onEditOffer = { viewModel.startEditOffer(it) },
                                 onDeleteAccount = { viewModel.deleteAccount() },
+                                branchesCount = merchantProfile?.branches?.size ?: 0,
+                                onManageBranches = { viewModel.openBranchesPage() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -593,9 +597,20 @@ fun MerchantStoreScreen(
                 editingOffer = editingOffer,
                 profile = merchantProfile ?: merchantRestaurantName.takeIf { it.isNotBlank() }?.let {
                     com.example.data.model.MerchantProfile(restaurantName = it)
-                }
+                },
+                onManageBranches = { viewModel.openBranchesPage() }
             )
           }
+        }
+
+        // صفحة مطعمي وفروعي (الشعار + الفروع)
+        if (isBranchesPageOpen) {
+            com.example.ui.components.BranchesPage(
+                profile = merchantProfile ?: com.example.data.model.MerchantProfile(restaurantName = merchantRestaurantName),
+                isSaving = isSavingBranches,
+                onSave = { p, logo -> viewModel.saveBranches(p, logo) },
+                onClose = { viewModel.closeBranchesPage() }
+            )
         }
 
         // Restaurant List Sheet (اختيار مطعم من القائمة لتحديد موقعه وعرض إعلانه)

@@ -152,6 +152,9 @@ class RestaurantOfferRepository(
             "viewsCount" to viewsCount,
             "directionsCount" to directionsCount,
             "whatsappCount" to whatsappCount,
+            "mediaUris" to mediaUris.take(3),
+            "logoUrl" to logoUrl,
+            "branches" to branches.take(50).map { it.toMap() },
             "createdAt" to createdAtValue
         )
 
@@ -206,9 +209,40 @@ class RestaurantOfferRepository(
                 "cuisineType" to profile.cuisineType,
                 "openMinute" to profile.openMinute,
                 "closeMinute" to profile.closeMinute,
+                "logoUrl" to profile.logoUrl,
+                "branches" to profile.branches.take(50).map { it.toMap() },
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
+    }
+
+    /**
+     * بعد تعديل الفروع أو الشعار: نحدّث نسخها داخل كل عروض التاجر،
+     * عشان يتغيّر الموقع/الرقم/الدوام/الشعار في كل العروض مرة وحدة.
+     */
+    suspend fun syncMerchantOffers(uid: String, profile: MerchantProfile) {
+        val byId = profile.branches.associateBy { it.id }
+        val docs = offersCollection.whereEqualTo("merchantId", uid).get().await().documents
+        for (doc in docs) {
+            val offer = runCatching {
+                doc.toObject(RestaurantOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
+            }.getOrNull() ?: continue
+            val updatedBranches = offer.branches.mapNotNull { byId[it.id] }
+            val branches = if (offer.branches.isNotEmpty() && updatedBranches.isEmpty()) offer.branches else updatedBranches
+            val primary = branches.firstOrNull()
+            val updated = offer.copy(
+                logoUrl = profile.logoUrl,
+                branches = branches,
+                latitude = primary?.latitude ?: offer.latitude,
+                longitude = primary?.longitude ?: offer.longitude,
+                region = primary?.region?.ifBlank { null } ?: offer.region,
+                district = primary?.district?.ifBlank { null } ?: offer.district,
+                phone = primary?.phone?.ifBlank { null } ?: offer.phone,
+                openMinute = primary?.openMinute ?: offer.openMinute,
+                closeMinute = primary?.closeMinute ?: offer.closeMinute
+            )
+            if (updated != offer) runCatching { updateOffer(updated) }
+        }
     }
 
     // ---------------- البلاغات ----------------

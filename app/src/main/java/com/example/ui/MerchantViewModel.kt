@@ -20,6 +20,8 @@ import com.example.data.model.LocationPresets
 import com.example.data.model.MediaType
 import com.example.data.model.OfferTime
 import com.example.data.model.RestaurantOffer
+import com.example.data.model.atBranch
+import com.example.data.model.effectiveBranches
 import com.example.data.repository.RestaurantOfferRepository
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
@@ -94,10 +96,26 @@ class MerchantViewModel(
     // ---------------- العروض ----------------
 
     private fun withDistance(offers: List<RestaurantOffer>, loc: Location?): List<RestaurantOffer> =
-        if (loc == null) offers else offers.map { offer ->
-            val dist = UserLocationManager.calculateDistanceKm(loc.latitude, loc.longitude, offer.latitude, offer.longitude)
-            offer.copy(distanceKm = dist, driveTimeMinutes = UserLocationManager.calculateDriveTimeMinutes(dist))
-        }
+        if (loc == null) offers else offers.map { offer -> nearestBranchOf(offer, loc) }
+
+    /** يختار أقرب فرع للمستخدم ويرجّع العرض بموقع ذاك الفرع ومسافته. */
+    private fun nearestBranchOf(offer: RestaurantOffer, loc: Location): RestaurantOffer {
+        val branches = offer.effectiveBranches
+        val best = branches.minByOrNull {
+            UserLocationManager.calculateDistanceKm(loc.latitude, loc.longitude, it.latitude, it.longitude)
+        } ?: return offer
+        return withDistanceTo(if (offer.branches.isEmpty()) offer else offer.atBranch(best), loc)
+    }
+
+    private fun withDistanceTo(offer: RestaurantOffer, loc: Location?): RestaurantOffer {
+        if (loc == null) return offer
+        val dist = UserLocationManager.calculateDistanceKm(loc.latitude, loc.longitude, offer.latitude, offer.longitude)
+        return offer.copy(distanceKm = dist, driveTimeMinutes = UserLocationManager.calculateDriveTimeMinutes(dist))
+    }
+
+    /** العرض في فرع معيّن مع المسافة (للخريطة وقائمة الفروع). */
+    fun offerAtBranch(offer: RestaurantOffer, branch: com.example.data.model.Branch): RestaurantOffer =
+        withDistanceTo(if (offer.branches.isEmpty()) offer else offer.atBranch(branch), userLocation.value)
 
     /** كل العروض (للأدمن وللتاجر) مع المسافة الحقيقية. */
     val allOffers: StateFlow<List<RestaurantOffer>> = combine(repository.allOffers, userLocation) { offers, loc ->
@@ -141,6 +159,8 @@ class MerchantViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val isUploadingMedia = MutableStateFlow(false)
+    val isBranchesPageOpen = MutableStateFlow(false)
+    val isSavingBranches = MutableStateFlow(false)
 
     val selectedOfferOnMap = MutableStateFlow<RestaurantOffer?>(null)
     val activeDetailOffer = MutableStateFlow<RestaurantOffer?>(null)
@@ -317,17 +337,21 @@ class MerchantViewModel(
         viewModelScope.launch {
             isUploadingMedia.value = true
             try {
-                val cloudUrl = MediaUploader.uploadOfferMedia(
-                    getApplication(), offer.mediaUri, offer.mediaType == MediaType.VIDEO
-                )
+                val isVideo = offer.mediaType == MediaType.VIDEO
+                val sources = (if (isVideo) listOf(offer.mediaUri) else offer.mediaUris.ifEmpty { listOf(offer.mediaUri) })
+                    .filter { it.isNotBlank() }
+                    .take(if (isVideo) 1 else 3)
+                val uploaded = sources.map { MediaUploader.uploadOfferMedia(getApplication(), it, isVideo) }
+                val cloudUrl = uploaded.firstOrNull() ?: throw MediaUploader.UploadException("يرجى إرفاق صورة أو فيديو للعرض.")
                 val isUpdate = offer.id.isNotBlank()
                 if (isUpdate) {
-                    repository.updateOffer(offer.copy(mediaUri = cloudUrl))
+                    repository.updateOffer(offer.copy(mediaUri = cloudUrl, mediaUris = uploaded))
                 } else {
                     repository.insertOffer(
                         offer.copy(
                             merchantId = user.uid,
                             mediaUri = cloudUrl,
+                            mediaUris = uploaded,
                             isFeatured = false,
                             isApproved = true,
                             viewsCount = 0,
@@ -337,7 +361,8 @@ class MerchantViewModel(
                     )
                 }
                 // نحفظ بيانات المطعم عشان تتعبّى تلقائياً في العرض الجاي
-                val profile = MerchantProfile(
+                val old = merchantProfile.value
+                val profile = (old ?: MerchantProfile()).copy(
                     restaurantName = offer.restaurantName,
                     phone = offer.phone,
                     latitude = offer.latitude,
@@ -346,7 +371,9 @@ class MerchantViewModel(
                     district = offer.district,
                     cuisineType = offer.cuisineType,
                     openMinute = offer.openMinute,
-                    closeMinute = offer.closeMinute
+                    closeMinute = offer.closeMinute,
+                    // أول عرض بدون فروع: موقعه يصير "الفرع الرئيسي"
+                    branches = old?.branches?.ifEmpty { null } ?: offer.branches
                 )
                 merchantProfile.value = profile
                 runCatching { repository.saveMerchantProfile(user.uid, profile) }
@@ -366,6 +393,62 @@ class MerchantViewModel(
                 toast(msg ?: "تعذّر نشر العرض.")
             } finally {
                 isUploadingMedia.value = false
+            }
+        }
+    }
+
+    // ---------------- الفروع والشعار ----------------
+
+    fun openBranchesPage() {
+        if (currentUser.value == null) {
+            toast("سجّل الدخول بحساب Google أولاً")
+            return
+        }
+        isBranchesPageOpen.value = true
+    }
+
+    fun closeBranchesPage() { isBranchesPageOpen.value = false }
+
+    /** يحفظ الفروع والشعار، ويحدّثها في كل عروض التاجر. */
+    fun saveBranches(profile: MerchantProfile, newLogoLocalUri: String?) {
+        val user = currentUser.value ?: return
+        if (isSavingBranches.value) return
+        viewModelScope.launch {
+            isSavingBranches.value = true
+            try {
+                val logo = if (newLogoLocalUri != null) {
+                    MediaUploader.uploadOfferMedia(getApplication(), newLogoLocalUri, false)
+                } else profile.logoUrl
+                val primary = profile.branches.firstOrNull()
+                val updated = profile.copy(
+                    logoUrl = logo,
+                    phone = primary?.phone ?: profile.phone,
+                    latitude = primary?.latitude ?: profile.latitude,
+                    longitude = primary?.longitude ?: profile.longitude,
+                    region = primary?.region ?: profile.region,
+                    district = primary?.district ?: profile.district,
+                    openMinute = primary?.openMinute ?: profile.openMinute,
+                    closeMinute = primary?.closeMinute ?: profile.closeMinute
+                )
+                repository.saveMerchantProfile(user.uid, updated)
+                merchantProfile.value = updated
+                runCatching { repository.syncMerchantOffers(user.uid, updated) }
+                isBranchesPageOpen.value = false
+                toast("تم حفظ مطعمك وفروعك ✅")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "saveBranches failed: ${e.message}", e)
+                val msg = when {
+                    e is MediaUploader.UploadException -> e.message
+                    e is com.google.firebase.firestore.FirebaseFirestoreException &&
+                        e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                        "رفض Firestore الحفظ (صلاحيات). تأكد من نشر قواعد Firestore الجديدة."
+                    else -> null
+                }
+                toast(msg ?: "تعذّر الحفظ: ${e.message ?: "خطأ غير معروف"}")
+            } finally {
+                isSavingBranches.value = false
             }
         }
     }

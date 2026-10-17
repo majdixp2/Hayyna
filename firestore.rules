@@ -47,6 +47,9 @@ service cloud.firestore {
         && (!('isApproved' in data) || data.isApproved is bool)
         && (!('isFeatured' in data) || data.isFeatured is bool)
         && optInt(data, 'viewsCount') && optInt(data, 'directionsCount') && optInt(data, 'whatsappCount')
+        && (!('mediaUris' in data) || (data.mediaUris is list && data.mediaUris.size() <= 3))
+        && (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 2000))
+        && (!('branches' in data) || (data.branches is list && data.branches.size() <= 50))
         && data.createdAt is timestamp;
     }
 
@@ -73,7 +76,9 @@ service cloud.firestore {
 
     // ملف المطعم: صاحبه فقط يقرأ ويكتب
     match /merchants/{uid} {
-      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+      allow read, delete: if isAuthenticated() && request.auth.uid == uid;
+      allow create, update: if isAuthenticated() && request.auth.uid == uid
+        && (!('branches' in request.resource.data) || request.resource.data.branches.size() <= 50);
     }
 
     // البلاغات: أي أحد يرسل بلاغ، والأدمن فقط يقرأ ويحذف

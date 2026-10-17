@@ -78,6 +78,8 @@ fun MerchantPortalView(
     onDeleteOffer: (String) -> Unit,
     onEditOffer: (RestaurantOffer) -> Unit = {},
     onDeleteAccount: () -> Unit = {},
+    branchesCount: Int = 0,
+    onManageBranches: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (!isLoggedIn) {
@@ -94,6 +96,8 @@ fun MerchantPortalView(
             onDeleteOffer = onDeleteOffer,
             onEditOffer = onEditOffer,
             onDeleteAccount = onDeleteAccount,
+            branchesCount = branchesCount,
+            onManageBranches = onManageBranches,
             modifier = modifier
         )
     }
@@ -174,6 +178,8 @@ private fun MerchantDashboard(
     onDeleteOffer: (String) -> Unit,
     onEditOffer: (RestaurantOffer) -> Unit,
     onDeleteAccount: () -> Unit,
+    branchesCount: Int,
+    onManageBranches: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -237,6 +243,20 @@ private fun MerchantDashboard(
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("أضف عرض جديد", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onManageBranches,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (branchesCount > 0) "مطعمي وفروعي ($branchesCount)" else "مطعمي وفروعي (الشعار والفروع)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
                     }
                 }
             }
