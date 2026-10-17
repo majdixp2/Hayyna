@@ -63,6 +63,8 @@ fun AdminDashboardView(
     onSuspendMerchant: (String, String) -> Unit = { _, _ -> },
     onUnsuspend: (com.example.data.repository.MerchantStatus) -> Unit = {},
     onKeepReported: (RestaurantOffer) -> Unit = {},
+    pendingStores: List<com.example.data.model.StoreProfile> = emptyList(),
+    onApproveStore: (com.example.data.model.StoreProfile) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val pending = offers.filter { !it.isApproved && merchantStatuses.none { s -> s.uid == it.merchantId && s.suspended } }
@@ -109,6 +111,60 @@ fun AdminDashboardView(
                 onDelete = { onDeleteOffer(o.id) },
                 onSuspend = { confirmSuspend = o }
             )
+        }
+
+        // 🏪 صفحات متاجر بانتظار المراجعة
+        val visiblePendingStores = pendingStores.filter { st -> merchantStatuses.none { it.uid == st.uid && it.suspended } }
+        if (visiblePendingStores.isNotEmpty()) {
+            item {
+                Text(
+                    "🏪 صفحات متاجر بانتظار المراجعة (${visiblePendingStores.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color(0xFF8A5A00)
+                )
+            }
+            items(visiblePendingStores, key = { "st_" + it.uid }) { st ->
+                Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            StoreLogo(logoUrl = st.logoUrl, size = 40.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(st.name, fontWeight = FontWeight.Bold)
+                                Text(st.category, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        if (st.about.isNotBlank()) Text(st.about, fontSize = 12.sp, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
+                        val pics = listOf(st.coverUrl).filter { it.isNotBlank() } + st.menuImages
+                        if (pics.isNotEmpty()) {
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 6.dp)
+                            ) {
+                                items(pics.size) { i ->
+                                    coil.compose.AsyncImage(
+                                        model = com.example.data.CloudinaryUrls.image(pics[i], 300),
+                                        contentDescription = null,
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        modifier = Modifier.size(70.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                            androidx.compose.material3.Button(
+                                onClick = { onApproveStore(st) },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("اعتماد الصفحة ✓", fontSize = 12.sp) }
+                            OutlinedButton(onClick = { onSuspendMerchant(st.uid, st.name) }, shape = RoundedCornerShape(10.dp)) {
+                                Text("إيقاف التاجر", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // 🚩 مخفية بسبب البلاغات

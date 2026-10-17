@@ -101,7 +101,9 @@ fun FullScreenRestaurantMap(
     modifier: Modifier = Modifier,
     // مكان يتصفحه المستخدم (حي آخر) — الخريطة تنتقل له
     focusPoint: Pair<Double, Double>? = null,
-    onMyLocationClick: () -> Unit = {}
+    onMyLocationClick: () -> Unit = {},
+    quietStores: List<com.example.data.model.StoreProfile> = emptyList(),
+    onStoreClick: (com.example.data.model.StoreProfile) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -219,7 +221,10 @@ fun FullScreenRestaurantMap(
             } +
             offers
                 .filter { it.logoUrl.startsWith("http") }
-                .mapNotNull { offer -> CloudinaryUrls.image(offer.logoUrl, 96)?.let { offer.logoUrl to it } }
+                .mapNotNull { offer -> CloudinaryUrls.image(offer.logoUrl, 96)?.let { offer.logoUrl to it } } +
+            quietStores
+                .filter { it.logoUrl.startsWith("http") }
+                .map { st -> st.logoUrl to CloudinaryUrls.image(st.logoUrl, 96) }
         ).toMap()
     LaunchedEffect(markerSources.keys) {
         markerSources.filterKeys { it !in markerBitmaps }.forEach { (key, url) ->
@@ -271,6 +276,27 @@ fun FullScreenRestaurantMap(
                 onBackgroundClick()
             }
         ) {
+            // المتاجر بدون عروض: نقاط صغيرة هادية (بالشعار إن وجد)
+            quietStores.forEach { store ->
+                store.branches.forEach { branch ->
+                    androidx.compose.runtime.key(store.uid + branch.id) {
+                        val markerState = remember { com.google.maps.android.compose.MarkerState(position = LatLng(branch.latitude, branch.longitude)) }
+                        val logo = markerBitmaps[store.logoUrl]
+                        MarkerComposable(
+                            store.uid, branch.id, logo != null,
+                            state = markerState,
+                            zIndex = -1f,
+                            onClick = {
+                                onStoreClick(store)
+                                true
+                            }
+                        ) {
+                            QuietStoreDot(logo = logo)
+                        }
+                    }
+                }
+            }
+
             // العروض القريبة من بعض تتجمع في دائرة فيها العدد، وتتفرّق عند التكبير
             Clustering(
                 items = clusterItems,
@@ -630,6 +656,22 @@ fun OfferCircleMarker(
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                 )
             }
+        }
+    }
+}
+
+/** نقطة متجر بدون عروض: صغيرة وهادية، بالشعار إن وجد. */
+@Composable
+fun QuietStoreDot(logo: ImageBitmap?) {
+    Surface(
+        shape = CircleShape,
+        color = if (logo != null) Color.White else CalmSagePrimary.copy(alpha = 0.75f),
+        border = BorderStroke(2.dp, Color.White),
+        shadowElevation = 2.dp,
+        modifier = Modifier.size(if (logo != null) 26.dp else 16.dp)
+    ) {
+        if (logo != null) {
+            Image(bitmap = logo, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
     }
 }

@@ -81,11 +81,28 @@ import java.util.UUID
 fun BranchesPage(
     profile: MerchantProfile,
     isSaving: Boolean,
-    onSave: (MerchantProfile, newLogoLocalUri: String?) -> Unit,
+    onSave: (MerchantProfile, StoreMediaEdits) -> Unit,
     onClose: () -> Unit
 ) {
     var restaurantName by remember { mutableStateOf(profile.restaurantName) }
     var logoLocal by remember { mutableStateOf<String?>(null) }
+    var coverLocal by remember { mutableStateOf<String?>(null) }
+    var about by remember { mutableStateOf(profile.about) }
+    var category by remember {
+        mutableStateOf(profile.cuisineType.takeIf { it in com.example.data.model.LocationPresets.cuisines } ?: "")
+    }
+    var priceFromText by remember {
+        mutableStateOf(if (profile.priceFrom > 0) profile.priceFrom.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() } else "")
+    }
+    val menuImages = remember { mutableStateListOf<String>().apply { addAll(profile.menuImages) } }
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
+        if (uri != null) coverLocal = uri.toString()
+    }
+    val menuPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(com.example.data.model.StoreProfile.MAX_MENU_IMAGES)
+    ) { uris: List<Uri> ->
+        uris.forEach { if (menuImages.size < com.example.data.model.StoreProfile.MAX_MENU_IMAGES) menuImages.add(it.toString()) }
+    }
     val branches = remember {
         mutableStateListOf<Branch>().apply {
             if (profile.branches.isNotEmpty()) addAll(profile.branches)
@@ -137,7 +154,7 @@ fun BranchesPage(
                     Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("شعار المتجر وفروعي", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("صفحة متجري", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     IconButton(onClick = { if (!isSaving) onClose() }) { Icon(Icons.Default.Close, contentDescription = "إغلاق") }
                 }
                 HorizontalDivider()
@@ -185,6 +202,102 @@ fun BranchesPage(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // ---------- صفحة المتجر الدائمة ----------
+                    Text("تصنيف المتجر *", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(com.example.data.model.LocationPresets.cuisines.filter { it != "الكل" }.size) { i ->
+                            val c = com.example.data.model.LocationPresets.cuisines.filter { it != "الكل" }[i]
+                            androidx.compose.material3.FilterChip(
+                                selected = category == c,
+                                onClick = { category = c },
+                                label = { Text(c, fontSize = 12.sp) }
+                            )
+                        }
+                    }
+
+                    Text("صورة الغلاف", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val cover = coverLocal ?: profile.coverUrl.ifBlank { null }
+                        if (cover != null) {
+                            AsyncImage(model = cover, contentDescription = "الغلاف", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        } else {
+                            Text("📷 اضغط لاختيار صورة واجهة المحل أو الداخل", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = about,
+                        onValueChange = { if (it.length <= 500) about = it },
+                        label = { Text("نبذة عن المتجر") },
+                        placeholder = { Text("مثال: مطعم شاورما عربي من 2010، نستخدم خبز صاج طازج يومياً") },
+                        minLines = 2,
+                        maxLines = 5,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = priceFromText,
+                        onValueChange = { priceFromText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = { Text("الأسعار تبدأ من (ر.س)") },
+                        placeholder = { Text("مثال: 15") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "المنيو / المنتجات والأسعار (${menuImages.size}/${com.example.data.model.StoreProfile.MAX_MENU_IMAGES})",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                "صوّر المنيو أو قائمة الأسعار — تظهر دائماً في صفحة متجرك",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { menuPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            enabled = menuImages.size < com.example.data.model.StoreProfile.MAX_MENU_IMAGES,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("صور")
+                        }
+                    }
+                    if (menuImages.isNotEmpty()) {
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(menuImages.size) { i ->
+                                val img = menuImages[i]
+                                Box(Modifier.size(width = 90.dp, height = 120.dp).clip(RoundedCornerShape(8.dp))) {
+                                    AsyncImage(model = img, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.6f),
+                                        modifier = Modifier.align(Alignment.TopStart).padding(4.dp).size(26.dp)
+                                    ) {
+                                        IconButton(onClick = { menuImages.remove(img) }) {
+                                            Icon(Icons.Default.Close, contentDescription = "إزالة", tint = Color.White, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider()
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("الفروع (${branches.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
@@ -255,10 +368,18 @@ fun BranchesPage(
                             onClick = {
                                 when {
                                     restaurantName.isBlank() -> error = "اكتب اسم المتجر."
+                                    category.isBlank() -> error = "اختر تصنيف المتجر."
                                     branches.isEmpty() -> error = "أضف فرع واحد على الأقل."
                                     else -> onSave(
-                                        profile.copy(restaurantName = restaurantName.trim(), branches = branches.toList()),
-                                        logoLocal
+                                        profile.copy(
+                                            restaurantName = restaurantName.trim(),
+                                            branches = branches.toList(),
+                                            cuisineType = category,
+                                            about = about.trim(),
+                                            priceFrom = priceFromText.toDoubleOrNull()?.takeIf { it > 0 } ?: 0.0,
+                                            menuImages = menuImages.toList()
+                                        ),
+                                        StoreMediaEdits(newLogo = logoLocal, newCover = coverLocal)
                                     )
                                 }
                             },
@@ -296,6 +417,9 @@ fun BranchesPage(
         )
     }
 }
+
+/** صور جديدة اختارها التاجر (روابط محلية تنرفع عند الحفظ). */
+data class StoreMediaEdits(val newLogo: String?, val newCover: String?)
 
 /** شاشة إضافة/تعديل فرع واحد. */
 @Composable

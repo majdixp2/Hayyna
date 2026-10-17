@@ -210,6 +210,64 @@ class RestaurantOfferRepository(
         offersCollection.document(offerId).update("reportsCount", 0).await()
     }
 
+    // ---------------- صفحات المتاجر (عامة) ----------------
+
+    private val storesCollection = db.collection("stores")
+
+    private fun parseStores(snapshot: com.google.firebase.firestore.QuerySnapshot?): List<com.example.data.model.StoreProfile> =
+        snapshot?.documents?.mapNotNull { d ->
+            runCatching { d.toObject(com.example.data.model.StoreProfile::class.java)?.copy(uid = d.id) }.getOrNull()
+        } ?: emptyList()
+
+    /** المتاجر المعتمدة (للعملاء). */
+    val approvedStores: Flow<List<com.example.data.model.StoreProfile>> = callbackFlow {
+        val listener = storesCollection.whereEqualTo("approved", true).addSnapshotListener { snap, error ->
+            if (error != null) {
+                Log.w(TAG, "stores: ${error.message}")
+                return@addSnapshotListener
+            }
+            trySend(parseStores(snap))
+        }
+        awaitClose { listener.remove() }
+    }
+
+    /** صفحات المتاجر بانتظار المراجعة (للأدمن). */
+    val pendingStores: Flow<List<com.example.data.model.StoreProfile>> = callbackFlow {
+        val listener = storesCollection.whereEqualTo("approved", false).addSnapshotListener { snap, error ->
+            if (error != null) {
+                trySend(emptyList())
+                return@addSnapshotListener
+            }
+            trySend(parseStores(snap))
+        }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun saveStore(store: com.example.data.model.StoreProfile) {
+        storesCollection.document(store.uid).set(
+            hashMapOf(
+                "uid" to store.uid,
+                "name" to store.name.take(100),
+                "logoUrl" to store.logoUrl,
+                "coverUrl" to store.coverUrl,
+                "about" to store.about.take(500),
+                "category" to store.category.take(60),
+                "priceFrom" to store.priceFrom,
+                "menuImages" to store.menuImages.take(com.example.data.model.StoreProfile.MAX_MENU_IMAGES),
+                "branches" to store.branches.take(50).map { it.toMap() },
+                "phone" to store.phone.take(30),
+                "approved" to store.approved,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        ).await()
+    }
+
+    /** الأدمن: يعتمد/يخفي صفحة متجر (لو موجودة). */
+    suspend fun setStoreApproved(uid: String, approved: Boolean) {
+        val ref = storesCollection.document(uid)
+        if (ref.get().await().exists()) ref.update("approved", approved).await()
+    }
+
     private fun RestaurantOffer.toFirestoreMap(docId: String, createdAtValue: Any?): HashMap<String, Any?> =
         hashMapOf(
             "id" to docId,
@@ -300,6 +358,10 @@ class RestaurantOfferRepository(
                 "closeMinute" to profile.closeMinute,
                 "logoUrl" to profile.logoUrl,
                 "branches" to profile.branches.take(50).map { it.toMap() },
+                "coverUrl" to profile.coverUrl,
+                "about" to profile.about.take(500),
+                "priceFrom" to profile.priceFrom,
+                "menuImages" to profile.menuImages.take(com.example.data.model.StoreProfile.MAX_MENU_IMAGES),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
@@ -390,6 +452,7 @@ class RestaurantOfferRepository(
         val offers = offersCollection.whereEqualTo("merchantId", uid).get().await()
         for (doc in offers.documents) doc.reference.delete().await()
         merchantsCollection.document(uid).delete().await()
+        runCatching { storesCollection.document(uid).delete().await() }
     }
 }
 

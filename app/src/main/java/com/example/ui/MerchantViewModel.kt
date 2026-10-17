@@ -135,6 +135,33 @@ class MerchantViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // ---------------- صفحات المتاجر ----------------
+
+    val approvedStores: StateFlow<List<com.example.data.model.StoreProfile>> = repository.approvedStores
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val pendingStores: StateFlow<List<com.example.data.model.StoreProfile>> = isAdmin
+        .flatMapLatest { admin -> if (admin) repository.pendingStores else flowOf(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** إظهار المتاجر اللي ما عندها عروض كنقاط صغيرة على الخريطة. */
+    val showAllStores = MutableStateFlow(true)
+    fun toggleShowAllStores() { showAllStores.value = !showAllStores.value }
+
+    /** صفحة المتجر المفتوحة للعميل. */
+    val openStore = MutableStateFlow<com.example.data.model.StoreProfile?>(null)
+
+    fun storeFor(merchantId: String): com.example.data.model.StoreProfile? =
+        approvedStores.value.firstOrNull { it.uid == merchantId }
+
+    fun openStorePage(store: com.example.data.model.StoreProfile) {
+        activeDetailOffer.value = null
+        openStore.value = store
+    }
+
+    fun closeStorePage() { openStore.value = null }
+
     // ---------------- الحماية: حالة التاجر ----------------
 
     /** حالة التاجر الحالي (موثوق / موقوف). */
@@ -532,7 +559,8 @@ class MerchantViewModel(
     fun closeBranchesPage() { isBranchesPageOpen.value = false }
 
     /** يحفظ الفروع والشعار، ويحدّثها في كل عروض التاجر. */
-    fun saveBranches(profile: MerchantProfile, newLogoLocalUri: String?) {
+    fun saveBranches(profile: MerchantProfile, edits: com.example.ui.components.StoreMediaEdits) {
+        val newLogoLocalUri = edits.newLogo
         val user = currentUser.value ?: return
         if (isSavingBranches.value) return
         viewModelScope.launch {
@@ -541,9 +569,16 @@ class MerchantViewModel(
                 val logo = if (newLogoLocalUri != null) {
                     MediaUploader.uploadOfferMedia(getApplication(), newLogoLocalUri, false)
                 } else profile.logoUrl
+                val cover = if (edits.newCover != null) {
+                    MediaUploader.uploadOfferMedia(getApplication(), edits.newCover, false)
+                } else profile.coverUrl
+                // صور المنيو: الجديدة (محلية) تنرفع، والمرفوعة سابقاً تبقى كما هي
+                val menu = profile.menuImages.map { MediaUploader.uploadOfferMedia(getApplication(), it, false) }
                 val primary = profile.branches.firstOrNull()
                 val updated = profile.copy(
                     logoUrl = logo,
+                    coverUrl = cover,
+                    menuImages = menu,
                     phone = primary?.phone ?: profile.phone,
                     latitude = primary?.latitude ?: profile.latitude,
                     longitude = primary?.longitude ?: profile.longitude,
@@ -554,9 +589,11 @@ class MerchantViewModel(
                 )
                 repository.saveMerchantProfile(user.uid, updated)
                 merchantProfile.value = updated
-                runCatching { repository.syncMerchantOffers(user.uid, updated, keepApproval = canPublishDirectly) }
+                val direct = canPublishDirectly
+                repository.saveStore(com.example.data.model.StoreProfile.from(user.uid, updated, approved = direct))
+                runCatching { repository.syncMerchantOffers(user.uid, updated, keepApproval = direct) }
                 isBranchesPageOpen.value = false
-                toast("تم حفظ متجرك وفروعك ✅")
+                toast(if (direct) "تم حفظ صفحة متجرك ✅" else "تم الحفظ ✅ صفحة متجرك بتظهر للعملاء بعد المراجعة")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -601,6 +638,7 @@ class MerchantViewModel(
                 repository.setMerchantStatus(
                     com.example.data.repository.MerchantStatus(offer.merchantId, trusted = true, name = offer.restaurantName)
                 )
+                runCatching { repository.setStoreApproved(offer.merchantId, true) }
                 toast("تم الاعتماد ✅ وصار ${offer.restaurantName} موثوق (ينشر مباشرة)")
             } else {
                 toast("تم اعتماد العرض ✅")
@@ -615,7 +653,16 @@ class MerchantViewModel(
                 com.example.data.repository.MerchantStatus(offer.merchantId, trusted = true, name = offer.restaurantName)
             )
             repository.setOfferApproved(offer.id, true)
+            runCatching { repository.setStoreApproved(offer.merchantId, true) }
             toast("صار ${offer.restaurantName} موثوق ✅")
+        }
+    }
+
+    /** الأدمن: يعتمد صفحة متجر. */
+    fun approveStore(store: com.example.data.model.StoreProfile) {
+        launchSafely("تعذّر اعتماد الصفحة.") {
+            repository.setStoreApproved(store.uid, true)
+            toast("تم اعتماد صفحة ${store.name} ✅")
         }
     }
 
@@ -626,6 +673,7 @@ class MerchantViewModel(
                 com.example.data.repository.MerchantStatus(merchantId, trusted = false, suspended = true, name = name)
             )
             repository.unapproveMerchantOffers(merchantId)
+            runCatching { repository.setStoreApproved(merchantId, false) }
             toast("تم إيقاف $name وإخفاء عروضه")
         }
     }

@@ -140,6 +140,10 @@ fun MerchantStoreScreen(
 
     val browsePlace by viewModel.browsePlace.collectAsStateWithLifecycle()
     val myStatus by viewModel.myStatus.collectAsStateWithLifecycle()
+    val approvedStores by viewModel.approvedStores.collectAsStateWithLifecycle()
+    val pendingStores by viewModel.pendingStores.collectAsStateWithLifecycle()
+    val openStore by viewModel.openStore.collectAsStateWithLifecycle()
+    val showAllStores by viewModel.showAllStores.collectAsStateWithLifecycle()
     val merchantStatuses by viewModel.merchantStatuses.collectAsStateWithLifecycle()
     val placeSuggestions by viewModel.placeSuggestions.collectAsStateWithLifecycle()
     val districtCounts by viewModel.districtCounts.collectAsStateWithLifecycle()
@@ -175,6 +179,12 @@ fun MerchantStoreScreen(
                                 currentDistrictName = if (selectedDistrict == "الكل") selectedRegion else selectedDistrict,
                                 modifier = Modifier.fillMaxSize(),
                                 focusPoint = browsePlace?.let { it.latitude to it.longitude },
+                                // المتاجر اللي ما عندها عروض ظاهرة: نقاط صغيرة هادية
+                                quietStores = if (showAllStores) {
+                                    val withOffers = filteredCustomerOffers.map { it.merchantId }.toSet()
+                                    approvedStores.filter { it.uid !in withOffers }
+                                } else emptyList(),
+                                onStoreClick = { viewModel.openStorePage(it) },
                                 onMyLocationClick = { viewModel.clearBrowse() }
                             )
 
@@ -437,6 +447,24 @@ fun MerchantStoreScreen(
                                             }
                                         }
 
+                                        // إظهار/إخفاء المتاجر اللي ما عندها عروض
+                                        item {
+                                            Surface(
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = if (showAllStores) CalmSagePrimary else Color.White.copy(alpha = 0.95f),
+                                                shadowElevation = 2.dp,
+                                                modifier = Modifier.clickable { viewModel.toggleShowAllStores() }
+                                            ) {
+                                                Text(
+                                                    text = "🏪 كل المتاجر",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (showAllStores) Color.White else CalmSagePrimary,
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                )
+                                            }
+                                        }
+
                                         item {
                                             Surface(
                                                 shape = RoundedCornerShape(16.dp),
@@ -646,6 +674,8 @@ fun MerchantStoreScreen(
                                 onSuspendMerchant = { id, name -> viewModel.suspendMerchant(id, name) },
                                 onUnsuspend = { viewModel.unsuspendMerchant(it) },
                                 onKeepReported = { viewModel.keepReportedOffer(it) },
+                                pendingStores = pendingStores,
+                                onApproveStore = { viewModel.approveStore(it) },
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(14.dp)
@@ -668,7 +698,21 @@ fun MerchantStoreScreen(
                 onEdit = { viewModel.startEditOffer(offer) },
                 branchOffers = if (offer.branches.size > 1) {
                     offer.branches.map { viewModel.offerAtBranch(offer, it) }.sortedBy { it.distanceKm }
-                } else emptyList()
+                } else emptyList(),
+                onOpenStore = approvedStores.firstOrNull { it.uid == offer.merchantId }?.let { st -> { viewModel.openStorePage(st) } }
+            )
+        }
+
+        // صفحة المتجر الدائمة
+        openStore?.let { st ->
+            com.example.ui.components.StorePage(
+                store = st,
+                offers = filteredCustomerOffers.filter { it.merchantId == st.uid },
+                onOfferClick = { o ->
+                    viewModel.closeStorePage()
+                    viewModel.openOfferDetail(o)
+                },
+                onClose = { viewModel.closeStorePage() }
             )
         }
 

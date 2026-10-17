@@ -259,7 +259,7 @@ private fun MerchantDashboard(
                         Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            if (branchesCount > 0) "شعار المتجر وفروعي ($branchesCount)" else "شعار المتجر وفروعي",
+                            if (branchesCount > 0) "صفحة متجري وفروعي ($branchesCount)" else "صفحة متجري (الشعار، المنيو، الفروع)",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )

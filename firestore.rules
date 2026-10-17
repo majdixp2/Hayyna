@@ -99,6 +99,22 @@ service cloud.firestore {
         && request.resource.data.get('reportsCount', 0) == resource.data.get('reportsCount', 0);
     }
 
+    // صفحة المتجر العامة: الكل يشوف المعتمدة، وصاحبها يعدّل (غير الموثوق تروح للمراجعة)
+    match /stores/{uid} {
+      allow read: if resource.data.approved == true
+        || (isAuthenticated() && request.auth.uid == uid)
+        || isAdmin();
+      allow create, update: if isAdmin()
+        || (isAuthenticated() && request.auth.uid == uid
+          && !isSuspended(uid)
+          && (request.resource.data.approved == false || isTrusted(uid))
+          && request.resource.data.name is string && request.resource.data.name.size() <= 100
+          && request.resource.data.about is string && request.resource.data.about.size() <= 500
+          && request.resource.data.menuImages is list && request.resource.data.menuImages.size() <= 10
+          && request.resource.data.branches is list && request.resource.data.branches.size() <= 50);
+      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
+    }
+
     // حالة التاجر: موثوق / موقوف — التاجر يقرأ حالته، والأدمن فقط يكتب
     match /merchantStatus/{uid} {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());

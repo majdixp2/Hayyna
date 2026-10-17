@@ -70,7 +70,8 @@ fun RestaurantOfferDetailSheet(
     onReport: (String) -> Unit = {},
     onEdit: () -> Unit = {},
     // نفس العرض في كل فرع (مرتّب من الأقرب). فاضي = فرع واحد.
-    branchOffers: List<RestaurantOffer> = emptyList()
+    branchOffers: List<RestaurantOffer> = emptyList(),
+    onOpenStore: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     // الفرع المعروض حالياً (افتراضياً الأقرب أو اللي ضغط عليه في الخريطة)
@@ -221,13 +222,22 @@ fun RestaurantOfferDetailSheet(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                Icon(
-                    imageVector = Icons.Default.Verified,
-                    contentDescription = "متجر معتمد",
-                    tint = Color(0xFF0284C7),
-                    modifier = Modifier.size(18.dp)
-                )
+                Spacer(modifier = Modifier.weight(1f))
+                if (onOpenStore != null) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = CalmSagePrimary.copy(alpha = 0.12f),
+                        modifier = Modifier.clickable { onOpenStore() }
+                    ) {
+                        Text(
+                            "🏪 صفحة المتجر ›",
+                            color = CalmSagePrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))

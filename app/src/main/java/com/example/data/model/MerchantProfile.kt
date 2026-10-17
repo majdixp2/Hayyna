@@ -15,7 +15,12 @@ data class MerchantProfile(
     val openMinute: Int = -1,
     val closeMinute: Int = -1,
     val logoUrl: String = "",
-    val branches: List<Branch> = emptyList()
+    val branches: List<Branch> = emptyList(),
+    // صفحة المتجر الدائمة
+    val coverUrl: String = "",
+    val about: String = "",
+    val priceFrom: Double = 0.0,
+    val menuImages: List<String> = emptyList()
 ) {
     val hasLocation: Boolean get() = latitude != 0.0 || longitude != 0.0
 }
