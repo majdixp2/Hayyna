@@ -44,11 +44,11 @@ val HayynaGreen = Color(0xFF356E55)
 private val PinGold = Color(0xFFFFD166)
 
 // مكان الدبوس داخل صورة الكلمة (نِسَب من عرض/ارتفاع الصورة hayyna_word.png)
-private const val WORD_ASPECT = 756f / 661f
-private const val PIN_LEFT = 0.2831f
+private const val WORD_ASPECT = 974f / 688f
+private const val PIN_LEFT = 0.2197f
 private const val PIN_TOP = 0f
-private const val PIN_WIDTH = 0.1839f
-private const val PIN_HEIGHT = 0.351f
+private const val PIN_WIDTH = 0.1427f
+private const val PIN_HEIGHT = 0.3372f
 
 /** مدة الحركة كاملة (الشاشة الافتتاحية تنتظرها قبل ما تختفي). */
 const val SPLASH_DURATION_MS = 2100L
