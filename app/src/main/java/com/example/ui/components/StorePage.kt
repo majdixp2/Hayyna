@@ -5,6 +5,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -359,8 +362,8 @@ private fun ZoomableImage(url: String) {
             .fillMaxSize()
             .pointerInput(Unit) {
                 // تكبير بإصبعين؛ السحب بإصبع واحد يقلّب الصور إلا إذا الصورة مكبّرة
-                androidx.compose.foundation.gestures.awaitEachGesture {
-                    androidx.compose.foundation.gestures.awaitFirstDown(requireUnconsumed = false)
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
                     do {
                         val event = awaitPointerEvent()
                         if (event.changes.size >= 2 || scale > 1f) {
@@ -374,7 +377,7 @@ private fun ZoomableImage(url: String) {
                 }
             }
             .pointerInput(Unit) {
-                androidx.compose.foundation.gestures.detectTapGestures(onDoubleTap = {
+                detectTapGestures(onDoubleTap = {
                     scale = if (scale > 1f) 1f else 2.5f
                     offset = Offset.Zero
                 })
