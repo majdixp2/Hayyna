@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
                 MyApplicationTheme {
                     var showSplash by rememberSaveable { mutableStateOf(true) }
                     LaunchedEffect(Unit) {
-                        delay(1300)
+                        delay(com.example.ui.components.SPLASH_DURATION_MS)
                         showSplash = false
                     }
                     Box(modifier = Modifier.fillMaxSize()) {
