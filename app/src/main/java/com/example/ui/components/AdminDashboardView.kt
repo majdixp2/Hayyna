@@ -129,7 +129,7 @@ fun AdminDashboardView(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "إدارة عروض المطاعم، الفيديوهات الإعلانية، واعتماد المواقع على الخريطة",
+                            text = "إدارة عروض المتاجر، الفيديوهات الإعلانية، واعتماد المواقع على الخريطة",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -145,7 +145,7 @@ fun AdminDashboardView(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 AdminStatCard(
-                    title = "إجمالي المطاعم",
+                    title = "إجمالي المتاجر",
                     value = "${offers.map { it.restaurantName }.distinct().size}",
                     icon = Icons.Default.Restaurant,
                     color = CalmSagePrimary,

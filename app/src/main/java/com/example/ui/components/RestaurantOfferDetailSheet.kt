@@ -219,7 +219,7 @@ fun RestaurantOfferDetailSheet(
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     imageVector = Icons.Default.Verified,
-                    contentDescription = "مطعم معتمد",
+                    contentDescription = "متجر معتمد",
                     tint = Color(0xFF0284C7),
                     modifier = Modifier.size(18.dp)
                 )
@@ -423,7 +423,7 @@ fun RestaurantOfferDetailSheet(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "التوجه إلى المطعم عبر Google ماب 🚗",
+                    text = "التوجه إلى المحل عبر Google ماب 🚗",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -450,7 +450,7 @@ fun RestaurantOfferDetailSheet(
             ) {
                 Button(
                     onClick = {
-                        val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} بسعر ${offer.price} ر.س المعلن عنه في تطبيق عروض المطاعم."
+                        val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} بسعر ${offer.price} ر.س المعلن عنه في تطبيق حيّنا."
                         com.example.data.OfferTracker.whatsapp(offer.id)
                             openWhatsApp(context, shown.phone, message)
                     },

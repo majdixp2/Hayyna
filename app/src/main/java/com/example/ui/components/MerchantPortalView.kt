@@ -127,7 +127,7 @@ private fun MerchantLoginView(
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "أنت صاحب مطعم أو مقهى؟",
+            text = "عندك متجر أو محل؟",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.ExtraBold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -253,7 +253,7 @@ private fun MerchantDashboard(
                         Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            if (branchesCount > 0) "مطعمي وفروعي ($branchesCount)" else "مطعمي وفروعي (الشعار والفروع)",
+                            if (branchesCount > 0) "شعار المتجر وفروعي ($branchesCount)" else "شعار المتجر وفروعي",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )

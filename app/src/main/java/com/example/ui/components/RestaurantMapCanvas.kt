@@ -564,7 +564,7 @@ fun OfferCircleMarker(
                 }
             }
 
-            // شعار المطعم صغير في الزاوية
+            // شعار المتجر صغير في الزاوية
             if (logo != null) {
                 Surface(
                     shape = CircleShape,

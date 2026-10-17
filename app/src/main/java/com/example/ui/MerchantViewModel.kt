@@ -434,7 +434,7 @@ class MerchantViewModel(
                 merchantProfile.value = updated
                 runCatching { repository.syncMerchantOffers(user.uid, updated) }
                 isBranchesPageOpen.value = false
-                toast("تم حفظ مطعمك وفروعك ✅")
+                toast("تم حفظ متجرك وفروعك ✅")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

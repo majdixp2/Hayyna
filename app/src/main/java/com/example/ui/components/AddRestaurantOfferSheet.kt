@@ -187,7 +187,7 @@ fun AddRestaurantOfferSheet(
             )
         }
         errorMessage = when {
-            restaurantName.isBlank() -> "يرجى كتابة اسم المطعم."
+            restaurantName.isBlank() -> "يرجى كتابة اسم المتجر."
             offerTitle.isBlank() -> "يرجى كتابة عنوان العرض."
             price == null || price <= 0 -> "يرجى إدخال سعر صحيح للعرض."
             media.isEmpty() -> "يرجى إرفاق صورة أو فيديو للعرض."
@@ -208,7 +208,7 @@ fun AddRestaurantOfferSheet(
         val offer = (editingOffer ?: RestaurantOffer()).copy(
             restaurantName = restaurantName.trim(),
             offerTitle = offerTitle.trim(),
-            description = description.trim().ifBlank { "عرض متاح لجميع زبائن المطعم." },
+            description = description.trim().ifBlank { "عرض متاح لجميع العملاء." },
             cuisineType = cuisineType,
             price = price,
             originalPrice = original,
@@ -350,7 +350,7 @@ fun AddRestaurantOfferSheet(
                         value = offerTitle,
                         onValueChange = { offerTitle = it },
                         label = { Text("عنوان العرض *") },
-                        placeholder = { Text("مثال: وجبة برجر + بطاطس ومشروب مجاناً") },
+                        placeholder = { Text("مثال: خصم 30% على كل المنتجات") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("input_offer_title")
                     )
@@ -383,7 +383,7 @@ fun AddRestaurantOfferSheet(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Text("نوع المأكولات", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("تصنيف المتجر", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(LocationPresets.cuisines.filter { it != "الكل" }) { cui ->
                             FilterChip(selected = cuisineType == cui, onClick = { cuisineType = cui }, label = { Text(cui, fontSize = 12.sp) })
@@ -393,7 +393,7 @@ fun AddRestaurantOfferSheet(
                     OutlinedTextField(
                         value = restaurantName,
                         onValueChange = { restaurantName = it },
-                        label = { Text("اسم المطعم *") },
+                        label = { Text("اسم المتجر *") },
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null) },
                         modifier = Modifier.fillMaxWidth().testTag("input_restaurant_name")
@@ -452,7 +452,7 @@ fun AddRestaurantOfferSheet(
                         OutlinedTextField(
                             value = phone,
                             onValueChange = { phone = it },
-                            label = { Text("رقم واتساب / جوال المطعم *") },
+                            label = { Text("رقم واتساب / جوال المتجر *") },
                             placeholder = { Text("05xxxxxxxx") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),

@@ -137,7 +137,7 @@ fun BranchesPage(
                     Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("مطعمي وفروعي", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("شعار المتجر وفروعي", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     IconButton(onClick = { if (!isSaving) onClose() }) { Icon(Icons.Default.Close, contentDescription = "إغلاق") }
                 }
                 HorizontalDivider()
@@ -169,7 +169,7 @@ fun BranchesPage(
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("شعار المطعم", fontWeight = FontWeight.Bold)
+                            Text("شعار المتجر", fontWeight = FontWeight.Bold)
                             Text(
                                 "اضغط على الدائرة لاختيار الشعار. يظهر صغير على عروضك في الخريطة.",
                                 fontSize = 12.sp,
@@ -181,7 +181,7 @@ fun BranchesPage(
                     OutlinedTextField(
                         value = restaurantName,
                         onValueChange = { restaurantName = it },
-                        label = { Text("اسم المطعم *") },
+                        label = { Text("اسم المتجر *") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -254,7 +254,7 @@ fun BranchesPage(
                         Button(
                             onClick = {
                                 when {
-                                    restaurantName.isBlank() -> error = "اكتب اسم المطعم."
+                                    restaurantName.isBlank() -> error = "اكتب اسم المتجر."
                                     branches.isEmpty() -> error = "أضف فرع واحد على الأقل."
                                     else -> onSave(
                                         profile.copy(restaurantName = restaurantName.trim(), branches = branches.toList()),

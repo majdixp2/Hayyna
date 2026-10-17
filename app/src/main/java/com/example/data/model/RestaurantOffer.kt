@@ -52,7 +52,7 @@ data class RestaurantOffer(
     val expiresAt: Timestamp? = null,
     // صور العرض (حتى 3). mediaUri يبقى الصورة الأولى/الغلاف للتوافق مع العروض القديمة.
     val mediaUris: List<String> = emptyList(),
-    // شعار المطعم (يظهر صغير على أيقونة الخريطة)
+    // شعار المتجر (يظهر صغير على أيقونة الخريطة)
     val logoUrl: String = "",
     // الفروع اللي يشملها العرض (نسخة من ملف المطعم وقت النشر)
     val branches: List<Branch> = emptyList(),

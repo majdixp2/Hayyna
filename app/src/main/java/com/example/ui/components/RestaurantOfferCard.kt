@@ -248,7 +248,7 @@ fun RestaurantOfferCard(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (offer.distanceKm <= 0.0) "موقع المطعم: ${offer.district}" else "يبعد المحل: ${if (offer.distanceKm < 1.0) "${(offer.distanceKm * 1000).toInt()} م" else "${offer.distanceKm} كم"}",
+                                text = if (offer.distanceKm <= 0.0) "موقع المحل: ${offer.district}" else "يبعد المحل: ${if (offer.distanceKm < 1.0) "${(offer.distanceKm * 1000).toInt()} م" else "${offer.distanceKm} كم"}",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF166534)
@@ -343,7 +343,7 @@ fun RestaurantOfferCard(
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = "التوجه للمطعم 🚗",
+                            text = "التوجه للمحل 🚗",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )

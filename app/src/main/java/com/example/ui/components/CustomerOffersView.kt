@@ -111,7 +111,7 @@ fun CustomerOffersView(
                                 color = Color(0xFF262A33)
                             )
                             Text(
-                                text = "تصفح أحدث عروض وجبات المطاعم وشاهد كم يبعد كل محل عنك",
+                                text = "تصفح أحدث عروض المتاجر وشاهد كم يبعد كل محل عنك",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -141,7 +141,7 @@ fun CustomerOffersView(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = onSearchQueryChange,
-                            placeholder = { Text("ابحث عن مطعم، عرض، وجبة...", fontSize = 12.sp) },
+                            placeholder = { Text("ابحث عن متجر، عرض، منتج...", fontSize = 12.sp) },
                             leadingIcon = {
                                 Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                             },
@@ -320,7 +320,7 @@ fun CustomerOffersView(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "جرّب تغيير الحي أو إزالة كلمات البحث لتظهر لك باقي عروض المطاعم",
+                            text = "جرّب تغيير الحي أو إزالة كلمات البحث لتظهر لك باقي العروض",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center

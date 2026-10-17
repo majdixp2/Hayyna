@@ -204,7 +204,7 @@ fun MerchantStoreScreen(
                                             OutlinedTextField(
                                                 value = searchQuery,
                                                 onValueChange = { viewModel.onSearchQueryChange(it) },
-                                                placeholder = { Text("ابحث عن مطعم، أو وجبة...", fontSize = 12.sp) },
+                                                placeholder = { Text("ابحث عن متجر أو عرض...", fontSize = 12.sp) },
                                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                                 trailingIcon = {
                                                     if (searchQuery.isNotBlank()) {
@@ -325,7 +325,7 @@ fun MerchantStoreScreen(
                                                 modifier = Modifier.clickable { isRestaurantListSheetOpen = true }
                                             ) {
                                                 Text(
-                                                    text = "📋 قائمة المطاعم (${filteredCustomerOffers.size})",
+                                                    text = "📋 قائمة المتاجر (${filteredCustomerOffers.size})",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = CalmSagePrimary,

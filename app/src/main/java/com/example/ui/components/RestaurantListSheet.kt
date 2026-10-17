@@ -59,8 +59,8 @@ fun RestaurantListSheet(
     selectedDistrict: String,
     onSelectOffer: (RestaurantOffer) -> Unit,
     onDismiss: () -> Unit,
-    title: String = "قائمة مطاعم وعروض الحي 🍽️",
-    subtitle: String = "اضغط على أي مطعم لعرض موقعه وإعلانه على الخريطة"
+    title: String = "قائمة متاجر وعروض الحي 🛍️",
+    subtitle: String = "اضغط على أي متجر لعرض موقعه وإعلانه على الخريطة"
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
@@ -122,7 +122,7 @@ fun RestaurantListSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "لا توجد مطاعم مطابقة للبحث في هذا الحي حالياً",
+                        text = "لا توجد متاجر مطابقة للبحث في هذا الحي حالياً",
                         fontSize = 13.sp,
                         color = Color.Gray
                     )
