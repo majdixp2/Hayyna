@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -97,7 +97,9 @@ fun SplashLogo(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // مواضع ثابتة من اليسار (الصورة نفسها ما تنعكس في الواجهة العربية)
             BoxWithConstraints(
+                contentAlignment = androidx.compose.ui.AbsoluteAlignment.TopLeft,
                 modifier = Modifier
                     .fillMaxWidth(0.58f)
                     .aspectRatio(WORD_ASPECT)
@@ -121,7 +123,7 @@ fun SplashLogo(modifier: Modifier = Modifier) {
                 val pinTipY = h * (PIN_TOP + PIN_HEIGHT)
                 Canvas(
                     modifier = Modifier
-                        .offset(x = pinCenterX - w * 0.3f, y = pinTipY - w * 0.3f)
+                        .absoluteOffset(x = pinCenterX - w * 0.3f, y = pinTipY - w * 0.3f)
                         .size(w * 0.6f)
                 ) {
                     val p = ripple.value
@@ -141,7 +143,7 @@ fun SplashLogo(modifier: Modifier = Modifier) {
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .offset(x = w * PIN_LEFT, y = h * PIN_TOP)
+                        .absoluteOffset(x = w * PIN_LEFT, y = h * PIN_TOP)
                         .size(width = w * PIN_WIDTH, height = h * PIN_HEIGHT)
                         .graphicsLayer {
                             alpha = pinAlpha.value
