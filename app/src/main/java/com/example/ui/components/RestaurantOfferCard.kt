@@ -82,7 +82,7 @@ fun RestaurantOfferCard(
                     mediaUri = offer.mediaUri,
                     mediaType = offer.mediaType,
                     isPromotionalVideo = offer.isPromotionalVideo,
-                    promotionalBadge = offer.discountBadge,
+                    promotionalBadge = offer.displayBadge,
                     autoPlayVideo = false,
                     modifier = Modifier.fillMaxWidth().height(180.dp)
                 )
@@ -137,12 +137,16 @@ fun RestaurantOfferCard(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Restaurant,
-                            contentDescription = null,
-                            tint = CalmSagePrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        if (offer.logoUrl.startsWith("http")) {
+                            StoreLogo(logoUrl = offer.logoUrl, size = 24.dp)
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Restaurant,
+                                contentDescription = null,
+                                tint = CalmSagePrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = offer.restaurantName,

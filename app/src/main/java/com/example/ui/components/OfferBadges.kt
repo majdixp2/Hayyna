@@ -1,6 +1,8 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -55,6 +57,41 @@ fun OpenNowChip(offer: RestaurantOffer, modifier: Modifier = Modifier) {
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+        )
+    }
+}
+
+/**
+ * شارة العرض المعروضة للعميل: تُحسب من السعرين (خصم X%) بدل النص المحفوظ،
+ * عشان ما تطلع شارات قديمة/عشوائية مثل "فيديو إعلاني حصري".
+ */
+val RestaurantOffer.displayBadge: String
+    get() {
+        val original = originalPrice ?: return ""
+        if (original <= 0 || price >= original) return ""
+        val pct = ((original - price) / original * 100).toInt()
+        return if (pct >= 1) "خصم $pct% 🔥" else ""
+    }
+
+/** شعار المتجر صغير ودائري (لا يظهر شي إذا ما عنده شعار). */
+@Composable
+fun StoreLogo(
+    logoUrl: String,
+    size: androidx.compose.ui.unit.Dp = 24.dp,
+    modifier: Modifier = Modifier
+) {
+    if (!logoUrl.startsWith("http")) return
+    Surface(
+        shape = androidx.compose.foundation.shape.CircleShape,
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB)),
+        modifier = modifier.size(size)
+    ) {
+        coil.compose.AsyncImage(
+            model = com.example.data.CloudinaryUrls.image(logoUrl, 96),
+            contentDescription = "شعار المتجر",
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
         )
     }
 }

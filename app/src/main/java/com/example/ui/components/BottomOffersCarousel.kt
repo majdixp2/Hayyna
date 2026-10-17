@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -254,22 +255,29 @@ fun SelectedRestaurantOfferCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = offer.restaurantName,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 14.sp,
-                            color = CalmSagePrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            StoreLogo(logoUrl = offer.logoUrl, size = 22.dp)
+                            if (offer.logoUrl.startsWith("http")) Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = offer.restaurantName,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = CalmSagePrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
 
-                        if (offer.discountBadge.isNotBlank()) {
+                        if (offer.displayBadge.isNotBlank()) {
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
                                 color = Color(0xFFFEF3C7)
                             ) {
                                 Text(
-                                    text = offer.discountBadge,
+                                    text = offer.displayBadge,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFFB45309),
@@ -361,7 +369,8 @@ fun SelectedRestaurantOfferCard(
             // 3. Primary Actions: Navigate in Google Maps + Expand Full Ad & Video
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 // Button 1: Navigate to Restaurant
                 Button(
@@ -370,8 +379,8 @@ fun SelectedRestaurantOfferCard(
                         openDirectionsInGoogleMaps(context, offer.latitude, offer.longitude)
                     },
                     modifier = Modifier
-                        .weight(1.1f)
-                        .height(38.dp)
+                        .weight(1f)
+                        .heightIn(min = 44.dp)
                         .testTag("directions_bottom_card_btn"),
                     colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
                     shape = RoundedCornerShape(10.dp),
@@ -384,9 +393,11 @@ fun SelectedRestaurantOfferCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "التوجّه للمحل 🚗",
+                        text = "الاتجاه",
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 
@@ -394,8 +405,8 @@ fun SelectedRestaurantOfferCard(
                 OutlinedButton(
                     onClick = { onOfferClick(offer) },
                     modifier = Modifier
-                        .weight(1.1f)
-                        .height(38.dp)
+                        .weight(1f)
+                        .heightIn(min = 44.dp)
                         .testTag("expand_offer_bottom_card_btn"),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
@@ -404,16 +415,12 @@ fun SelectedRestaurantOfferCard(
                     border = BorderStroke(1.5.dp, CalmSagePrimary),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowUp,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "تكبير الإعلان 🎬",
+                        text = "تفاصيل العرض",
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 
@@ -422,7 +429,7 @@ fun SelectedRestaurantOfferCard(
                     shape = RoundedCornerShape(10.dp),
                     color = Color(0xFF25D366),
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(44.dp)
                         .clickable {
                             val message = "مرحباً ${offer.restaurantName}، أود الاستفسار عن عرض: ${offer.offerTitle}"
                             com.example.data.OfferTracker.whatsapp(offer.id)
@@ -434,7 +441,7 @@ fun SelectedRestaurantOfferCard(
                         imageVector = Icons.Default.Chat,
                         contentDescription = "واتساب",
                         tint = Color.White,
-                        modifier = Modifier.padding(9.dp)
+                        modifier = Modifier.padding(11.dp)
                     )
                 }
 
@@ -443,7 +450,7 @@ fun SelectedRestaurantOfferCard(
                     shape = RoundedCornerShape(10.dp),
                     color = Color(0xFFF3F1EC),
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(44.dp)
                         .clickable {
                             callPhone(context, offer.phone)
                         }
@@ -453,7 +460,7 @@ fun SelectedRestaurantOfferCard(
                         imageVector = Icons.Default.Call,
                         contentDescription = "اتصال",
                         tint = Color(0xFF262A33),
-                        modifier = Modifier.padding(9.dp)
+                        modifier = Modifier.padding(11.dp)
                     )
                 }
             }

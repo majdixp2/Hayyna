@@ -194,6 +194,8 @@ fun RestaurantListSheet(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        StoreLogo(logoUrl = offer.logoUrl, size = 20.dp)
+                                        if (offer.logoUrl.startsWith("http")) Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             text = offer.restaurantName,
                                             fontWeight = FontWeight.Bold,
@@ -201,13 +203,13 @@ fun RestaurantListSheet(
                                             color = CalmSagePrimary
                                         )
 
-                                        if (offer.discountBadge.isNotBlank()) {
+                                        if (offer.displayBadge.isNotBlank()) {
                                             Surface(
                                                 shape = RoundedCornerShape(6.dp),
                                                 color = Color(0xFFFEF3C7)
                                             ) {
                                                 Text(
-                                                    text = offer.discountBadge,
+                                                    text = offer.displayBadge,
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = Color(0xFFB45309),

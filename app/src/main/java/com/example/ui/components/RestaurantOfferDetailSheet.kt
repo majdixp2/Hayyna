@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
@@ -165,7 +166,7 @@ fun RestaurantOfferDetailSheet(
                         ProductMediaViewer(
                             mediaUri = gallery[page],
                             mediaType = MediaType.IMAGE,
-                            promotionalBadge = if (page == 0) offer.discountBadge else "",
+                            promotionalBadge = if (page == 0) offer.displayBadge else "",
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -192,7 +193,7 @@ fun RestaurantOfferDetailSheet(
                         mediaUri = offer.mediaUri,
                         mediaType = offer.mediaType,
                         isPromotionalVideo = offer.isPromotionalVideo,
-                        promotionalBadge = offer.discountBadge,
+                        promotionalBadge = offer.displayBadge,
                         autoPlayVideo = offer.mediaType == MediaType.VIDEO,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -203,13 +204,17 @@ fun RestaurantOfferDetailSheet(
 
             // Restaurant Name & Verified Badge
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Restaurant,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
+                if (offer.logoUrl.startsWith("http")) {
+                    StoreLogo(logoUrl = offer.logoUrl, size = 32.dp)
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Storefront,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = offer.restaurantName,
                     fontSize = 17.sp,
@@ -273,14 +278,14 @@ fun RestaurantOfferDetailSheet(
                     )
                 }
 
-                if (offer.discountBadge.isNotBlank()) {
+                if (offer.displayBadge.isNotBlank()) {
                     Spacer(modifier = Modifier.width(10.dp))
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = MaterialTheme.colorScheme.secondaryContainer
                     ) {
                         Text(
-                            text = offer.discountBadge,
+                            text = offer.displayBadge,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
