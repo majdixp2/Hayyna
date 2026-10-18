@@ -33,10 +33,15 @@ jobs:
         run: |
           echo "$SA" > "$RUNNER_TEMP/sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
-          npx -y firebase-tools@14 deploy --only hosting --project gen-lang-client-0536850806 --non-interactive
+          npx -y firebase-tools@14 deploy --only hosting --project gen-lang-client-0536850806 --non-interactive 2>&1 | tee hosting.txt
+          grep -iE "Hosting URL" hosting.txt | sed 's/^/::notice::/' || true
       - name: Deploy Firestore rules
         if: steps.check.outputs.skip != 'true'
         continue-on-error: true
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
-          npx -y firebase-tools@14 deploy --only firestore:rules --project gen-lang-client-0536850806 --non-interactive
+          set -o pipefail
+          npx -y firebase-tools@14 deploy --only firestore:rules --project gen-lang-client-0536850806 --non-interactive 2>&1 | tee rules.txt || {
+            grep -iE "error|denied|permission|missing" rules.txt | head -8 | sed 's/^/::error::/'
+            exit 1
+          }
