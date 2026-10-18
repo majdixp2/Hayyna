@@ -16,7 +16,7 @@ const db = getFirestore(app, FIRESTORE_DB_ID);
 // ---------------- الحالة ----------------
 const state = {
   tab: localStorage.getItem("hayyna_admin_tab") || "home",
-  offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {},
+  offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [],
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
 };
 const unsubs = [];
@@ -69,6 +69,7 @@ function listen() {
   unsubs.push(onSnapshot(collection(db, "merchantStatus"), (s) => { state.statuses = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
   unsubs.push(onSnapshot(query(collection(db, "stores"), where("approved", "==", false)), (s) => { state.pendingStores = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
   unsubs.push(onSnapshot(query(collection(db, "feedback"), orderBy("createdAt", "desc"), limit(300)), (s) => { state.feedback = parse(s); render(); }, console.error));
+  unsubs.push(onSnapshot(query(collection(db, "poiInterest"), orderBy("taps", "desc"), limit(50)), (s) => { state.poi = parse(s); render(); }, console.error));
   unsubs.push(onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; render(); }, console.error));
 }
 
@@ -231,6 +232,11 @@ function stores(c) {
     ${trusted.length ? `<div class="grid">${trusted.map((s) => `<div class="card row" style="align-items:center;justify-content:space-between">
       <b>${esc(s.name || s.uid.slice(0, 8))}</b><span><button class="btn" data-act="untrust" data-id="${s.uid}">إلغاء التوثيق</button>
       <button class="btn danger" data-act="suspendUid" data-id="${s.uid}" data-name="${esc(s.name)}">إيقاف</button></span></div>`).join("")}</div>` : `<p class="muted">ما فيه متاجر موثوقة للحين</p>`}
+    <h2>📍 محلات غير مسجّلة يطلبها العملاء</h2>
+    <p class="muted">من نقاط خرائط Google: 👆 ضغطات • 📣 دعوات • 🏪 "أنا صاحب المحل"</p>
+    ${state.poi.length ? `<div class="grid">${state.poi.map((p) => `<a class="card row" style="justify-content:space-between;text-decoration:none;color:inherit" target="_blank" rel="noopener"
+       href="https://www.google.com/maps/search/?api=1&query=place&query_place_id=${encodeURIComponent(p.id)}">
+       <b>👆 ${p.taps || 0} &nbsp; 📣 ${p.invites || 0} &nbsp; 🏪 ${p.claims || 0}</b><span class="name">افتح في الخرائط ›</span></a>`).join("")}</div>` : `<p class="muted">ما فيه بيانات للحين</p>`}
     <h2>⛔ حسابات موقوفة (${suspended.length})</h2>
     ${suspended.length ? `<div class="grid">${suspended.map((s) => `<div class="card row" style="align-items:center;justify-content:space-between">
       <b>${esc(s.name || s.uid.slice(0, 8))}</b><button class="btn" data-act="unsuspend" data-id="${s.uid}">إلغاء الإيقاف</button></div>`).join("")}</div>` : `<p class="muted">ما فيه حسابات موقوفة ✅</p>`}`;
@@ -287,6 +293,16 @@ function settings() {
       <details><summary>إعدادات متقدمة (اسم النموذج)</summary>
         <div class="row" style="margin-top:8px"><input type="text" id="aiModel" value="${esc(cfg.aiModel || "gemini-3.8-flash")}" style="max-width:260px">
         <button class="btn primary" data-act="saveModel">حفظ</button></div></details>
+    </div>
+    <h2>📍 محلات Google على الخريطة</h2>
+    <div class="card">
+      <label class="switch"><input type="checkbox" id="poiOn" ${cfg.showGooglePoi !== false ? "checked" : ""}> إظهار نقاط المحلات (باهتة)</label>
+      <label class="switch" style="margin-top:8px"><input type="checkbox" id="inviteOn" ${cfg.poiInviteEnabled !== false ? "checked" : ""}> بطاقة "ادعه لحيّنا" عند الضغط</label>
+      <p class="muted">نص الدعوة ({name} = اسم المحل)</p>
+      <textarea id="inviteMsg">${esc(cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة حيّنا. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')}</textarea>
+      <p class="muted">رابط تحميل التطبيق (اختياري)</p>
+      <input type="text" id="appLink" value="${esc(cfg.appLink || "")}">
+      <div class="actions"><button class="btn primary" data-act="savePoi">حفظ</button></div>
     </div>`;
 }
 
@@ -300,6 +316,8 @@ function bind() {
   c.querySelectorAll("[data-ofilter]").forEach((b) => (b.onclick = () => { state.offerFilter = b.dataset.ofilter; render(); }));
   c.querySelectorAll("textarea[id^=reply_]").forEach((t) => (t.oninput = () => { state.drafts[t.id.slice(6)] = t.value; }));
   const oq = $("offerQuery"); if (oq) oq.oninput = () => { state.offerQuery = oq.value; render(); };
+  const poiOn = $("poiOn"); if (poiOn) poiOn.onchange = () => run(() => actions.saveConfig({ showGooglePoi: poiOn.checked }), "تم ✅");
+  const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => run(() => actions.saveConfig({ poiInviteEnabled: invOn.checked }), "تم ✅");
   const ai = $("aiOn"); if (ai) ai.onchange = () => run(() => actions.saveConfig({ aiAutofillEnabled: ai.checked }), ai.checked ? "التعبئة الذكية مفعّلة ✨" : "التعبئة الذكية موقفة");
   c.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => {
     const id = b.dataset.id, o = byId(id);
@@ -323,6 +341,7 @@ function bind() {
       deleteFb: () => actions.deleteFb(id),
       saveSupport: () => actions.saveConfig({ supportWhatsapp: $("supportNum").value.trim() }),
       saveModel: () => actions.saveConfig({ aiModel: $("aiModel").value.trim() }),
+      savePoi: () => actions.saveConfig({ inviteMessage: $("inviteMsg").value.trim(), appLink: $("appLink").value.trim() }),
     };
     if (map[b.dataset.act]) run(map[b.dataset.act], ["approve", "trust", "suspendOffer", "suspendUid"].includes(b.dataset.act) ? null : "تم ✅");
   }));
