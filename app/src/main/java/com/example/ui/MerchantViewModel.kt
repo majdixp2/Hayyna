@@ -885,6 +885,13 @@ class MerchantViewModel(
         }
     }
 
+    fun untrustMerchant(status: com.example.data.repository.MerchantStatus) {
+        launchSafely("تعذّر التحديث.") {
+            repository.setMerchantStatus(status.copy(trusted = false))
+            toast("تم إلغاء توثيق ${status.name} — عروضه الجاية تمر بالمراجعة")
+        }
+    }
+
     fun unsuspendMerchant(status: com.example.data.repository.MerchantStatus) {
         launchSafely("تعذّر إلغاء الإيقاف.") {
             repository.setMerchantStatus(status.copy(suspended = false, trusted = false))

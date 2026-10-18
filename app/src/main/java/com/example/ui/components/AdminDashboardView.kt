@@ -78,6 +78,7 @@ fun AdminDashboardView(
     appCheckToken: String? = null,
     lastAiError: String? = null,
     onLoadAppCheckToken: () -> Unit = {},
+    onUntrust: (com.example.data.repository.MerchantStatus) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var inboxType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
@@ -117,402 +118,412 @@ fun AdminDashboardView(
         }
     }
 
-    LazyColumn(
-        modifier = modifier.testTag("admin_dashboard_view"),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        // 📨 رسائل المستخدمين
-        item {
-            Text(
-                text = "📨 رسائل المستخدمين" + if (newCount > 0) " ($newCount جديدة)" else "",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = if (newCount > 0) CalmSagePrimary else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            androidx.compose.foundation.lazy.LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(top = 6.dp)
-            ) {
-                val types = listOf("الكل") + com.example.data.model.Feedback.TYPES
-                items(types.size) { i ->
-                    androidx.compose.material3.FilterChip(
-                        selected = inboxType == types[i],
-                        onClick = { inboxType = types[i] },
-                        label = { Text(types[i], fontSize = 11.sp) }
-                    )
-                }
-                item {
-                    androidx.compose.material3.FilterChip(
-                        selected = showDone,
-                        onClick = { showDone = !showDone },
-                        label = { Text("إظهار المنتهية", fontSize = 11.sp) }
-                    )
-                }
-            }
-        }
-        if (inbox.isEmpty()) {
-            item { Text("لا توجد رسائل ✅", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-        items(inbox, key = { "fb_" + it.id }) { f ->
-            FeedbackCard(
-                f = f,
-                onReply = { r, st -> onReplyFeedback(f.id, r, st) },
-                onStatus = { st -> onFeedbackStatus(f.id, st) },
-                onDelete = { onDeleteFeedback(f.id) },
-                onOpenImage = { viewerImage = it }
-            )
-        }
+    val nowMs = System.currentTimeMillis()
+    val trusted = merchantStatuses.filter { it.trusted && !it.suspended }
+    val visiblePendingStores = pendingStores.filter { st -> merchantStatuses.none { it.uid == st.uid && it.suspended } }
+    val hiddenIds = hiddenByReports.map { it.id }.toSet()
+    val otherReports = reports.filter { it.offerId !in hiddenIds }.groupBy { it.offerId }
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
+    var offerQuery by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    var offerFilter by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
 
-        // ⚙️ رقم واتساب الدعم
-        item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
-        item { AiSettingsCard(enabled = aiEnabled, model = aiModel, onSave = onSaveAi) }
-        if (lastAiError != null) {
-            item {
-                androidx.compose.foundation.text.selection.SelectionContainer {
-                    Text("آخر خطأ في التعبئة الذكية:\n$lastAiError", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-        item { AppCheckTokenCard(token = appCheckToken, onLoad = onLoadAppCheckToken) }
+    val reviewCount = pending.size + hiddenByReports.size
+    val storesCount = visiblePendingStores.size
+    data class AdminTab(val title: String, val badge: Int)
+    val tabs = listOf(
+        AdminTab("🏠 الرئيسية", 0),
+        AdminTab("⏳ المراجعة", reviewCount),
+        AdminTab("🏪 المتاجر", storesCount),
+        AdminTab("📨 الرسائل", newCount),
+        AdminTab("📋 كل العروض", 0),
+        AdminTab("⚙️ الإعدادات", if (lastAiError != null) 1 else 0)
+    )
 
-        // ⏳ بانتظار المراجعة
-        item {
-            Text(
-                text = if (pending.isEmpty()) "بانتظار المراجعة: لا يوجد ✅" else "⏳ بانتظار المراجعة (${pending.size})",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = if (pending.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF8A5A00)
-            )
-        }
-        items(pending, key = { "p_" + it.id }) { o ->
-            ReviewCard(
-                offer = o,
-                note = null,
-                primaryLabel = "اعتماد ✓",
-                onPrimary = { onApprove(o) },
-                secondaryLabel = "اعتماد + توثيق التاجر",
-                onSecondary = { onTrustMerchant(o) },
-                onDelete = { onDeleteOffer(o.id) },
-                onSuspend = { confirmSuspend = o }
-            )
-        }
-
-        // 🏪 صفحات متاجر بانتظار المراجعة
-        val visiblePendingStores = pendingStores.filter { st -> merchantStatuses.none { it.uid == st.uid && it.suspended } }
-        if (visiblePendingStores.isNotEmpty()) {
-            item {
-                Text(
-                    "🏪 صفحات متاجر بانتظار المراجعة (${visiblePendingStores.size})",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color(0xFF8A5A00)
-                )
-            }
-            items(visiblePendingStores, key = { "st_" + it.uid }) { st ->
-                Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
+    Column(modifier = modifier.testTag("admin_dashboard_view")) {
+        androidx.compose.material3.ScrollableTabRow(
+            selectedTabIndex = tab,
+            edgePadding = 0.dp,
+            containerColor = Color.Transparent,
+            contentColor = CalmSagePrimary
+        ) {
+            tabs.forEachIndexed { i, t ->
+                androidx.compose.material3.Tab(
+                    selected = tab == i,
+                    onClick = { tab = i },
+                    text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            StoreLogo(logoUrl = st.logoUrl, size = 40.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(st.name, fontWeight = FontWeight.Bold)
-                                Text(st.category, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        if (st.about.isNotBlank()) Text(st.about, fontSize = 12.sp, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
-                        val pics = listOf(st.coverUrl).filter { it.isNotBlank() } + st.menuImages
-                        if (pics.isNotEmpty()) {
-                            androidx.compose.foundation.lazy.LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(top = 6.dp)
-                            ) {
-                                items(pics.size) { i ->
-                                    coil.compose.AsyncImage(
-                                        model = com.example.data.CloudinaryUrls.image(pics[i], 300),
-                                        contentDescription = null,
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                        modifier = Modifier.size(70.dp)
+                            Text(t.title, fontSize = 13.sp, fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
+                            if (t.badge > 0) {
+                                Spacer(Modifier.width(4.dp))
+                                Surface(shape = androidx.compose.foundation.shape.CircleShape, color = Color(0xFFE05A47)) {
+                                    Text(
+                                        "${t.badge}",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                     )
                                 }
                             }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                            androidx.compose.material3.Button(
-                                onClick = { onApproveStore(st) },
-                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
-                                shape = RoundedCornerShape(10.dp)
-                            ) { Text("اعتماد الصفحة ✓", fontSize = 12.sp) }
-                            OutlinedButton(onClick = { onSuspendMerchant(st.uid, st.name) }, shape = RoundedCornerShape(10.dp)) {
-                                Text("إيقاف التاجر", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                )
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            when (tab) {
+                // ---------------- 🏠 الرئيسية ----------------
+                0 -> {
+                    item { SectionHeader("يحتاج انتباهك") }
+                    val todo = listOf(
+                        Triple("⏳ عروض تنتظر المراجعة", pending.size, 1),
+                        Triple("🚩 عروض مخفية بسبب البلاغات", hiddenByReports.size, 1),
+                        Triple("🏪 صفحات متاجر تنتظر الموافقة", visiblePendingStores.size, 2),
+                        Triple("📨 رسائل جديدة", newCount, 3)
+                    )
+                    if (todo.all { it.second == 0 }) {
+                        item { Text("كل شي تمام، ما فيه شي ينتظرك ✅", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    items(todo.filter { it.second > 0 }.size) { i ->
+                        val (label, count, target) = todo.filter { it.second > 0 }[i]
+                        Card(
+                            onClick = { tab = target },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF4E0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(label, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                Text("$count ›", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = Color(0xFF8A5A00))
+                            }
+                        }
+                    }
+                    item { SectionHeader("إحصائيات") }
+                    item {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AdminStatCard("المتاجر", "${offers.map { it.merchantId }.distinct().size}", Icons.Default.Restaurant, CalmSagePrimary, Modifier.weight(1f))
+                            AdminStatCard(
+                                "عروض نشطة",
+                                "${offers.count { it.isApproved && !com.example.data.model.OfferTime.isExpired(it, nowMs) }}",
+                                Icons.Default.CheckCircle,
+                                Color(0xFF16A34A),
+                                Modifier.weight(1f)
+                            )
+                            AdminStatCard("الأحياء", "${offers.map { it.district }.filter { it.isNotBlank() }.distinct().size}", Icons.Default.LocationOn, SoftTerracotta, Modifier.weight(1f))
+                        }
+                    }
+                    item {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AdminStatCard("المشاهدات", "${offers.sumOf { it.viewsCount }}", Icons.Default.Visibility, CalmSagePrimary, Modifier.weight(1f))
+                            AdminStatCard("موثوقين", "${trusted.size}", Icons.Default.Star, Color(0xFFD97706), Modifier.weight(1f))
+                            AdminStatCard("فيديوهات", "${offers.count { it.mediaType == MediaType.VIDEO }}", Icons.Default.Videocam, Color(0xFFE05A47), Modifier.weight(1f))
+                        }
+                    }
+                }
+
+                // ---------------- ⏳ المراجعة ----------------
+                1 -> {
+                    item { SectionHeader(if (pending.isEmpty()) "عروض جديدة: لا يوجد ✅" else "⏳ عروض جديدة تنتظر المراجعة (${pending.size})") }
+                    items(pending, key = { "p_" + it.id }) { o ->
+                        ReviewCard(
+                            offer = o,
+                            note = null,
+                            primaryLabel = "اعتماد ✓",
+                            onPrimary = { onApprove(o) },
+                            secondaryLabel = "اعتماد + توثيق التاجر",
+                            onSecondary = { onTrustMerchant(o) },
+                            onDelete = { onDeleteOffer(o.id) },
+                            onSuspend = { confirmSuspend = o }
+                        )
+                    }
+                    item { SectionHeader(if (hiddenByReports.isEmpty()) "مخفية بسبب البلاغات: لا يوجد ✅" else "🚩 مخفية بسبب البلاغات (${hiddenByReports.size})") }
+                    items(hiddenByReports, key = { "r_" + it.id }) { o ->
+                        ReviewCard(
+                            offer = o,
+                            note = "${o.reportsCount} بلاغات: " + reports.filter { it.offerId == o.id }.joinToString("، ") { it.reason }.take(200),
+                            primaryLabel = "سليم، رجّعه",
+                            onPrimary = { onKeepReported(o) },
+                            secondaryLabel = null,
+                            onSecondary = {},
+                            onDelete = { onDeleteOffer(o.id) },
+                            onSuspend = { confirmSuspend = o }
+                        )
+                    }
+                    if (otherReports.isNotEmpty()) {
+                        item { SectionHeader("🚩 بلاغات أخرى (أقل من ${com.example.ui.MerchantViewModel.AUTO_HIDE_REPORTS})") }
+                        items(otherReports.keys.toList(), key = { "or_" + it }) { offerId ->
+                            val list = otherReports[offerId].orEmpty()
+                            val first = list.first()
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFDF2F0)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text(first.offerTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2)
+                                    Text("${first.restaurantName} • ${list.size} بلاغ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    list.take(5).forEach { r ->
+                                        Text("• ${r.reason}", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                                        androidx.compose.material3.TextButton(onClick = { list.forEach { onDismissReport(it.id) } }) {
+                                            Text("تجاهل البلاغات")
+                                        }
+                                        androidx.compose.material3.TextButton(onClick = {
+                                            onDeleteOffer(offerId)
+                                            list.forEach { onDismissReport(it.id) }
+                                        }) {
+                                            Text("احذف العرض", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
-        }
 
-        // 🚩 مخفية بسبب البلاغات
-        if (hiddenByReports.isNotEmpty()) {
-            item {
-                Text(
-                    text = "🚩 مخفية بسبب البلاغات (${hiddenByReports.size})",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            items(hiddenByReports, key = { "r_" + it.id }) { o ->
-                ReviewCard(
-                    offer = o,
-                    note = "${o.reportsCount} بلاغات: " + reports.filter { it.offerId == o.id }.joinToString("، ") { it.reason }.take(200),
-                    primaryLabel = "سليم، رجّعه",
-                    onPrimary = { onKeepReported(o) },
-                    secondaryLabel = null,
-                    onSecondary = {},
-                    onDelete = { onDeleteOffer(o.id) },
-                    onSuspend = { confirmSuspend = o }
-                )
-            }
-        }
-
-        // ⛔ الحسابات الموقوفة
-        if (suspended.isNotEmpty()) {
-            item {
-                Text("⛔ حسابات موقوفة (${suspended.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
-            items(suspended, key = { "s_" + it.uid }) { st ->
-                Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(st.name.ifBlank { st.uid.take(8) }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        androidx.compose.material3.TextButton(onClick = { onUnsuspend(st) }) { Text("إلغاء الإيقاف") }
+                // ---------------- 🏪 المتاجر ----------------
+                2 -> {
+                    item { SectionHeader(if (visiblePendingStores.isEmpty()) "صفحات تنتظر الموافقة: لا يوجد ✅" else "🏪 صفحات تنتظر الموافقة (${visiblePendingStores.size})") }
+                    items(visiblePendingStores, key = { "st_" + it.uid }) { st ->
+                        PendingStoreCard(st, onApprove = { onApproveStore(st) }, onSuspend = { onSuspendMerchant(st.uid, st.name) })
                     }
-                }
-            }
-        }
-
-        // البلاغات أولاً — تحتاج مراجعة
-        item {
-            Text(
-                text = if (reports.isEmpty()) "البلاغات: لا يوجد ✅" else "🚩 البلاغات (${reports.size})",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = if (reports.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
-            )
-        }
-        items(reports.size) { index ->
-            val report = reports[index]
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFDF2F0)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(report.offerTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2)
-                    Text(report.restaurantName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(4.dp))
-                    Text("السبب: ${report.reason}", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-                        androidx.compose.material3.TextButton(onClick = { onDismissReport(report.id) }) {
-                            Text("تجاهل البلاغ")
+                    item { SectionHeader("⭐ متاجر موثوقة (${trusted.size})") }
+                    if (trusted.isEmpty()) {
+                        item { Text("ما فيه متاجر موثوقة للحين", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    items(trusted, key = { "t_" + it.uid }) { st ->
+                        Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(st.name.ifBlank { st.uid.take(8) }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                androidx.compose.material3.TextButton(onClick = { onUntrust(st) }) { Text("إلغاء التوثيق") }
+                                androidx.compose.material3.TextButton(onClick = { onSuspendMerchant(st.uid, st.name) }) {
+                                    Text("إيقاف", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
                         }
-                        androidx.compose.material3.TextButton(onClick = {
-                            onDeleteOffer(report.offerId)
-                            onDismissReport(report.id)
-                        }) {
-                            Text("احذف العرض", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    }
+                    item { SectionHeader("⛔ حسابات موقوفة (${suspended.size})") }
+                    if (suspended.isEmpty()) {
+                        item { Text("ما فيه حسابات موقوفة ✅", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    items(suspended, key = { "s_" + it.uid }) { st ->
+                        Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(st.name.ifBlank { st.uid.take(8) }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                androidx.compose.material3.TextButton(onClick = { onUnsuspend(st) }) { Text("إلغاء الإيقاف") }
+                            }
                         }
                     }
                 }
+
+                // ---------------- 📨 الرسائل ----------------
+                3 -> {
+                    item {
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val types = listOf("الكل") + com.example.data.model.Feedback.TYPES
+                            items(types.size) { i ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = inboxType == types[i],
+                                    onClick = { inboxType = types[i] },
+                                    label = { Text(types[i], fontSize = 11.sp) }
+                                )
+                            }
+                            item {
+                                androidx.compose.material3.FilterChip(
+                                    selected = showDone,
+                                    onClick = { showDone = !showDone },
+                                    label = { Text("إظهار المنتهية", fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                    if (inbox.isEmpty()) {
+                        item { Text("لا توجد رسائل ✅", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    items(inbox, key = { "fb_" + it.id }) { f ->
+                        FeedbackCard(
+                            f = f,
+                            onReply = { r, st -> onReplyFeedback(f.id, r, st) },
+                            onStatus = { st -> onFeedbackStatus(f.id, st) },
+                            onDelete = { onDeleteFeedback(f.id) },
+                            onOpenImage = { viewerImage = it }
+                        )
+                    }
+                }
+
+                // ---------------- 📋 كل العروض ----------------
+                4 -> {
+                    item {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = offerQuery,
+                            onValueChange = { offerQuery = it },
+                            placeholder = { Text("ابحث باسم المتجر أو العرض أو الحي…") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    item {
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val filters = listOf("الكل", "نشط", "بانتظار المراجعة", "منتهي", "مميز ⭐")
+                            items(filters.size) { i ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = offerFilter == filters[i],
+                                    onClick = { offerFilter = filters[i] },
+                                    label = { Text(filters[i], fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                    val q = offerQuery.trim()
+                    val shown = offers.filter { o ->
+                        (q.isBlank() || o.restaurantName.contains(q, true) || o.offerTitle.contains(q, true) || o.district.contains(q, true)) &&
+                            when (offerFilter) {
+                                "نشط" -> o.isApproved && !com.example.data.model.OfferTime.isExpired(o, nowMs)
+                                "بانتظار المراجعة" -> !o.isApproved
+                                "منتهي" -> com.example.data.model.OfferTime.isExpired(o, nowMs)
+                                "مميز ⭐" -> o.isFeatured
+                                else -> true
+                            }
+                    }.sortedByDescending { it.createdAt?.toDate()?.time ?: 0L }
+                    item { Text("${shown.size} عرض", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    items(shown, key = { it.id }) { offer ->
+                        AdminOfferRow(
+                            offer = offer,
+                            onToggleFeatured = { onToggleFeatured(offer.id, !offer.isFeatured) },
+                            onToggleApproved = { onToggleApproved(offer.id, it) },
+                            onDelete = { onDeleteOffer(offer.id) }
+                        )
+                    }
+                }
+
+                // ---------------- ⚙️ الإعدادات ----------------
+                else -> {
+                    item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
+                    item { AiSettingsCard(enabled = aiEnabled, model = aiModel, onSave = onSaveAi) }
+                    if (lastAiError != null) {
+                        item {
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text("آخر خطأ في التعبئة الذكية:\n$lastAiError", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                    item { AppCheckTokenCard(token = appCheckToken, onLoad = onLoadAppCheckToken) }
+                }
             }
         }
+    }
+}
 
-        // Admin Header Banner
-        item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+@Composable
+private fun SectionHeader(text: String) {
+    Text(text, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 4.dp))
+}
+
+@Composable
+private fun PendingStoreCard(st: com.example.data.model.StoreProfile, onApprove: () -> Unit, onSuspend: () -> Unit) {
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StoreLogo(logoUrl = st.logoUrl, size = 40.dp)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(st.name, fontWeight = FontWeight.Bold)
+                    Text(st.category, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (st.about.isNotBlank()) Text(st.about, fontSize = 12.sp, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
+            val pics = listOf(st.coverUrl).filter { it.isNotBlank() } + st.menuImages
+            if (pics.isNotEmpty()) {
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 6.dp)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1E293B),
-                        modifier = Modifier.size(46.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AdminPanelSettings,
+                    items(pics.size) { i ->
+                        coil.compose.AsyncImage(
+                            model = com.example.data.CloudinaryUrls.image(pics[i], 300),
                             contentDescription = null,
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.padding(10.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "لوحة تحكم إدارة التطبيق (Admin Portal)",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "إدارة عروض المتاجر، الفيديوهات الإعلانية، واعتماد المواقع على الخريطة",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.size(70.dp)
                         )
                     }
                 }
             }
-        }
-
-        // Summary Statistics
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                AdminStatCard(
-                    title = "إجمالي المتاجر",
-                    value = "${offers.map { it.restaurantName }.distinct().size}",
-                    icon = Icons.Default.Restaurant,
-                    color = CalmSagePrimary,
-                    modifier = Modifier.weight(1f)
-                )
-                AdminStatCard(
-                    title = "فيديوهات إعلانية",
-                    value = "${offers.count { it.mediaType == MediaType.VIDEO }}",
-                    icon = Icons.Default.Videocam,
-                    color = Color(0xFFE05A47),
-                    modifier = Modifier.weight(1f)
-                )
-                AdminStatCard(
-                    title = "الأحياء المغطاة",
-                    value = "${offers.map { it.district }.distinct().size}",
-                    icon = Icons.Default.LocationOn,
-                    color = SoftTerracotta,
-                    modifier = Modifier.weight(1f)
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                androidx.compose.material3.Button(
+                    onClick = onApprove,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("اعتماد الصفحة ✓", fontSize = 12.sp) }
+                OutlinedButton(onClick = onSuspend, shape = RoundedCornerShape(10.dp)) {
+                    Text("إيقاف التاجر", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
             }
         }
+    }
+}
 
-        item {
-            Text(
-                text = "قائمة جميع العروض وإدارتها (${offers.size} عرض):",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-
-        // Offers Management Items
-        items(offers, key = { it.id }) { offer ->
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth().testTag("admin_offer_item_${offer.id}")
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = offer.restaurantName,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = CalmSagePrimary
-                            )
-                            Text(
-                                text = offer.offerTitle,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (offer.mediaType == MediaType.VIDEO) Color(0xFFFDE8E8) else MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                text = if (offer.mediaType == MediaType.VIDEO) "فيديو 🎬" else "صورة 📷",
-                                color = if (offer.mediaType == MediaType.VIDEO) Color(0xFFE05A47) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
+@Composable
+private fun AdminOfferRow(
+    offer: RestaurantOffer,
+    onToggleFeatured: () -> Unit,
+    onToggleApproved: (Boolean) -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.fillMaxWidth().testTag("admin_offer_item_${offer.id}")
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProductMediaViewer(mediaUri = offer.mediaUri, mediaType = offer.mediaType, modifier = Modifier.size(56.dp))
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(offer.restaurantName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CalmSagePrimary, maxLines = 1)
+                    Text(offer.offerTitle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        text = "الحي: ${offer.district} | المنطقة: ${offer.region} | السعر: ${offer.price} ر.س",
+                        "${offer.district} • ${offer.price} ر.س • 👁 ${offer.viewsCount}",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Controls Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Toggle Featured on Map
-                        OutlinedButton(
-                            onClick = { onToggleFeatured(offer.id, !offer.isFeatured) },
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (offer.isFeatured) Icons.Default.Star else Icons.Default.StarOutline,
-                                contentDescription = null,
-                                tint = if (offer.isFeatured) Color(0xFFD97706) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (offer.isFeatured) "مميز بالخريطة ⭐" else "تمييز العرض",
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        // Toggle Active/Approved
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (offer.isApproved) "نشط" else "معلق",
-                                fontSize = 11.sp,
-                                color = if (offer.isApproved) Color(0xFF16A34A) else Color(0xFFDC2626),
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Switch(
-                                checked = offer.isApproved,
-                                onCheckedChange = { onToggleApproved(offer.id, it) }
-                            )
-                        }
-
-                        // Delete
-                        IconButton(
-                            onClick = { onDeleteOffer(offer.id) },
-                            modifier = Modifier.testTag("admin_delete_offer_${offer.id}")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "حذف",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = onToggleFeatured, shape = RoundedCornerShape(8.dp)) {
+                    Icon(
+                        imageVector = if (offer.isFeatured) Icons.Default.Star else Icons.Default.StarOutline,
+                        contentDescription = null,
+                        tint = if (offer.isFeatured) Color(0xFFD97706) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (offer.isFeatured) "مميز ⭐" else "تمييز", fontSize = 11.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (offer.isApproved) "نشط" else "معلق",
+                        fontSize = 11.sp,
+                        color = if (offer.isApproved) Color(0xFF16A34A) else Color(0xFFDC2626),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Switch(checked = offer.isApproved, onCheckedChange = onToggleApproved)
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.testTag("admin_delete_offer_${offer.id}")) {
+                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
