@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.model.effectiveBranches
 import com.example.data.model.priceLabel
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.heightIn
@@ -326,6 +327,24 @@ fun RestaurantOfferDetailSheet(
                             if (offer.itemsScope.isNotBlank()) Text("🏷️ ${offer.itemsScope}", fontSize = 13.sp, color = Color(0xFF8A5A00))
                         }
                     }
+                }
+            }
+
+            // التوصيل والمَعلَم والأصناف
+            run {
+                val del = deliveryText(offer.delivery, offer.deliveryFee, offer.deliveryMinOrder)
+                val lm = (offer.branches.firstOrNull { it.id == shown.selectedBranchId } ?: offer.effectiveBranches.firstOrNull())
+                    ?.landmark.orEmpty()
+                if (del != null || lm.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (del != null) InfoPill(del)
+                        if (lm.isNotBlank()) InfoPill("📍 $lm", bg = Color(0xFFF3F4F6), fg = Color(0xFF374151))
+                    }
+                }
+                if (offer.tags.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TagsRow(offer.tags)
                 }
             }
 

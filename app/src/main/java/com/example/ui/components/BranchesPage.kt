@@ -97,6 +97,9 @@ fun BranchesPage(
         mutableStateOf(if (profile.priceFrom > 0) profile.priceFrom.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() } else "")
     }
     val menuImages = remember { mutableStateListOf<String>().apply { addAll(profile.menuImages) } }
+    var delivery by remember { mutableStateOf(profile.delivery) }
+    var deliveryFeeText by remember { mutableStateOf(moneyText(profile.deliveryFee)) }
+    var deliveryMinText by remember { mutableStateOf(moneyText(profile.deliveryMinOrder)) }
     val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) coverLocal = uri.toString()
     }
@@ -267,6 +270,15 @@ fun BranchesPage(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    DeliveryEditor(
+                        delivery = delivery,
+                        onDeliveryChange = { delivery = it },
+                        feeText = deliveryFeeText,
+                        onFeeChange = { deliveryFeeText = it },
+                        minText = deliveryMinText,
+                        onMinChange = { deliveryMinText = it }
+                    )
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -351,7 +363,7 @@ fun BranchesPage(
                                 Column(Modifier.weight(1f)) {
                                     Text(branch.displayName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(
-                                        listOf(branch.district, branch.region).filter { it.isNotBlank() }.joinToString(" — "),
+                                        listOf(branch.district, branch.landmark, branch.region).filter { it.isNotBlank() }.joinToString(" — "),
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -390,7 +402,10 @@ fun BranchesPage(
                                             cuisineType = category,
                                             about = about.trim(),
                                             priceFrom = priceFromText.toDoubleOrNull()?.takeIf { it > 0 } ?: 0.0,
-                                            menuImages = menuImages.toList()
+                                            menuImages = menuImages.toList(),
+                                            delivery = delivery,
+                                            deliveryFee = if (delivery) deliveryFeeText.toDoubleOrNull() ?: 0.0 else 0.0,
+                                            deliveryMinOrder = if (delivery) deliveryMinText.toDoubleOrNull() ?: 0.0 else 0.0
                                         ),
                                         StoreMediaEdits(newLogo = logoLocal, newCover = coverLocal)
                                     )
@@ -449,6 +464,7 @@ private fun BranchEditor(
     var district by remember { mutableStateOf(branch.district) }
     var region by remember { mutableStateOf(branch.region) }
     var phone by remember { mutableStateOf(toLocalPhone(branch.phone)) }
+    var landmark by remember { mutableStateOf(branch.landmark) }
     var open24 by remember { mutableStateOf(branch.openMinute >= 0 && branch.openMinute == branch.closeMinute) }
     var openMinute by remember { mutableStateOf(branch.openMinute.takeIf { it >= 0 } ?: (12 * 60)) }
     var closeMinute by remember { mutableStateOf(branch.closeMinute.takeIf { it >= 0 } ?: 0) }
@@ -492,6 +508,14 @@ private fun BranchEditor(
                         pinTitle = name.ifBlank { "الفرع" }
                     )
                     OutlinedTextField(
+                        value = landmark,
+                        onValueChange = { landmark = it.take(80) },
+                        label = { Text("علامة مميزة (اختياري)") },
+                        placeholder = { Text("مثال: بجوار البريد السعودي") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
                         value = phone,
                         onValueChange = { phone = it },
                         label = { Text("رقم واتساب / جوال الفرع *") },
@@ -529,6 +553,7 @@ private fun BranchEditor(
                                             district = district.trim(),
                                             region = region.trim(),
                                             phone = normalized,
+                                            landmark = landmark.trim(),
                                             openMinute = if (open24) 0 else openMinute,
                                             closeMinute = if (open24) 0 else closeMinute
                                         )

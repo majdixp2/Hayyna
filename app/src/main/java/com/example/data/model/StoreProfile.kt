@@ -17,7 +17,10 @@ data class StoreProfile(
     val phone: String = "",
     val approved: Boolean = false,
     // ✓ موثّق (يحطها الأدمن بعد التحقق من السجل/العمل الحر)
-    val verified: Boolean = false
+    val verified: Boolean = false,
+    val delivery: Boolean = false,
+    val deliveryFee: Double = 0.0,
+    val deliveryMinOrder: Double = 0.0
 ) {
     /** اسم قسم المنيو حسب نوع المتجر. */
     val menuLabel: String
@@ -41,7 +44,10 @@ data class StoreProfile(
             menuImages = p.menuImages.take(MAX_MENU_IMAGES),
             branches = p.branches,
             phone = p.branches.firstOrNull()?.phone ?: p.phone,
-            approved = approved
+            approved = approved,
+            delivery = p.delivery,
+            deliveryFee = p.deliveryFee,
+            deliveryMinOrder = p.deliveryMinOrder
         )
     }
 }

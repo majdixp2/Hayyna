@@ -35,7 +35,12 @@ object AiAutofill {
         val startDateMillis: Long? = null,
         val grandOpening: Boolean = false,
         val phone: String = "",
-        val district: String = ""
+        val district: String = "",
+        val tags: List<String> = emptyList(),
+        val delivery: Boolean = false,
+        val deliveryFee: Double? = null,
+        val deliveryMinOrder: Double? = null,
+        val landmark: String = ""
     )
 
     private fun prompt(today: String) = """
@@ -44,7 +49,7 @@ object AiAutofill {
 اقرأ الصورة وكل نص مكتوب عليها بدقة، وطلّع بيانات العرض بالعربي.
 رجّع JSON فقط بهذا الشكل بدون أي كلام ثاني:
 {"title": "عنوان قصير وجذاب للعرض (أقل من 60 حرف)",
- "description": "وصف مختصر سطرين: الأصناف المشمولة، والتوصيل ورسومه والحد الأدنى إذا مكتوب، والعنوان/المعلم إذا مكتوب",
+ "description": "وصف مختصر سطر أو سطرين للعرض",
  "storeName": "اسم المحل كما هو مكتوب أو \"\"",
  "price": رقم السعر بعد الخصم بالريال أو null,
  "originalPrice": رقم السعر قبل الخصم أو null,
@@ -55,7 +60,12 @@ object AiAutofill {
  "days": عدد أيام العرض إذا مكتوب أو null,
  "grandOpening": true إذا الإعلان عن افتتاح محل جديد وإلا false,
  "phone": "رقم الجوال المكتوب أرقام فقط أو \"\"",
- "district": "اسم الحي إذا مكتوب أو \"\""}
+ "district": "اسم الحي إذا مكتوب أو \"\"",
+ "landmark": "علامة مميزة للمكان إذا مكتوبة مثل بجوار البريد السعودي أو \"\"",
+ "tags": ["الأصناف أو المنتجات المذكورة كلمة أو كلمتين لكل واحد، حتى 8"],
+ "delivery": true إذا مذكور توصيل وإلا false,
+ "deliveryFee": رسوم التوصيل كرقم (0 إذا مجاني) أو null,
+ "deliveryMinOrder": الحد الأدنى للطلب للتوصيل كرقم أو null}
 لا تخترع أي معلومة غير موجودة في الصورة.
 """
 
@@ -114,7 +124,13 @@ object AiAutofill {
             startDateMillis = startMillis,
             grandOpening = json.optBoolean("grandOpening", false),
             phone = str("phone").filter { it.isDigit() }.take(15),
-            district = str("district").take(60)
+            district = str("district").take(60),
+            tags = json.optJSONArray("tags")?.let { arr -> (0 until arr.length()).map { arr.optString(it).trim() } }
+                .orEmpty().filter { it.isNotBlank() && it.length <= 25 }.distinct().take(8),
+            delivery = json.optBoolean("delivery", false),
+            deliveryFee = if (json.isNull("deliveryFee")) null else json.optDouble("deliveryFee").takeIf { !it.isNaN() && it >= 0 },
+            deliveryMinOrder = num("deliveryMinOrder"),
+            landmark = str("landmark").take(80)
         )
     }
 

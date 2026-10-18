@@ -325,7 +325,7 @@ fun SelectedRestaurantOfferCard(
                         }
 
                         Text(
-                            text = "• ${offer.district}",
+                            text = "• ${offer.district}" + if (offer.delivery) " • 🛵" else "",
                             fontSize = 11.sp,
                             color = Color(0xFF6B7280)
                         )

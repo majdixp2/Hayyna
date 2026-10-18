@@ -125,6 +125,15 @@ fun AddRestaurantOfferSheet(
     var startMillis by remember { mutableStateOf(editingOffer?.startsAt?.toDate()?.time) }
     var showDatePicker by remember { mutableStateOf(false) }
 
+    // ---------- الوسوم / التوصيل / المَعلَم ----------
+    var tagsText by remember { mutableStateOf(editingOffer?.tags?.joinToString("، ").orEmpty()) }
+    var delivery by remember { mutableStateOf(editingOffer?.delivery ?: profile?.delivery ?: false) }
+    var deliveryFeeText by remember { mutableStateOf(moneyText(editingOffer?.deliveryFee ?: profile?.deliveryFee ?: 0.0)) }
+    var deliveryMinText by remember { mutableStateOf(moneyText(editingOffer?.deliveryMinOrder ?: profile?.deliveryMinOrder ?: 0.0)) }
+    var landmark by remember {
+        mutableStateOf(editingOffer?.branches?.firstOrNull()?.landmark ?: profile?.branches?.firstOrNull()?.landmark.orEmpty())
+    }
+
     // ---------- الصور / الفيديو ----------
     var mediaType by remember { mutableStateOf(editingOffer?.mediaType ?: MediaType.IMAGE) }
     val media = remember { mutableStateListOf<String>().apply { editingOffer?.let { addAll(it.gallery) } } }
@@ -211,6 +220,7 @@ fun AddRestaurantOfferSheet(
                     region = region.trim(),
                     district = district.trim(),
                     phone = normalized,
+                    landmark = landmark.trim(),
                     openMinute = if (isOpen24h) 0 else openMinute,
                     closeMinute = if (isOpen24h) 0 else closeMinute
                 )
@@ -271,7 +281,11 @@ fun AddRestaurantOfferSheet(
             discountPercent = if (percentMode) (if (useTiers) steps.first() else pct ?: 0) else 0,
             dailyPercents = if (useTiers) steps.map { it.toLong() } else emptyList(),
             itemsScope = if (percentMode) itemsScope.trim().take(40) else "",
-            grandOpening = grandOpening
+            grandOpening = grandOpening,
+            tags = parseTags(tagsText),
+            delivery = delivery,
+            deliveryFee = if (delivery) deliveryFeeText.toDoubleOrNull() ?: 0.0 else 0.0,
+            deliveryMinOrder = if (delivery) deliveryMinText.toDoubleOrNull() ?: 0.0 else 0.0
         )
         onSaveOffer(offer)
     }
@@ -416,6 +430,13 @@ fun AddRestaurantOfferSheet(
                                         startMillis = if (ms == today) null else ms.takeIf { it > today - 14 * 24 * 3_600_000L }
                                     }
                                     if (d.grandOpening) grandOpening = true
+                                    if (d.tags.isNotEmpty() && tagsText.isBlank()) tagsText = d.tags.joinToString("، ")
+                                    if (d.delivery) {
+                                        delivery = true
+                                        d.deliveryFee?.let { deliveryFeeText = moneyText(it) }
+                                        d.deliveryMinOrder?.let { deliveryMinText = moneyText(it) }
+                                    }
+                                    if (!hasBranches && landmark.isBlank() && d.landmark.isNotBlank()) landmark = d.landmark
                                     if (!hasBranches) {
                                         if (phone.isBlank() && d.phone.isNotBlank()) phone = toLocalPhone(d.phone)
                                         if (district.isBlank() && d.district.isNotBlank()) district = d.district
@@ -538,6 +559,25 @@ fun AddRestaurantOfferSheet(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    OutlinedTextField(
+                        value = tagsText,
+                        onValueChange = { tagsText = it.take(200) },
+                        label = { Text("الأصناف (للبحث)") },
+                        placeholder = { Text("شاورما، برجر، بروست") },
+                        supportingText = { Text("افصل بينها بفاصلة — اللي يبحث عنها يلقى عرضك") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    DeliveryEditor(
+                        delivery = delivery,
+                        onDeliveryChange = { delivery = it },
+                        feeText = deliveryFeeText,
+                        onFeeChange = { deliveryFeeText = it },
+                        minText = deliveryMinText,
+                        onMinChange = { deliveryMinText = it }
+                    )
+
                     Text("تصنيف المتجر", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(LocationPresets.cuisines.filter { it != "الكل" }) { cui ->
@@ -603,6 +643,14 @@ fun AddRestaurantOfferSheet(
                             region = region,
                             onRegionChange = { region = it },
                             autoLocate = startLat == null
+                        )
+                        OutlinedTextField(
+                            value = landmark,
+                            onValueChange = { landmark = it.take(80) },
+                            label = { Text("علامة مميزة (اختياري)") },
+                            placeholder = { Text("مثال: بجوار البريد السعودي") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
                             value = phone,

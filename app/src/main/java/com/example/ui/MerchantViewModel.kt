@@ -572,11 +572,11 @@ class MerchantViewModel(
                 "صور فقط" -> offer.mediaType == MediaType.IMAGE
                 else -> true
             }
-            val matchesQuery = params.query.isBlank() ||
-                offer.restaurantName.contains(params.query, ignoreCase = true) ||
-                offer.offerTitle.contains(params.query, ignoreCase = true) ||
-                offer.description.contains(params.query, ignoreCase = true) ||
-                offer.district.contains(params.query, ignoreCase = true)
+            val q = searchNorm(params.query)
+            val matchesQuery = q.isBlank() || (
+                listOf(offer.restaurantName, offer.offerTitle, offer.description, offer.district, offer.cuisineType, offer.itemsScope) +
+                    offer.tags + offer.effectiveBranches.map { it.landmark }
+                ).any { searchNorm(it).contains(q) }
             val matchesOpenNow = !params.openNowOnly || OfferTime.isOpenNow(offer) == true
 
             matchesRegion && matchesDistrict && matchesCuisine && matchesMedia && matchesQuery && matchesOpenNow
@@ -871,6 +871,9 @@ class MerchantViewModel(
                     cuisineType = offer.cuisineType,
                     openMinute = offer.openMinute,
                     closeMinute = offer.closeMinute,
+                    delivery = offer.delivery,
+                    deliveryFee = offer.deliveryFee,
+                    deliveryMinOrder = offer.deliveryMinOrder,
                     // أول عرض بدون فروع: موقعه يصير "الفرع الرئيسي"
                     branches = old?.branches?.ifEmpty { null } ?: offer.branches
                 )
@@ -1153,3 +1156,10 @@ class MerchantViewModel(
         const val NEW_MERCHANT_DAILY_LIMIT = 3
     }
 }
+
+/** توحيد الحروف للبحث: أ إ آ ← ا ، ة ← ه ، ى ← ي ، وبدون تشكيل. */
+internal fun searchNorm(text: String): String =
+    text.trim().lowercase()
+        .replace(Regex("[\u064B-\u0652\u0640]"), "")
+        .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
+        .replace('ة', 'ه').replace('ى', 'ي')

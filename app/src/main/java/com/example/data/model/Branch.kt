@@ -13,7 +13,9 @@ data class Branch(
     val district: String = "",
     val phone: String = "",
     val openMinute: Int = -1,
-    val closeMinute: Int = -1
+    val closeMinute: Int = -1,
+    // علامة مميزة يعرف فيها الناس المكان: "بجوار البريد السعودي"
+    val landmark: String = ""
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "id" to id,
@@ -24,7 +26,8 @@ data class Branch(
         "district" to district,
         "phone" to phone,
         "openMinute" to openMinute,
-        "closeMinute" to closeMinute
+        "closeMinute" to closeMinute,
+        "landmark" to landmark.take(80)
     )
 
     /** اسم قصير للعرض: "فرع العليا" أو الحي إذا ما له اسم. */

@@ -188,6 +188,7 @@ fun StorePage(
                                 color = Color(0xFF8A5A00)
                             )
                         }
+                        deliveryText(store.delivery, store.deliveryFee, store.deliveryMinOrder)?.let { InfoPill(it) }
                         if (store.about.isNotBlank()) {
                             Text(store.about, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -315,7 +316,7 @@ private fun BranchRow(branch: Branch, onDirections: () -> Unit) {
                     else "${OfferTime.formatMinute(branch.openMinute)} – ${OfferTime.formatMinute(branch.closeMinute)}"
                 } else ""
                 Text(
-                    listOf(branch.district, hours).filter { it.isNotBlank() }.joinToString(" • "),
+                    listOf(branch.district, branch.landmark, hours).filter { it.isNotBlank() }.joinToString(" • "),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -62,6 +62,12 @@ data class RestaurantOffer(
     val itemsScope: String = "",
     // عرض افتتاح محل جديد 🎉
     val grandOpening: Boolean = false,
+    // وسوم الأصناف للبحث: شاورما، برجر، بروست
+    val tags: List<String> = emptyList(),
+    // التوصيل (نسخة من ملف المتجر)
+    val delivery: Boolean = false,
+    val deliveryFee: Double = 0.0,
+    val deliveryMinOrder: Double = 0.0,
     // صور العرض (حتى 3). mediaUri يبقى الصورة الأولى/الغلاف للتوافق مع العروض القديمة.
     val mediaUris: List<String> = emptyList(),
     // شعار المتجر (يظهر صغير على أيقونة الخريطة)

@@ -20,7 +20,11 @@ data class MerchantProfile(
     val coverUrl: String = "",
     val about: String = "",
     val priceFrom: Double = 0.0,
-    val menuImages: List<String> = emptyList()
+    val menuImages: List<String> = emptyList(),
+    // التوصيل
+    val delivery: Boolean = false,
+    val deliveryFee: Double = 0.0,
+    val deliveryMinOrder: Double = 0.0
 ) {
     val hasLocation: Boolean get() = latitude != 0.0 || longitude != 0.0
 }

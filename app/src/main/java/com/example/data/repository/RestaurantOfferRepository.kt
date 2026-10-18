@@ -463,6 +463,9 @@ class RestaurantOfferRepository(
                 "branches" to store.branches.take(50).map { it.toMap() },
                 "phone" to store.phone.take(30),
                 "approved" to store.approved,
+                "delivery" to store.delivery,
+                "deliveryFee" to store.deliveryFee,
+                "deliveryMinOrder" to store.deliveryMinOrder,
                 "updatedAt" to FieldValue.serverTimestamp()
             ),
             // دمج: عشان ما تنمسح علامة ✓ اللي يحطها الأدمن
@@ -603,6 +606,10 @@ class RestaurantOfferRepository(
             "dailyPercents" to dailyPercents.take(14),
             "itemsScope" to itemsScope.take(60),
             "grandOpening" to grandOpening,
+            "tags" to tags.take(12),
+            "delivery" to delivery,
+            "deliveryFee" to deliveryFee,
+            "deliveryMinOrder" to deliveryMinOrder,
             "rating" to rating,
             "isApproved" to isApproved,
             "isFeatured" to isFeatured,
@@ -673,6 +680,9 @@ class RestaurantOfferRepository(
                 "about" to profile.about.take(500),
                 "priceFrom" to profile.priceFrom,
                 "menuImages" to profile.menuImages.take(com.example.data.model.StoreProfile.MAX_MENU_IMAGES),
+                "delivery" to profile.delivery,
+                "deliveryFee" to profile.deliveryFee,
+                "deliveryMinOrder" to profile.deliveryMinOrder,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
@@ -695,6 +705,9 @@ class RestaurantOfferRepository(
             val updated = offer.copy(
                 logoUrl = profile.logoUrl,
                 branches = branches,
+                delivery = profile.delivery,
+                deliveryFee = profile.deliveryFee,
+                deliveryMinOrder = profile.deliveryMinOrder,
                 latitude = primary?.latitude ?: offer.latitude,
                 longitude = primary?.longitude ?: offer.longitude,
                 region = primary?.region?.ifBlank { null } ?: offer.region,
