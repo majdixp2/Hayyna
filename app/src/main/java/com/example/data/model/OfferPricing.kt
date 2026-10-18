@@ -110,9 +110,8 @@ object OfferPricing {
 private fun fmt(v: Double): String = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
 
 /** نص السعر للعرض: "25 ر.س" أو "خصم 30%" لعروض النسبة. */
-fun RestaurantOffer.priceLabel(nowMillis: Long = System.currentTimeMillis()): String =
+fun RestaurantOffer.priceLabel(nowMillis: Long = System.currentTimeMillis(), withScope: Boolean = false): String =
     if (OfferPricing.isPercentOnly(this)) {
         val p = OfferPricing.currentPercent(this, nowMillis)
-        val scope = itemsScope.ifBlank { "" }
-        if (scope.isNotBlank()) "خصم $p% $scope" else "خصم $p%"
+        if (withScope && itemsScope.isNotBlank()) "خصم $p% $itemsScope" else "خصم $p%"
     } else "${fmt(price)} $currency"

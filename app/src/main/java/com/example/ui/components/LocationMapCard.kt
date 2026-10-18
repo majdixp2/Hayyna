@@ -110,7 +110,7 @@ fun LocationMapCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -128,41 +128,29 @@ fun LocationMapCard(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "الحي: $district",
+                            text = if (district.trim().startsWith("حي")) district.trim() else "حي $district",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "المنطقة: $region",
+                            text = region,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                IconButton(
+                    onClick = { shareLocation(context, storeOrItemName, district, region, latitude, longitude) },
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Map,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Google ماب",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "مشاركة الموقع",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
 
@@ -306,33 +294,6 @@ fun LocationMapCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // GPS Coordinates info row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "إحداثيات الموقع: ${String.format("%.4f", latitude)}, ${String.format("%.4f", longitude)}",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                IconButton(
-                    onClick = {
-                        shareLocation(context, storeOrItemName, district, region, latitude, longitude)
-                    },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "مشاركة الموقع",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-
             if (isInteractive) {
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -360,8 +321,9 @@ fun LocationMapCard(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "فتح في Google ماب",
+                            text = "فتح الخريطة",
                             fontSize = 13.sp,
+                            maxLines = 1,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -382,8 +344,9 @@ fun LocationMapCard(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "اتجاهات القيادة",
+                            text = "الاتجاهات",
                             fontSize = 13.sp,
+                            maxLines = 1,
                             fontWeight = FontWeight.Bold
                         )
                     }

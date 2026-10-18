@@ -238,6 +238,7 @@ fun RestaurantListSheet(
                                     ) {
                                         Text(
                                             text = offer.priceLabel(),
+                            maxLines = 1,
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = CalmSagePrimary

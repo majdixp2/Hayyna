@@ -281,10 +281,11 @@ fun RestaurantOfferDetailSheet(
             // Price & Discount
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = offer.priceLabel(),
+                    text = offer.priceLabel(withScope = true),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
 
                 if (offer.originalPrice != null && offer.originalPrice > offer.price) {
@@ -297,14 +298,20 @@ fun RestaurantOfferDetailSheet(
                     )
                 }
 
-                if (offer.displayBadge.isNotBlank()) {
+                // عرض النسبة: السعر نفسه هو الخصم، فما نكرر الشارة (نخلي "افتتاح" بس)
+                val priceBadge = if (com.example.data.model.OfferPricing.isPercentOnly(offer)) {
+                    if (offer.grandOpening) "🎉 افتتاح" else ""
+                } else offer.displayBadge
+                if (priceBadge.isNotBlank()) {
                     Spacer(modifier = Modifier.width(10.dp))
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = MaterialTheme.colorScheme.secondaryContainer
                     ) {
                         Text(
-                            text = offer.displayBadge,
+                            text = priceBadge,
+                            maxLines = 1,
+                            softWrap = false,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -318,13 +325,12 @@ fun RestaurantOfferDetailSheet(
             run {
                 val tiers = com.example.data.model.OfferPricing.tiersText(offer)
                 val starts = com.example.data.model.OfferPricing.startsText(offer)
-                if (tiers != null || starts != null || offer.itemsScope.isNotBlank()) {
+                if (tiers != null || starts != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFFFF4E0), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(10.dp)) {
                             if (starts != null) Text("🔜 $starts", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1D4ED8))
                             if (tiers != null) Text("📅 $tiers", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF8A5A00))
-                            if (offer.itemsScope.isNotBlank()) Text("🏷️ ${offer.itemsScope}", fontSize = 13.sp, color = Color(0xFF8A5A00))
                         }
                     }
                 }
@@ -447,7 +453,8 @@ fun RestaurantOfferDetailSheet(
                         color = Color(0xFFDCFCE7)
                     ) {
                         Text(
-                            text = "🚗 ${shown.driveTimeMinutes} دقائق قيادة",
+                            text = "🚗 " + minutesText(shown.driveTimeMinutes),
+                            maxLines = 1,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF15803D),
@@ -481,9 +488,10 @@ fun RestaurantOfferDetailSheet(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "التوجه إلى المحل عبر Google ماب 🚗",
+                    text = "الاتجاهات إلى المحل",
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
                 )
             }
 
@@ -496,7 +504,8 @@ fun RestaurantOfferDetailSheet(
                 latitude = shown.latitude,
                 longitude = shown.longitude,
                 storeOrItemName = offer.restaurantName,
-                isInteractive = true
+                // زر الاتجاهات الكبير فوق يكفي
+                isInteractive = false
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -548,4 +557,12 @@ private fun distanceText(offer: RestaurantOffer): String? = when {
     offer.distanceKm <= 0.0 -> null
     offer.distanceKm < 1.0 -> "${(offer.distanceKm * 1000).toInt()} متر"
     else -> "${"%.1f".format(java.util.Locale.US, offer.distanceKm)} كم"
+}
+
+/** "دقيقة" / "دقيقتين" / "5 دقائق" / "15 دقيقة" قيادة. */
+private fun minutesText(m: Int): String = when {
+    m <= 1 -> "دقيقة قيادة"
+    m == 2 -> "دقيقتين قيادة"
+    m in 3..10 -> "$m دقائق قيادة"
+    else -> "$m دقيقة قيادة"
 }

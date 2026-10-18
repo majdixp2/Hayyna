@@ -168,6 +168,29 @@ fun MerchantStoreScreen(
     val placeSuggestions by viewModel.placeSuggestions.collectAsStateWithLifecycle()
     val districtCounts by viewModel.districtCounts.collectAsStateWithLifecycle()
 
+    // زر الرجوع في الشاشة الرئيسية: من أي تبويب يرجع للخريطة، ومن الخريطة يسأل قبل الخروج
+    // (يُسجّل أول شي عشان صفحات التطبيق المفتوحة فوقه تاخذ الأولوية)
+    var showExitDialog by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler {
+        if (currentRole != AppRole.CUSTOMER_MAP) viewModel.setRole(AppRole.CUSTOMER_MAP)
+        else showExitDialog = true
+    }
+    if (showExitDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = { Text("تبي تطلع من حيّنا؟") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showExitDialog = false
+                    (context as? android.app.Activity)?.finish()
+                }) { Text("خروج", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showExitDialog = false }) { Text("لا، خلّني") }
+            }
+        )
+    }
+
     // Full RTL Arabic Experience
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(

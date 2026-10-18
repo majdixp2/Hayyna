@@ -214,6 +214,7 @@ fun RestaurantOfferCard(
                 ) {
                     Text(
                         text = offer.priceLabel(),
+                            maxLines = 1,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = CalmSagePrimary
