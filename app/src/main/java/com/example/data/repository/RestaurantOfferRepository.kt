@@ -351,6 +351,64 @@ class RestaurantOfferRepository(
         ).await()
     }
 
+    /** إعدادات نقاط محلات Google والدعوات (يتحكم فيها الأدمن). */
+    val poiConfig: Flow<PoiConfig> = callbackFlow {
+        val listener = configDoc.addSnapshotListener { snap, _ ->
+            trySend(
+                PoiConfig(
+                    showGooglePoi = snap?.getBoolean("showGooglePoi") ?: true,
+                    inviteEnabled = snap?.getBoolean("poiInviteEnabled") ?: true,
+                    inviteMessage = snap?.getString("inviteMessage")?.takeIf { it.isNotBlank() } ?: PoiConfig.DEFAULT_MESSAGE,
+                    appLink = snap?.getString("appLink").orEmpty()
+                )
+            )
+        }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setPoiConfig(c: PoiConfig) {
+        configDoc.set(
+            hashMapOf(
+                "showGooglePoi" to c.showGooglePoi,
+                "poiInviteEnabled" to c.inviteEnabled,
+                "inviteMessage" to c.inviteMessage.take(500),
+                "appLink" to c.appLink.take(300)
+            ),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
+    private val poiInterest = db.collection("poiInterest")
+
+    /** نسجّل الاهتمام بمحل من نقاط Google (نخزّن معرّف المكان فقط حسب شروط Google). */
+    suspend fun logPoi(placeId: String, field: String) {
+        require(field in setOf("taps", "invites", "claims"))
+        poiInterest.document(placeId.take(200)).set(
+            hashMapOf(field to FieldValue.increment(1), "lastAt" to FieldValue.serverTimestamp()),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
+    /** أكثر المحلات اللي ضغطها العملاء (للأدمن). */
+    val topPoi: Flow<List<PoiInterest>> = callbackFlow {
+        val listener = poiInterest.orderBy("taps", com.google.firebase.firestore.Query.Direction.DESCENDING).limit(50)
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                trySend(snap?.documents?.map { d ->
+                    PoiInterest(
+                        placeId = d.id,
+                        taps = d.getLong("taps") ?: 0,
+                        invites = d.getLong("invites") ?: 0,
+                        claims = d.getLong("claims") ?: 0
+                    )
+                } ?: emptyList())
+            }
+        awaitClose { listener.remove() }
+    }
+
     suspend fun setSupportWhatsapp(number: String) {
         configDoc.set(hashMapOf("supportWhatsapp" to number.take(20)), com.google.firebase.firestore.SetOptions.merge()).await()
     }
@@ -601,6 +659,20 @@ class RestaurantOfferRepository(
         runCatching { usersCollection.document(uid).delete().await() }
     }
 }
+
+data class PoiConfig(
+    val showGooglePoi: Boolean = true,
+    val inviteEnabled: Boolean = true,
+    val inviteMessage: String = DEFAULT_MESSAGE,
+    val appLink: String = ""
+) {
+    companion object {
+        const val DEFAULT_MESSAGE =
+            "السلام عليكم 👋 شفت محلكم \"{name}\" على خريطة حيّنا. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍"
+    }
+}
+
+data class PoiInterest(val placeId: String, val taps: Long, val invites: Long, val claims: Long)
 
 data class MerchantStatus(
     val uid: String,

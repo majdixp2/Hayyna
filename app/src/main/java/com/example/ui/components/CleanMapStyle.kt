@@ -25,4 +25,14 @@ object CleanMapStyle {
 """
 
     val options: MapStyleOptions by lazy { MapStyleOptions(JSON) }
+
+    /** نفس الخريطة الهادية + نقاط محلات Google بلون باهت (عشان الخريطة ما تكون فاضية). */
+    private val SHOPS_JSON = JSON.trim().removeSuffix("]") + """,
+  { "featureType": "poi.business", "stylers": [ { "visibility": "on" } ] },
+  { "featureType": "poi.business", "elementType": "labels.icon", "stylers": [ { "saturation": -75 }, { "lightness": 30 } ] },
+  { "featureType": "poi.business", "elementType": "labels.text.fill", "stylers": [ { "color": "#A8A8A8" } ] },
+  { "featureType": "poi.business", "elementType": "labels.text.stroke", "stylers": [ { "color": "#FFFFFF" } ] }
+]"""
+
+    val withShops: MapStyleOptions by lazy { MapStyleOptions(SHOPS_JSON) }
 }

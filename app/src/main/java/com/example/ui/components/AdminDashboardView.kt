@@ -80,6 +80,9 @@ fun AdminDashboardView(
     onLoadAppCheckToken: () -> Unit = {},
     onUntrust: (com.example.data.repository.MerchantStatus) -> Unit = {},
     onOfferClick: (RestaurantOffer) -> Unit = {},
+    poiConfig: com.example.data.repository.PoiConfig = com.example.data.repository.PoiConfig(),
+    onSavePoiConfig: (com.example.data.repository.PoiConfig) -> Unit = {},
+    topPoi: List<com.example.data.repository.PoiInterest> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     var inboxType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
@@ -311,6 +314,40 @@ fun AdminDashboardView(
                             }
                         }
                     }
+                    item { SectionHeader("📍 محلات غير مسجّلة يطلبها العملاء") }
+                    item {
+                        Text(
+                            "من نقاط خرائط Google: كم مرة ضغطها العملاء ودعوها. ابدأ بالأكثر طلباً 👇",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (topPoi.isEmpty()) {
+                        item { Text("ما فيه بيانات للحين", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    items(topPoi, key = { "poi_" + it.placeId }) { p ->
+                        val ctx = androidx.compose.ui.platform.LocalContext.current
+                        Card(
+                            onClick = {
+                                runCatching {
+                                    ctx.startActivity(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://www.google.com/maps/search/?api=1&query=place&query_place_id=${p.placeId}")
+                                        )
+                                    )
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("👆 ${p.taps}   📣 ${p.invites}   🏪 ${p.claims}", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text("افتح في الخرائط ›", fontSize = 12.sp, color = CalmSagePrimary)
+                            }
+                        }
+                    }
+
                     item { SectionHeader("⛔ حسابات موقوفة (${suspended.size})") }
                     if (suspended.isEmpty()) {
                         item { Text("ما فيه حسابات موقوفة ✅", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -411,6 +448,7 @@ fun AdminDashboardView(
                 else -> {
                     item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
                     item { AiSettingsCard(enabled = aiEnabled, model = aiModel, onSave = onSaveAi) }
+                    item { PoiSettingsCard(config = poiConfig, onSave = onSavePoiConfig) }
                     if (lastAiError != null) {
                         item {
                             androidx.compose.foundation.text.selection.SelectionContainer {
@@ -838,6 +876,48 @@ private fun AppCheckTokenCard(token: String?, onLoad: () -> Unit) {
                     clipboard.setText(androidx.compose.ui.text.AnnotatedString(token))
                 }) { Text("📋 نسخ") }
             }
+        }
+    }
+}
+
+/** نقاط محلات Google + بطاقة الدعوة: تشغيل/إيقاف ونص الدعوة ورابط التطبيق. */
+@Composable
+private fun PoiSettingsCard(
+    config: com.example.data.repository.PoiConfig,
+    onSave: (com.example.data.repository.PoiConfig) -> Unit
+) {
+    var message by androidx.compose.runtime.remember(config.inviteMessage) { androidx.compose.runtime.mutableStateOf(config.inviteMessage) }
+    var link by androidx.compose.runtime.remember(config.appLink) { androidx.compose.runtime.mutableStateOf(config.appLink) }
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("📍 محلات Google على الخريطة", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("إظهار نقاط المحلات (باهتة)", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(checked = config.showGooglePoi, onCheckedChange = { onSave(config.copy(showGooglePoi = it)) })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("بطاقة \"ادعه لحيّنا\" عند الضغط", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(checked = config.inviteEnabled, onCheckedChange = { onSave(config.copy(inviteEnabled = it)) })
+            }
+            androidx.compose.material3.OutlinedTextField(
+                value = message,
+                onValueChange = { message = it },
+                label = { Text("نص الدعوة ({name} = اسم المحل)") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = link,
+                onValueChange = { link = it },
+                label = { Text("رابط تحميل التطبيق (اختياري)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.Button(
+                onClick = { onSave(config.copy(inviteMessage = message.trim(), appLink = link.trim())) },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                shape = RoundedCornerShape(10.dp)
+            ) { Text("حفظ النص والرابط") }
         }
     }
 }

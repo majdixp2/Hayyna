@@ -103,7 +103,10 @@ fun FullScreenRestaurantMap(
     focusPoint: Pair<Double, Double>? = null,
     onMyLocationClick: () -> Unit = {},
     quietStores: List<com.example.data.model.StoreProfile> = emptyList(),
-    onStoreClick: (com.example.data.model.StoreProfile) -> Unit = {}
+    onStoreClick: (com.example.data.model.StoreProfile) -> Unit = {},
+    // نقاط محلات Google الباهتة (يتحكم فيها الأدمن)
+    showGooglePoi: Boolean = false,
+    onPoiClick: (com.google.android.gms.maps.model.PointOfInterest) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -263,7 +266,7 @@ fun FullScreenRestaurantMap(
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
                 isMyLocationEnabled = hasLocationPermission,
-                mapStyleOptions = CleanMapStyle.options,
+                mapStyleOptions = if (showGooglePoi) CleanMapStyle.withShops else CleanMapStyle.options,
                 isBuildingEnabled = false
             ),
             uiSettings = MapUiSettings(
@@ -272,6 +275,7 @@ fun FullScreenRestaurantMap(
                 mapToolbarEnabled = false,
                 compassEnabled = true
             ),
+            onPOIClick = { poi -> if (showGooglePoi) onPoiClick(poi) },
             onMapClick = {
                 onBackgroundClick()
             }

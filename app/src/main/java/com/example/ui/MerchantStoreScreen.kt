@@ -142,6 +142,10 @@ fun MerchantStoreScreen(
     val myStatus by viewModel.myStatus.collectAsStateWithLifecycle()
     val myFeedback by viewModel.myFeedback.collectAsStateWithLifecycle()
     val aiConfig by viewModel.aiConfig.collectAsStateWithLifecycle()
+    val poiConfig by viewModel.poiConfig.collectAsStateWithLifecycle()
+    val selectedPoi by viewModel.selectedPoi.collectAsStateWithLifecycle()
+    val pendingClaim by viewModel.pendingClaim.collectAsStateWithLifecycle()
+    val topPoi by viewModel.topPoi.collectAsStateWithLifecycle()
     val appCheckToken by viewModel.appCheckDebugToken.collectAsStateWithLifecycle()
     val lastAiError by viewModel.lastAiError.collectAsStateWithLifecycle()
     val isAutofilling by viewModel.isAutofilling.collectAsStateWithLifecycle()
@@ -196,6 +200,8 @@ fun MerchantStoreScreen(
                                     approvedStores.filter { it.uid !in withOffers }
                                 } else emptyList(),
                                 onStoreClick = { viewModel.openStorePage(it) },
+                                showGooglePoi = poiConfig.showGooglePoi,
+                                onPoiClick = { viewModel.onPoiClick(it) },
                                 onMyLocationClick = { viewModel.clearBrowse() }
                             )
 
@@ -597,6 +603,9 @@ fun MerchantStoreScreen(
                                 sortBy = customerSortBy,
                                 onSortBySelect = { viewModel.setCustomerSortBy(it) },
                                 onOfferClick = { viewModel.openOfferDetail(it) },
+                                poiConfig = poiConfig,
+                                onSavePoiConfig = { viewModel.savePoiConfig(it) },
+                                topPoi = topPoi,
                                 onShowOnMap = { offer ->
                                     viewModel.focusOfferOnMap(offer)
                                 },
@@ -743,6 +752,17 @@ fun MerchantStoreScreen(
             )
         }
 
+        // محل من نقاط Google مو مسجّل: ادعه / أنا صاحب المحل
+        selectedPoi?.let { poi ->
+            com.example.ui.components.PoiInviteSheet(
+                poi = poi,
+                inviteText = viewModel.inviteText(poi),
+                onInvited = { viewModel.logInvite(poi) },
+                onClaim = { viewModel.claimPoi(poi) },
+                onDismiss = { viewModel.dismissPoi() }
+            )
+        }
+
         // تواصل معنا
         if (isContactOpen) {
             com.example.ui.components.ContactPage(
@@ -792,7 +812,21 @@ fun MerchantStoreScreen(
         // صفحة مطعمي وفروعي (الشعار + الفروع)
         if (isBranchesPageOpen) {
             com.example.ui.components.BranchesPage(
-                profile = merchantProfile ?: com.example.data.model.MerchantProfile(restaurantName = merchantRestaurantName),
+                profile = (merchantProfile ?: com.example.data.model.MerchantProfile(restaurantName = merchantRestaurantName)).let { p ->
+                    // جاي من "أنا صاحب المحل": نعبّي الاسم والموقع من نقطة الخريطة
+                    val claim = pendingClaim
+                    if (claim != null && p.branches.isEmpty() && !p.hasLocation) p.copy(
+                        restaurantName = claim.name.replace("\n", " ").trim(),
+                        branches = listOf(
+                            com.example.data.model.Branch(
+                                id = "main",
+                                name = "الفرع الرئيسي",
+                                latitude = claim.latLng.latitude,
+                                longitude = claim.latLng.longitude
+                            )
+                        )
+                    ) else p
+                },
                 isSaving = isSavingBranches,
                 onSave = { p, logo -> viewModel.saveBranches(p, logo) },
                 onClose = { viewModel.closeBranchesPage() }

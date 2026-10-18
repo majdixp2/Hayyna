@@ -123,6 +123,26 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // الاهتمام بمحلات Google غير المسجّلة: عدّادات فقط (نخزّن معرّف المكان، بدون بيانات Google)
+    function poiCounterOk(key) {
+      return !(key in request.resource.data)
+        || (request.resource.data[key] is int
+            && request.resource.data[key] >= resource.data.get(key, 0)
+            && request.resource.data[key] <= resource.data.get(key, 0) + 1);
+    }
+    match /poiInterest/{placeId} {
+      allow read: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['taps', 'invites', 'claims', 'lastAt'])
+        && request.resource.data.lastAt == request.time
+        && (!('taps' in request.resource.data) || request.resource.data.taps == 1)
+        && (!('invites' in request.resource.data) || request.resource.data.invites == 1)
+        && (!('claims' in request.resource.data) || request.resource.data.claims == 1);
+      allow update: if request.resource.data.keys().hasOnly(['taps', 'invites', 'claims', 'lastAt'])
+        && request.resource.data.lastAt == request.time
+        && poiCounterOk('taps') && poiCounterOk('invites') && poiCounterOk('claims');
+      allow delete: if isAdmin();
+    }
+
     // نوع الحساب (عميل / تاجر): صاحبه فقط
     match /users/{uid} {
       allow read, delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());

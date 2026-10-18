@@ -230,6 +230,66 @@ class MerchantViewModel(
         }
     }
 
+    // ---------------- نقاط محلات Google + الدعوات ----------------
+
+    val poiConfig: StateFlow<com.example.data.repository.PoiConfig> = repository.poiConfig
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.repository.PoiConfig())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val topPoi: StateFlow<List<com.example.data.repository.PoiInterest>> = isAdmin
+        .flatMapLatest { admin -> if (admin) repository.topPoi else flowOf(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** المحل اللي ضغطه العميل من نقاط Google (مو مسجّل في حيّنا). */
+    val selectedPoi = MutableStateFlow<com.google.android.gms.maps.model.PointOfInterest?>(null)
+    /** محل يبي صاحبه يسجّله — نعبّي اسمه وموقعه تلقائياً. */
+    val pendingClaim = MutableStateFlow<com.google.android.gms.maps.model.PointOfInterest?>(null)
+
+    fun onPoiClick(poi: com.google.android.gms.maps.model.PointOfInterest) {
+        if (!poiConfig.value.inviteEnabled) return
+        selectedOfferOnMap.value = null
+        selectedPoi.value = poi
+        launchSafely { repository.logPoi(poi.placeId, "taps") }
+    }
+
+    fun dismissPoi() { selectedPoi.value = null }
+
+    /** نص الدعوة (الأدمن يعدّله من الإعدادات). */
+    fun inviteText(poi: com.google.android.gms.maps.model.PointOfInterest): String {
+        val c = poiConfig.value
+        val msg = c.inviteMessage.replace("{name}", poi.name.trim())
+        return if (c.appLink.isNotBlank()) "$msg\n${c.appLink}" else msg
+    }
+
+    fun logInvite(poi: com.google.android.gms.maps.model.PointOfInterest) {
+        launchSafely { repository.logPoi(poi.placeId, "invites") }
+    }
+
+    /** "أنا صاحب المحل": نوديه للتسجيل كتاجر وبيانات محله جاهزة. */
+    fun claimPoi(poi: com.google.android.gms.maps.model.PointOfInterest) {
+        selectedPoi.value = null
+        pendingClaim.value = poi
+        launchSafely { repository.logPoi(poi.placeId, "claims") }
+        when {
+            currentUser.value == null -> {
+                currentRole.value = AppRole.MERCHANT_PORTAL
+                toast("سجّل دخول كتاجر، وبنعبّي اسم محلك وموقعه لك 🏪")
+            }
+            !isMerchantAccount -> {
+                becomeMerchant()
+                isBranchesPageOpen.value = true
+            }
+            else -> isBranchesPageOpen.value = true
+        }
+    }
+
+    fun savePoiConfig(c: com.example.data.repository.PoiConfig) {
+        launchSafely("تعذّر الحفظ.") {
+            repository.setPoiConfig(c)
+            toast("تم الحفظ ✅")
+        }
+    }
+
     val isContactOpen = MutableStateFlow(false)
     val isSendingFeedback = MutableStateFlow(false)
 
@@ -513,6 +573,9 @@ class MerchantViewModel(
         } finally {
             pendingRole = null
             isRoleLoading.value = false
+            if (pendingClaim.value != null && (userRole.value == ROLE_MERCHANT || isAdmin.value)) {
+                isBranchesPageOpen.value = true
+            }
         }
     }
 
@@ -763,7 +826,10 @@ class MerchantViewModel(
         isBranchesPageOpen.value = true
     }
 
-    fun closeBranchesPage() { isBranchesPageOpen.value = false }
+    fun closeBranchesPage() {
+        isBranchesPageOpen.value = false
+        pendingClaim.value = null
+    }
 
     /** يحفظ الفروع والشعار، ويحدّثها في كل عروض التاجر. */
     fun saveBranches(profile: MerchantProfile, edits: com.example.ui.components.StoreMediaEdits) {
@@ -800,6 +866,7 @@ class MerchantViewModel(
                 repository.saveStore(com.example.data.model.StoreProfile.from(user.uid, updated, approved = direct))
                 runCatching { repository.syncMerchantOffers(user.uid, updated, keepApproval = direct) }
                 isBranchesPageOpen.value = false
+                pendingClaim.value = null
                 toast(if (direct) "تم حفظ صفحة متجرك ✅" else "تم الحفظ ✅ صفحة متجرك بتظهر للعملاء بعد المراجعة")
             } catch (e: CancellationException) {
                 throw e
