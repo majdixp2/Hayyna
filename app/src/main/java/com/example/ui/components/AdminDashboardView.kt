@@ -79,6 +79,7 @@ fun AdminDashboardView(
     lastAiError: String? = null,
     onLoadAppCheckToken: () -> Unit = {},
     onUntrust: (com.example.data.repository.MerchantStatus) -> Unit = {},
+    onOfferClick: (RestaurantOffer) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var inboxType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
@@ -232,6 +233,7 @@ fun AdminDashboardView(
                     items(pending, key = { "p_" + it.id }) { o ->
                         ReviewCard(
                             offer = o,
+                            onClick = { onOfferClick(o) },
                             note = null,
                             primaryLabel = "اعتماد ✓",
                             onPrimary = { onApprove(o) },
@@ -245,6 +247,7 @@ fun AdminDashboardView(
                     items(hiddenByReports, key = { "r_" + it.id }) { o ->
                         ReviewCard(
                             offer = o,
+                            onClick = { onOfferClick(o) },
                             note = "${o.reportsCount} بلاغات: " + reports.filter { it.offerId == o.id }.joinToString("، ") { it.reason }.take(200),
                             primaryLabel = "سليم، رجّعه",
                             onPrimary = { onKeepReported(o) },
@@ -396,6 +399,7 @@ fun AdminDashboardView(
                     items(shown, key = { it.id }) { offer ->
                         AdminOfferRow(
                             offer = offer,
+                            onClick = { onOfferClick(offer) },
                             onToggleFeatured = { onToggleFeatured(offer.id, !offer.isFeatured) },
                             onToggleApproved = { onToggleApproved(offer.id, it) },
                             onDelete = { onDeleteOffer(offer.id) }
@@ -472,11 +476,13 @@ private fun PendingStoreCard(st: com.example.data.model.StoreProfile, onApprove:
 @Composable
 private fun AdminOfferRow(
     offer: RestaurantOffer,
+    onClick: () -> Unit,
     onToggleFeatured: () -> Unit,
     onToggleApproved: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
+        onClick = onClick,
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -560,6 +566,7 @@ fun AdminStatCard(
 @Composable
 private fun ReviewCard(
     offer: RestaurantOffer,
+    onClick: () -> Unit = {},
     note: String?,
     primaryLabel: String,
     onPrimary: () -> Unit,
@@ -569,6 +576,7 @@ private fun ReviewCard(
     onSuspend: () -> Unit
 ) {
     Card(
+        onClick = onClick,
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),

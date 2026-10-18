@@ -714,6 +714,7 @@ fun MerchantStoreScreen(
                                 lastAiError = lastAiError,
                                 onLoadAppCheckToken = { viewModel.loadAppCheckToken() },
                                 onUntrust = { viewModel.untrustMerchant(it) },
+                                onOfferClick = { viewModel.openOfferDetail(it) },
                                 onApproveStore = { viewModel.approveStore(it) },
                                 modifier = Modifier
                                     .fillMaxSize()
