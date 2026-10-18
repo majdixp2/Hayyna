@@ -223,6 +223,17 @@ class RestaurantOfferRepository(
         ).await()
     }
 
+    suspend fun getFavorites(uid: String): Set<String> =
+        (usersCollection.document(uid).get().await().get("favorites") as? List<*>)
+            ?.filterIsInstance<String>()?.toSet() ?: emptySet()
+
+    suspend fun saveFavorites(uid: String, ids: Set<String>) {
+        usersCollection.document(uid).set(
+            hashMapOf("favorites" to ids.take(500)),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
     // ---------------- صفحات المتاجر (عامة) ----------------
 
     private val storesCollection = db.collection("stores")

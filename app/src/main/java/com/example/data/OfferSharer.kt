@@ -33,6 +33,51 @@ object OfferSharer {
         append('\n').append("شفته في تطبيق حيّنا 📍")
     }
 
+    /**
+     * طلب العرض عبر واتساب مع صورة العرض مرفقة.
+     * يفتح محادثة المتجر مباشرة (طريقة غير رسمية تدعمها أغلب الجوالات)،
+     * ولو ما زبطت يرجع للرسالة النصية العادية.
+     */
+    suspend fun orderViaWhatsApp(context: Context, offer: RestaurantOffer, phone: String, message: String) {
+        val digits = phone.filter { it.isDigit() }
+        val imageUri = offerImageUri(context, offer)
+        if (imageUri != null && digits.isNotBlank()) {
+            for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "image/jpeg"
+                    setPackage(pkg)
+                    putExtra(Intent.EXTRA_STREAM, imageUri)
+                    putExtra(Intent.EXTRA_TEXT, message)
+                    putExtra("jid", "$digits@s.whatsapp.net")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val ok = runCatching { context.startActivity(intent) }.isSuccess
+                if (ok) return
+            }
+        }
+        // احتياط: الرسالة النصية
+        com.example.ui.components.openWhatsApp(context, phone, message)
+    }
+
+    private suspend fun offerImageUri(context: Context, offer: RestaurantOffer): android.net.Uri? {
+        val imageUrl = when {
+            !offer.mediaUri.startsWith("http") -> null
+            offer.mediaType == MediaType.VIDEO -> CloudinaryUrls.videoThumbnail(offer.mediaUri, 1080)
+            else -> CloudinaryUrls.image(offer.mediaUri, 1080)
+        } ?: return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val result = context.imageLoader.execute(
+                    ImageRequest.Builder(context).data(imageUrl).allowHardware(false).build()
+                ) as? SuccessResult ?: return@runCatching null
+                val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+                val file = File(dir, "hayyna_order.jpg")
+                file.outputStream().use { result.drawable.toBitmap().compress(Bitmap.CompressFormat.JPEG, 88, it) }
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            }.getOrNull()
+        }
+    }
+
     suspend fun share(context: Context, offer: RestaurantOffer) {
         val text = shareText(offer)
         val imageUrl = when {

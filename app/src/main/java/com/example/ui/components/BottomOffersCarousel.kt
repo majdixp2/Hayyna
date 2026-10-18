@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -111,6 +112,7 @@ fun SelectedRestaurantOfferCard(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val orderScope = androidx.compose.runtime.rememberCoroutineScope()
 
     Card(
         modifier = modifier
@@ -176,12 +178,6 @@ fun SelectedRestaurantOfferCard(
                         }
                     }
 
-                    Text(
-                        text = "⭐ ${offer.rating}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFB45309)
-                    )
                 }
 
                 // Close button to dismiss card and return to full clean map
@@ -433,7 +429,7 @@ fun SelectedRestaurantOfferCard(
                         .clickable {
                             val message = "مرحباً ${offer.restaurantName}، أود الاستفسار عن عرض: ${offer.offerTitle}"
                             com.example.data.OfferTracker.whatsapp(offer.id)
-                            openWhatsApp(context, offer.phone, message)
+                            orderScope.launch { com.example.data.OfferSharer.orderViaWhatsApp(context, offer, offer.phone, message) }
                         }
                         .testTag("quick_whatsapp_btn")
                 ) {

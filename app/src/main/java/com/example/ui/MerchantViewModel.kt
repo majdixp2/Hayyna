@@ -210,6 +210,12 @@ class MerchantViewModel(
     val favoriteIds: StateFlow<Set<String>> = favoritesStore.ids
 
     fun toggleFavorite(offerId: String) = favoritesStore.toggle(offerId)
+
+    init {
+        favoritesStore.onChanged = { ids ->
+            currentUser.value?.uid?.let { uid -> launchSafely { repository.saveFavorites(uid, ids) } }
+        }
+    }
     fun toggleFavoritesOnly() { favoritesOnly.value = !favoritesOnly.value }
 
     // ---------------- ملف المطعم والتعديل ----------------
@@ -284,7 +290,6 @@ class MerchantViewModel(
 
         // العروض المميزة (المدفوعة) دائماً في الأعلى، ثم حسب الترتيب المختار
         val sorted = when (params.sortBy) {
-            "RATING" -> filtered.sortedByDescending { it.rating }
             "PRICE_LOW" -> filtered.sortedBy { it.price }
             "DISCOUNT" -> filtered.sortedByDescending { (it.originalPrice ?: it.price) - it.price }
             else -> if (browse != null) {
@@ -350,6 +355,13 @@ class MerchantViewModel(
             }
             userRole.value = role
             if (saved == null) runCatching { repository.setUserRole(uid, role) }
+            // المفضلة: ندمج اللي على الجوال مع اللي في الحساب
+            runCatching {
+                val remote = repository.getFavorites(uid)
+                val merged = remote + favoritesStore.ids.value
+                favoritesStore.setAll(merged)
+                if (merged != remote) repository.saveFavorites(uid, merged)
+            }
         } finally {
             pendingRole = null
             isRoleLoading.value = false
@@ -386,6 +398,9 @@ class MerchantViewModel(
 
     fun logoutMerchant() {
         auth?.signOut()
+        // المفضلة محفوظة في الحساب، نفضّي نسخة الجوال عشان ما تختلط مع حساب ثاني
+        favoritesStore.setAll(emptySet())
+        favoritesOnly.value = false
         if (currentRole.value == AppRole.ADMIN_PORTAL) currentRole.value = AppRole.MERCHANT_PORTAL
     }
 

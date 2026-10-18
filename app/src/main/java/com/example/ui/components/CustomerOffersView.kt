@@ -209,13 +209,6 @@ fun CustomerOffersView(
                         }
                         item {
                             FilterChip(
-                                selected = sortBy == "RATING",
-                                onClick = { onSortBySelect("RATING") },
-                                label = { Text("⭐ الأعلى تقييماً", fontSize = 11.sp) }
-                            )
-                        }
-                        item {
-                            FilterChip(
                                 selected = sortBy == "PRICE_LOW",
                                 onClick = { onSortBySelect("PRICE_LOW") },
                                 label = { Text("💰 الأقل سعراً", fontSize = 11.sp) }

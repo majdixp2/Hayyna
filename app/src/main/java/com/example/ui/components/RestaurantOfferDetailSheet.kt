@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -74,6 +75,7 @@ fun RestaurantOfferDetailSheet(
     onOpenStore: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val orderScope = androidx.compose.runtime.rememberCoroutineScope()
     // الفرع المعروض حالياً (افتراضياً الأقرب أو اللي ضغط عليه في الخريطة)
     var shown by androidx.compose.runtime.remember(offer.id, offer.selectedBranchId) {
         androidx.compose.runtime.mutableStateOf(offer)
@@ -467,7 +469,7 @@ fun RestaurantOfferDetailSheet(
                     onClick = {
                         val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} بسعر ${offer.price} ر.س المعلن عنه في تطبيق حيّنا."
                         com.example.data.OfferTracker.whatsapp(offer.id)
-                            openWhatsApp(context, shown.phone, message)
+                            orderScope.launch { com.example.data.OfferSharer.orderViaWhatsApp(context, shown, shown.phone, message) }
                     },
                     modifier = Modifier
                         .weight(1f)

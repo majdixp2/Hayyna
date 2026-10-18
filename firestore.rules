@@ -103,7 +103,8 @@ service cloud.firestore {
     match /users/{uid} {
       allow read, delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
       allow create, update: if isAuthenticated() && request.auth.uid == uid
-        && request.resource.data.role in ['customer', 'merchant'];
+        && request.resource.data.role in ['customer', 'merchant']
+        && (!('favorites' in request.resource.data) || (request.resource.data.favorites is list && request.resource.data.favorites.size() <= 500));
     }
 
     // صفحة المتجر العامة: الكل يشوف المعتمدة، وصاحبها يعدّل (غير الموثوق تروح للمراجعة)
