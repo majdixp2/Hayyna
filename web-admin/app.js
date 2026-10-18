@@ -16,7 +16,7 @@ const db = getFirestore(app, FIRESTORE_DB_ID);
 // ---------------- الحالة ----------------
 const state = {
   tab: localStorage.getItem("hayyna_admin_tab") || "home",
-  offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [],
+  offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [],
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
 };
 const unsubs = [];
@@ -70,12 +70,13 @@ function listen() {
   unsubs.push(onSnapshot(query(collection(db, "stores"), where("approved", "==", false)), (s) => { state.pendingStores = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
   unsubs.push(onSnapshot(query(collection(db, "feedback"), orderBy("createdAt", "desc"), limit(300)), (s) => { state.feedback = parse(s); render(); }, console.error));
   unsubs.push(onSnapshot(query(collection(db, "poiInterest"), orderBy("taps", "desc"), limit(50)), (s) => { state.poi = parse(s); render(); }, console.error));
+  unsubs.push(onSnapshot(query(collection(db, "verificationRequests"), where("status", "==", "pending")), (s) => { state.verifs = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
   unsubs.push(onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; render(); }, console.error));
 }
 
 // ---------------- أوامر الإدارة (نفس منطق التطبيق) ----------------
 const statusOf = (uid) => state.statuses.find((s) => s.uid === uid);
-const setStatus = (uid, data) => setDoc(doc(db, "merchantStatus", uid), { ...data, updatedAt: serverTimestamp() });
+const setStatus = (uid, data) => setDoc(doc(db, "merchantStatus", uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
 async function setStoreApproved(uid, approved) {
   const ref = doc(db, "stores", uid);
   if ((await getDoc(ref)).exists()) await updateDoc(ref, { approved });
@@ -120,6 +121,14 @@ const actions = {
   fbStatus: (id, status) => updateDoc(doc(db, "feedback", id), { status }),
   async deleteFb(id) { if (confirm("حذف الرسالة؟")) await deleteDoc(doc(db, "feedback", id)); },
   saveConfig: (data) => setDoc(doc(db, "config", "app"), data, { merge: true }),
+  async verify(uid, ok, reason) {
+    const v = state.verifs.find((x) => x.uid === uid);
+    await updateDoc(doc(db, "verificationRequests", uid), { status: ok ? "approved" : "rejected", rejectReason: reason || "" });
+    const sref = doc(db, "stores", uid);
+    if ((await getDoc(sref)).exists()) await updateDoc(sref, ok ? { verified: true, approved: true } : { verified: false });
+    if (ok) await setStatus(uid, { trusted: true, suspended: false, verified: true, name: v?.storeName || "" });
+    toast(ok ? "تم التوثيق ✓" : "تم الرفض");
+  },
 };
 
 // ---------------- الواجهة ----------------
@@ -143,7 +152,7 @@ const TABS = [
 function render() {
   if ($("app").classList.contains("hidden")) return;
   const c = computed();
-  const badges = { review: c.pending.length + c.hidden.length, stores: c.pendingStores.length, messages: c.newMsgs };
+  const badges = { review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs };
   $("tabs").innerHTML = TABS.map(([k, t]) =>
     `<button class="tab ${state.tab === k ? "active" : ""}" data-tab="${k}">${t}${badges[k] ? `<span class="badge">${badges[k]}</span>` : ""}</button>`
   ).join("");
@@ -177,6 +186,7 @@ function home(c) {
     ["⏳ عروض تنتظر المراجعة", c.pending.length, "review"],
     ["🚩 عروض مخفية بسبب البلاغات", c.hidden.length, "review"],
     ["🏪 صفحات متاجر تنتظر الموافقة", c.pendingStores.length, "stores"],
+    ["🛡️ طلبات توثيق", state.verifs.length, "stores"],
     ["📨 رسائل جديدة", c.newMsgs, "messages"],
   ].filter((t) => t[1] > 0);
   const active = state.offers.filter((o) => o.isApproved && !isExpired(o)).length;
@@ -220,7 +230,17 @@ function review(c) {
 function stores(c) {
   const trusted = state.statuses.filter((s) => s.trusted && !s.suspended);
   const suspended = state.statuses.filter((s) => s.suspended);
-  return `<h2>${c.pendingStores.length ? `🏪 صفحات تنتظر الموافقة (${c.pendingStores.length})` : "صفحات تنتظر الموافقة: لا يوجد ✅"}</h2>
+  const docLabel = (t) => t === "freelance" ? "وثيقة العمل الحر" : "السجل التجاري";
+  const verifHtml = `<h2>${state.verifs.length ? `🛡️ طلبات التوثيق (${state.verifs.length})` : "طلبات التوثيق: لا يوجد ✅"}</h2>
+    <div class="grid">${state.verifs.map((v) => `<div class="card">
+      <div class="name">${esc(v.storeName || v.uid.slice(0, 8))}</div>
+      ${v.docNumber ? `<div><b>${docLabel(v.docType)}: ${esc(v.docNumber)}</b> — <a target="_blank" rel="noopener" href="${v.docType === "freelance" ? "https://freelance.sa" : "https://mc.gov.sa"}">تحقق من الموقع الرسمي ›</a></div>` : ""}
+      <div class="muted">${!v.locationChecked ? "📍 الموقع: ما تم التحقق" : v.locationOk ? `📍 كان عند المحل ✅ (${v.distanceMeters} م)` : `📍 كان بعيد ⚠️ (${v.distanceMeters} م)`}</div>
+      ${v.photoUrl ? `<img class="thumb" style="width:100%;height:180px" src="${esc(img(v.photoUrl, 600))}" data-view="${esc(v.photoUrl)}">` : ""}
+      <input type="text" id="reason_${v.uid}" placeholder="سبب الرفض (لو بترفض)">
+      <div class="actions"><button class="btn primary" data-act="verifyOk" data-id="${v.uid}">✓ وثّق</button>
+      <button class="btn danger" data-act="verifyNo" data-id="${v.uid}">رفض</button></div></div>`).join("")}</div>`;
+  return verifHtml + `<h2>${c.pendingStores.length ? `🏪 صفحات تنتظر الموافقة (${c.pendingStores.length})` : "صفحات تنتظر الموافقة: لا يوجد ✅"}</h2>
     <div class="grid">${c.pendingStores.map((s) => `<div class="card">
       <div class="row">${s.logoUrl ? `<img class="thumb small" src="${esc(img(s.logoUrl, 150))}" style="border-radius:50%">` : ""}
         <div><div class="name">${esc(s.name)}</div><div class="muted">${esc(s.category)}${s.priceFrom ? ` • تبدأ من ${s.priceFrom} ر.س` : ""}</div></div></div>
@@ -294,6 +314,12 @@ function settings() {
         <div class="row" style="margin-top:8px"><input type="text" id="aiModel" value="${esc(cfg.aiModel || "gemini-3.8-flash")}" style="max-width:260px">
         <button class="btn primary" data-act="saveModel">حفظ</button></div></details>
     </div>
+    <h2>🛡️ توثيق المتاجر</h2>
+    <div class="card">
+      <p class="muted">التوثيق اختياري للتاجر: الموثّق ياخذ ✓ وينشر مباشرة، وغيره عروضه تمر بالمراجعة.</p>
+      ${[["verifyEnabled", "تفعيل التوثيق (زر وثّق متجرك للتجار)"], ["verifyRequireDoc", "رقم السجل التجاري / العمل الحر"], ["verifyRequirePhoto", "صورة حيّة لواجهة المحل"], ["verifyRequireLocation", "التأكد إنه عند المحل (GPS)"]]
+        .map(([k, l]) => `<label class="switch" style="margin:6px 0"><input type="checkbox" data-cfg="${k}" ${cfg[k] !== false ? "checked" : ""}> ${l}</label>`).join("")}
+    </div>
     <h2>📍 محلات Google على الخريطة</h2>
     <div class="card">
       <label class="switch"><input type="checkbox" id="poiOn" ${cfg.showGooglePoi !== false ? "checked" : ""}> إظهار نقاط المحلات (باهتة)</label>
@@ -316,6 +342,7 @@ function bind() {
   c.querySelectorAll("[data-ofilter]").forEach((b) => (b.onclick = () => { state.offerFilter = b.dataset.ofilter; render(); }));
   c.querySelectorAll("textarea[id^=reply_]").forEach((t) => (t.oninput = () => { state.drafts[t.id.slice(6)] = t.value; }));
   const oq = $("offerQuery"); if (oq) oq.oninput = () => { state.offerQuery = oq.value; render(); };
+  c.querySelectorAll("[data-cfg]").forEach((x) => (x.onchange = () => run(() => actions.saveConfig({ [x.dataset.cfg]: x.checked }), "تم ✅")));
   const poiOn = $("poiOn"); if (poiOn) poiOn.onchange = () => run(() => actions.saveConfig({ showGooglePoi: poiOn.checked }), "تم ✅");
   const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => run(() => actions.saveConfig({ poiInviteEnabled: invOn.checked }), "تم ✅");
   const ai = $("aiOn"); if (ai) ai.onchange = () => run(() => actions.saveConfig({ aiAutofillEnabled: ai.checked }), ai.checked ? "التعبئة الذكية مفعّلة ✨" : "التعبئة الذكية موقفة");
@@ -341,9 +368,11 @@ function bind() {
       deleteFb: () => actions.deleteFb(id),
       saveSupport: () => actions.saveConfig({ supportWhatsapp: $("supportNum").value.trim() }),
       saveModel: () => actions.saveConfig({ aiModel: $("aiModel").value.trim() }),
+      verifyOk: () => actions.verify(id, true, ""),
+      verifyNo: () => actions.verify(id, false, $("reason_" + id).value.trim()),
       savePoi: () => actions.saveConfig({ inviteMessage: $("inviteMsg").value.trim(), appLink: $("appLink").value.trim() }),
     };
-    if (map[b.dataset.act]) run(map[b.dataset.act], ["approve", "trust", "suspendOffer", "suspendUid"].includes(b.dataset.act) ? null : "تم ✅");
+    if (map[b.dataset.act]) run(map[b.dataset.act], ["approve", "trust", "suspendOffer", "suspendUid", "verifyOk", "verifyNo"].includes(b.dataset.act) ? null : "تم ✅");
   }));
 }
 
