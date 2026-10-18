@@ -1,10 +1,12 @@
 // إعدادات Firebase لتطبيق الويب (ليست سرية — كل تطبيقات الويب تكون فيها ظاهرة).
 // تُعبّأ من Firebase ← Project settings ← Your apps ← Hayyna Admin.
 export const firebaseConfig = {
-  apiKey: "PASTE_ME",
+  apiKey: "AIzaSyAurGMO7mSIhqvvMisJHHub_IfdTmJaTDE",
   authDomain: "gen-lang-client-0536850806.firebaseapp.com",
   projectId: "gen-lang-client-0536850806",
-  appId: "PASTE_ME",
+  storageBucket: "gen-lang-client-0536850806.firebasestorage.app",
+  messagingSenderId: "352615681327",
+  appId: "1:352615681327:web:1e040f01340fd62cc125da",
 };
 
 // قاعدة البيانات اللي يستخدمها التطبيق
