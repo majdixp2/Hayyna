@@ -141,6 +141,8 @@ fun MerchantStoreScreen(
     val browsePlace by viewModel.browsePlace.collectAsStateWithLifecycle()
     val myStatus by viewModel.myStatus.collectAsStateWithLifecycle()
     val myFeedback by viewModel.myFeedback.collectAsStateWithLifecycle()
+    val aiConfig by viewModel.aiConfig.collectAsStateWithLifecycle()
+    val isAutofilling by viewModel.isAutofilling.collectAsStateWithLifecycle()
     val allFeedback by viewModel.allFeedback.collectAsStateWithLifecycle()
     val supportWhatsapp by viewModel.supportWhatsapp.collectAsStateWithLifecycle()
     val isContactOpen by viewModel.isContactOpen.collectAsStateWithLifecycle()
@@ -703,6 +705,9 @@ fun MerchantStoreScreen(
                                 onDeleteFeedback = { viewModel.deleteFeedback(it) },
                                 supportNumber = supportWhatsapp,
                                 onSaveSupportNumber = { viewModel.saveSupportWhatsapp(it) },
+                                aiEnabled = aiConfig.first,
+                                aiModel = aiConfig.second,
+                                onSaveAi = { en, m -> viewModel.saveAiConfig(en, m) },
                                 onApproveStore = { viewModel.approveStore(it) },
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -769,7 +774,10 @@ fun MerchantStoreScreen(
                 profile = merchantProfile ?: merchantRestaurantName.takeIf { it.isNotBlank() }?.let {
                     com.example.data.model.MerchantProfile(restaurantName = it)
                 },
-                onManageBranches = { viewModel.openBranchesPage() }
+                onManageBranches = { viewModel.openBranchesPage() },
+                aiEnabled = aiConfig.first,
+                isAutofilling = isAutofilling,
+                onAutofill = { uri, onResult -> viewModel.autofillFromImage(uri, onResult) }
             )
           }
         }

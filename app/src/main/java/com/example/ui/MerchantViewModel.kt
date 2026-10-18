@@ -177,6 +177,39 @@ class MerchantViewModel(
         .flatMapLatest { admin -> if (admin) repository.allFeedback else flowOf(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // ---------------- التعبئة الذكية (يتحكم فيها الأدمن) ----------------
+
+    val aiConfig: StateFlow<Pair<Boolean, String>> = repository.aiConfig
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false to RestaurantOfferRepository.DEFAULT_AI_MODEL)
+    val isAutofilling = MutableStateFlow(false)
+
+    fun autofillFromImage(imageUri: String, onResult: (com.example.data.AiAutofill.Draft) -> Unit) {
+        val (enabled, model) = aiConfig.value
+        if (!enabled || isAutofilling.value) return
+        viewModelScope.launch {
+            isAutofilling.value = true
+            try {
+                val draft = com.example.data.AiAutofill.analyze(getApplication(), imageUri, model)
+                onResult(draft)
+                toast("✨ عبّينا البيانات من الصورة — راجعها قبل النشر")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "autofill failed: ${e.message}", e)
+                toast("التعبئة الذكية مو متاحة الحين، عبّي البيانات يدوياً 🙏")
+            } finally {
+                isAutofilling.value = false
+            }
+        }
+    }
+
+    fun saveAiConfig(enabled: Boolean, model: String) {
+        launchSafely("تعذّر حفظ الإعداد.") {
+            repository.setAiConfig(enabled, model)
+            toast(if (enabled) "التعبئة الذكية مفعّلة ✨" else "التعبئة الذكية موقفة")
+        }
+    }
+
     val isContactOpen = MutableStateFlow(false)
     val isSendingFeedback = MutableStateFlow(false)
 

@@ -90,7 +90,10 @@ fun AddRestaurantOfferSheet(
     isSaving: Boolean = false,
     editingOffer: RestaurantOffer? = null,
     profile: MerchantProfile? = null,
-    onManageBranches: () -> Unit = {}
+    onManageBranches: () -> Unit = {},
+    aiEnabled: Boolean = false,
+    isAutofilling: Boolean = false,
+    onAutofill: (imageUri: String, onResult: (com.example.data.AiAutofill.Draft) -> Unit) -> Unit = { _, _ -> }
 ) {
     val isEditing = editingOffer != null
     val profileBranches = profile?.branches.orEmpty()
@@ -342,6 +345,38 @@ fun AddRestaurantOfferSheet(
                                         modifier = Modifier.padding(top = 6.dp)
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    // ✨ التعبئة الذكية من الصورة
+                    if (aiEnabled && mediaType == MediaType.IMAGE && media.isNotEmpty()) {
+                        OutlinedButton(
+                            onClick = {
+                                onAutofill(media.first()) { d ->
+                                    if (d.title.isNotBlank()) offerTitle = d.title
+                                    if (d.description.isNotBlank()) description = d.description
+                                    d.price?.let { priceText = formatPrice(it) }
+                                    d.originalPrice?.let { originalPriceText = formatPrice(it) }
+                                    d.days?.let { days ->
+                                        val idx = EXPIRY_OPTIONS.indexOfFirst { it.label == com.example.ui.durationLabel(days) }
+                                        if (idx >= 0) {
+                                            expiryOptionIndex = idx
+                                            keepCurrentExpiry = false
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isAutofilling,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        ) {
+                            if (isAutofilling) {
+                                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("نقرأ الصورة…")
+                            } else {
+                                Text("✨ عبّي البيانات من الصورة", fontWeight = FontWeight.Bold)
                             }
                         }
                     }

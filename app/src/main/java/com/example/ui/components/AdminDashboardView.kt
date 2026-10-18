@@ -72,6 +72,9 @@ fun AdminDashboardView(
     onDeleteFeedback: (String) -> Unit = {},
     supportNumber: String = "",
     onSaveSupportNumber: (String) -> Unit = {},
+    aiEnabled: Boolean = false,
+    aiModel: String = "",
+    onSaveAi: (Boolean, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var inboxType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
@@ -159,6 +162,7 @@ fun AdminDashboardView(
 
         // ⚙️ رقم واتساب الدعم
         item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
+        item { AiSettingsCard(enabled = aiEnabled, model = aiModel, onSave = onSaveAi) }
 
         // ⏳ بانتظار المراجعة
         item {
@@ -733,6 +737,46 @@ private fun SupportNumberEditor(current: String, onSave: (String) -> Unit) {
                         onSave(value)
                         editing = false
                     },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.padding(top = 6.dp)
+                ) { Text("حفظ") }
+            }
+        }
+    }
+}
+
+/** تفعيل/إيقاف التعبئة الذكية + اسم نموذج Gemini (يتغيّر بدون نسخة جديدة). */
+@Composable
+private fun AiSettingsCard(enabled: Boolean, model: String, onSave: (Boolean, String) -> Unit) {
+    var modelText by androidx.compose.runtime.remember(model) { androidx.compose.runtime.mutableStateOf(model) }
+    var showModel by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("✨ التعبئة الذكية للعروض", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        if (enabled) "مفعّلة — تظهر للتجار عند إضافة عرض بصورة" else "موقفة",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = { onSave(it, modelText) })
+            }
+            androidx.compose.material3.TextButton(onClick = { showModel = !showModel }) {
+                Text(if (showModel) "إخفاء الإعدادات المتقدمة" else "إعدادات متقدمة (اسم النموذج)", fontSize = 12.sp)
+            }
+            if (showModel) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = modelText,
+                    onValueChange = { modelText = it },
+                    label = { Text("نموذج Gemini") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                androidx.compose.material3.Button(
+                    onClick = { onSave(enabled, modelText) },
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.padding(top = 6.dp)

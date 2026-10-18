@@ -20,6 +20,7 @@ class RestaurantOfferRepository(
 ) {
     companion object {
         private const val TAG = "OfferRepo"
+        const val DEFAULT_AI_MODEL = "gemini-2.5-flash"
 
         private fun resolveFirestore(context: Context): FirebaseFirestore {
             val appContext = context.applicationContext
@@ -328,6 +329,24 @@ class RestaurantOfferRepository(
                 ?: com.example.data.model.Feedback.DEFAULT_SUPPORT_WHATSAPP)
         }
         awaitClose { listener.remove() }
+    }
+
+    /** إعدادات الذكاء الاصطناعي: (مفعّل؟، اسم النموذج). */
+    val aiConfig: Flow<Pair<Boolean, String>> = callbackFlow {
+        val listener = configDoc.addSnapshotListener { snap, _ ->
+            trySend(
+                (snap?.getBoolean("aiAutofillEnabled") ?: false) to
+                    (snap?.getString("aiModel")?.takeIf { it.isNotBlank() } ?: DEFAULT_AI_MODEL)
+            )
+        }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setAiConfig(enabled: Boolean, model: String) {
+        configDoc.set(
+            hashMapOf("aiAutofillEnabled" to enabled, "aiModel" to model.trim().ifBlank { DEFAULT_AI_MODEL }.take(60)),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
     }
 
     suspend fun setSupportWhatsapp(number: String) {
