@@ -75,6 +75,8 @@ fun AdminDashboardView(
     aiEnabled: Boolean = false,
     aiModel: String = "",
     onSaveAi: (Boolean, String) -> Unit = { _, _ -> },
+    appCheckToken: String? = null,
+    onLoadAppCheckToken: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var inboxType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
@@ -163,6 +165,7 @@ fun AdminDashboardView(
         // ⚙️ رقم واتساب الدعم
         item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
         item { AiSettingsCard(enabled = aiEnabled, model = aiModel, onSave = onSaveAi) }
+        item { AppCheckTokenCard(token = appCheckToken, onLoad = onLoadAppCheckToken) }
 
         // ⏳ بانتظار المراجعة
         item {
@@ -781,6 +784,32 @@ private fun AiSettingsCard(enabled: Boolean, model: String, onSave: (Boolean, St
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.padding(top = 6.dp)
                 ) { Text("حفظ") }
+            }
+        }
+    }
+}
+
+/** يعرض رمز تجربة App Check مع زر نسخ (يُسجَّل في Firebase ← App Check ← Manage debug tokens). */
+@Composable
+private fun AppCheckTokenCard(token: String?, onLoad: () -> Unit) {
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("🔐 رمز تجربة App Check", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(
+                "انسخه وسجّله في Firebase ← App Check ← Apps ← Manage debug tokens، عشان يشتغل الذكاء الاصطناعي على هذا الجوال.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (token == null) {
+                androidx.compose.material3.TextButton(onClick = onLoad) { Text("اعرض الرمز") }
+            } else {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(token, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
+                }
+                androidx.compose.material3.TextButton(onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(token))
+                }) { Text("📋 نسخ") }
             }
         }
     }

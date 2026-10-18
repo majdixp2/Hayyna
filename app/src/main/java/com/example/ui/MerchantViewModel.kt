@@ -203,6 +203,16 @@ class MerchantViewModel(
         }
     }
 
+    /** رمز تجربة App Check (للأدمن ينسخه ويسجّله في Firebase). */
+    val appCheckDebugToken = MutableStateFlow<String?>(null)
+
+    fun loadAppCheckToken() {
+        viewModelScope.launch {
+            appCheckDebugToken.value = runCatching { com.example.data.AppCheckHelper.debugToken(getApplication()) }.getOrNull()
+                ?: "ما قدرنا نقرأ الرمز"
+        }
+    }
+
     fun saveAiConfig(enabled: Boolean, model: String) {
         launchSafely("تعذّر حفظ الإعداد.") {
             repository.setAiConfig(enabled, model)

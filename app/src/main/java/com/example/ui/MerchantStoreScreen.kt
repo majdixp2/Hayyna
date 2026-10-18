@@ -142,6 +142,7 @@ fun MerchantStoreScreen(
     val myStatus by viewModel.myStatus.collectAsStateWithLifecycle()
     val myFeedback by viewModel.myFeedback.collectAsStateWithLifecycle()
     val aiConfig by viewModel.aiConfig.collectAsStateWithLifecycle()
+    val appCheckToken by viewModel.appCheckDebugToken.collectAsStateWithLifecycle()
     val isAutofilling by viewModel.isAutofilling.collectAsStateWithLifecycle()
     val allFeedback by viewModel.allFeedback.collectAsStateWithLifecycle()
     val supportWhatsapp by viewModel.supportWhatsapp.collectAsStateWithLifecycle()
@@ -708,6 +709,8 @@ fun MerchantStoreScreen(
                                 aiEnabled = aiConfig.first,
                                 aiModel = aiConfig.second,
                                 onSaveAi = { en, m -> viewModel.saveAiConfig(en, m) },
+                                appCheckToken = appCheckToken,
+                                onLoadAppCheckToken = { viewModel.loadAppCheckToken() },
                                 onApproveStore = { viewModel.approveStore(it) },
                                 modifier = Modifier
                                     .fillMaxSize()
