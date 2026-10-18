@@ -861,7 +861,8 @@ fun MerchantStoreScreen(
                 },
                 isSaving = isSavingBranches,
                 onSave = { p, logo -> viewModel.saveBranches(p, logo) },
-                onClose = { viewModel.closeBranchesPage() }
+                onClose = { viewModel.closeBranchesPage() },
+                claimMode = pendingClaim != null && verifyConfig.enabled && myStatus?.verified != true
             )
         }
 

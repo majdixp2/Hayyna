@@ -952,7 +952,14 @@ class MerchantViewModel(
                 repository.saveStore(com.example.data.model.StoreProfile.from(user.uid, updated, approved = direct))
                 runCatching { repository.syncMerchantOffers(user.uid, updated, keepApproval = direct) }
                 isBranchesPageOpen.value = false
+                val wasClaim = pendingClaim.value != null
                 pendingClaim.value = null
+                // جاي من "أنا صاحب المحل": نكمّل على طول بخطوة إثبات الملكية (السجل / العمل الحر)
+                if (wasClaim && verifyConfig.value.enabled && myStatus.value?.verified != true) {
+                    isVerifyOpen.value = true
+                    toast("تم حفظ متجرك ✅ آخر خطوة: أثبت إنك صاحب المحل")
+                    return@launch
+                }
                 toast(if (direct) "تم حفظ صفحة متجرك ✅" else "تم الحفظ ✅ صفحة متجرك بتظهر للعملاء بعد المراجعة")
             } catch (e: CancellationException) {
                 throw e

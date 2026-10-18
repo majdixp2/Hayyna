@@ -82,7 +82,9 @@ fun BranchesPage(
     profile: MerchantProfile,
     isSaving: Boolean,
     onSave: (MerchantProfile, StoreMediaEdits) -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    // جاي من "أنا صاحب المحل" والتوثيق مفعّل
+    claimMode: Boolean = false
 ) {
     var restaurantName by remember { mutableStateOf(profile.restaurantName) }
     var logoLocal by remember { mutableStateOf<String?>(null) }
@@ -167,6 +169,17 @@ fun BranchesPage(
                         .padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    if (claimMode) {
+                        Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFE0F2FE), modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                "🏪 عبّينا اسم المحل وموقعه من الخريطة. كمّل البيانات واحفظ، وبعدها بنطلب منك رقم السجل التجاري أو وثيقة العمل الحر لإثبات إنك صاحب المحل.",
+                                fontSize = 13.sp,
+                                color = Color(0xFF0369A1),
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
                     // الشعار + الاسم
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
