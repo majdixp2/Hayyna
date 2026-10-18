@@ -603,9 +603,6 @@ fun MerchantStoreScreen(
                                 sortBy = customerSortBy,
                                 onSortBySelect = { viewModel.setCustomerSortBy(it) },
                                 onOfferClick = { viewModel.openOfferDetail(it) },
-                                poiConfig = poiConfig,
-                                onSavePoiConfig = { viewModel.savePoiConfig(it) },
-                                topPoi = topPoi,
                                 onShowOnMap = { offer ->
                                     viewModel.focusOfferOnMap(offer)
                                 },
@@ -723,6 +720,9 @@ fun MerchantStoreScreen(
                                 lastAiError = lastAiError,
                                 onLoadAppCheckToken = { viewModel.loadAppCheckToken() },
                                 onUntrust = { viewModel.untrustMerchant(it) },
+                                poiConfig = poiConfig,
+                                onSavePoiConfig = { viewModel.savePoiConfig(it) },
+                                topPoi = topPoi,
                                 onOfferClick = { viewModel.openOfferDetail(it) },
                                 onApproveStore = { viewModel.approveStore(it) },
                                 modifier = Modifier
