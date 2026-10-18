@@ -20,7 +20,9 @@ class RestaurantOfferRepository(
 ) {
     companion object {
         private const val TAG = "OfferRepo"
-        const val DEFAULT_AI_MODEL = "gemini-2.5-flash"
+        const val DEFAULT_AI_MODEL = "gemini-3.8-flash"
+        /** نماذج احتياط لو النموذج المحدد ما اشتغل (Google قصرت 2.5 على المستخدمين القدامى). */
+        val FALLBACK_AI_MODELS = listOf("gemini-3.8-flash", "gemini-3.5-flash-lite")
 
         private fun resolveFirestore(context: Context): FirebaseFirestore {
             val appContext = context.applicationContext

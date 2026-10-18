@@ -182,6 +182,8 @@ class MerchantViewModel(
     val aiConfig: StateFlow<Pair<Boolean, String>> = repository.aiConfig
         .stateIn(viewModelScope, SharingStarted.Eagerly, false to RestaurantOfferRepository.DEFAULT_AI_MODEL)
     val isAutofilling = MutableStateFlow(false)
+    /** آخر خطأ في التعبئة الذكية (يظهر للأدمن في لوحة الإدارة). */
+    val lastAiError = MutableStateFlow<String?>(null)
 
     fun autofillFromImage(imageUri: String, onResult: (com.example.data.AiAutofill.Draft) -> Unit) {
         val (enabled, model) = aiConfig.value
@@ -189,14 +191,22 @@ class MerchantViewModel(
         viewModelScope.launch {
             isAutofilling.value = true
             try {
-                val draft = com.example.data.AiAutofill.analyze(getApplication(), imageUri, model)
+                // نتجاهل 2.5 (صارت مقصورة على المستخدمين القدامى) ونجرّب الاحتياط
+                val models = (listOf(model).filter { !it.startsWith("gemini-2.5") } +
+                    RestaurantOfferRepository.FALLBACK_AI_MODELS)
+                val draft = com.example.data.AiAutofill.analyzeWithFallback(getApplication(), imageUri, models)
+                lastAiError.value = null
                 onResult(draft)
                 toast("✨ عبّينا البيانات من الصورة — راجعها قبل النشر")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "autofill failed: ${e.message}", e)
-                toast("التعبئة الذكية مو متاحة الحين، عبّي البيانات يدوياً 🙏")
+                lastAiError.value = "${e.javaClass.simpleName}: ${e.message}".take(400)
+                toast(
+                    if (isAdmin.value) "خطأ التعبئة الذكية (يظهر لك كأدمن): ${e.message?.take(150)}"
+                    else "التعبئة الذكية مو متاحة الحين، عبّي البيانات يدوياً 🙏"
+                )
             } finally {
                 isAutofilling.value = false
             }

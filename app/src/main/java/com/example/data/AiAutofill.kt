@@ -41,6 +41,24 @@ object AiAutofill {
 لا تخترع أسعار غير موجودة في الصورة.
 """
 
+    /** يجرّب النموذج المحدد، ولو فشل يجرّب النماذج الاحتياطية بالترتيب. */
+    suspend fun analyzeWithFallback(context: Context, imageUri: String, models: List<String>): Draft {
+        var last: Exception? = null
+        for (m in models.distinct()) {
+            try {
+                return analyze(context, imageUri, m)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                last = e
+                // أخطاء App Check / الصلاحيات ما تتصلح بتغيير النموذج
+                val msg = e.message.orEmpty()
+                if (msg.contains("App Check", true) || msg.contains("PERMISSION", true) || msg.contains("403")) throw e
+            }
+        }
+        throw last ?: IllegalStateException("no model")
+    }
+
     suspend fun analyze(context: Context, imageUri: String, modelName: String): Draft {
         val bitmap = loadBitmap(context, imageUri) ?: throw IllegalStateException("تعذّر قراءة الصورة")
         val model = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(

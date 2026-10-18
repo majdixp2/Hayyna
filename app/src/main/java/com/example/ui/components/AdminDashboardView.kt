@@ -76,6 +76,7 @@ fun AdminDashboardView(
     aiModel: String = "",
     onSaveAi: (Boolean, String) -> Unit = { _, _ -> },
     appCheckToken: String? = null,
+    lastAiError: String? = null,
     onLoadAppCheckToken: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -165,6 +166,13 @@ fun AdminDashboardView(
         // ⚙️ رقم واتساب الدعم
         item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
         item { AiSettingsCard(enabled = aiEnabled, model = aiModel, onSave = onSaveAi) }
+        if (lastAiError != null) {
+            item {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text("آخر خطأ في التعبئة الذكية:\n$lastAiError", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
         item { AppCheckTokenCard(token = appCheckToken, onLoad = onLoadAppCheckToken) }
 
         // ⏳ بانتظار المراجعة
