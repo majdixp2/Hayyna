@@ -1,0 +1,42 @@
+name: Deploy admin web + Firestore rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web-admin/**"
+      - "firestore.rules"
+      - "firebase.json"
+      - ".github/workflows/deploy-firebase.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secret
+        id: check
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT secret is missing — skipping deploy."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.skip != 'true'
+        with:
+          node-version: 20
+      - name: Deploy hosting
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx -y firebase-tools@14 deploy --only hosting --project gen-lang-client-0536850806 --non-interactive
+      - name: Deploy Firestore rules
+        if: steps.check.outputs.skip != 'true'
+        continue-on-error: true
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx -y firebase-tools@14 deploy --only firestore:rules --project gen-lang-client-0536850806 --non-interactive

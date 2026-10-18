@@ -1,4 +1,11 @@
 {
+  "hosting": {
+    "public": "web-admin",
+    "ignore": ["firebase.json", "**/.*"],
+    "headers": [
+      { "source": "**/*.@(js|css|html)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  },
   "firestore": [
     {
       "database": "ai-studio-android-307cc811-cd30-4d36-b6c1-76e9fb2ac335",
