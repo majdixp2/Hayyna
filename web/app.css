@@ -22,6 +22,8 @@ button { font-family: inherit; cursor: pointer; }
 #map { position: fixed; inset: 0; z-index: 0; background: #EEF0EA; }
 .leaflet-control-attribution { font-size: 9px; }
 .leaflet-control-zoom { display: none; }
+/* خريطة هادئة مثل التطبيق عشان تبرز العروض */
+.leaflet-tile-pane { filter: saturate(.55) brightness(1.04) contrast(.95); }
 
 /* ---------- الأعلى ---------- */
 .top { position: fixed; top: 0; left: 0; right: 0; z-index: 500; padding: calc(10px + var(--safe-t)) 12px 6px; pointer-events: none; }

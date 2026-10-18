@@ -128,9 +128,9 @@ const bump = (id, field) => updateDoc(doc(db, "offers", id), { [field]: incremen
 
 // ---------------- الخريطة ----------------
 const map = L.map("map", { zoomControl: false, attributionControl: true }).setView([21.5433, 39.1728], 12);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-  maxZoom: 19, subdomains: "abcd",
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 }).addTo(map);
 map.attributionControl.setPrefix(false);
 const offerLayer = L.layerGroup().addTo(map);
@@ -220,7 +220,7 @@ function render() {
   if (!fitted && list.length && !state.me && !state.view) {
     fitted = true;
     const pts = list.flatMap(({ o }) => branchesOf(o).map((b) => [b.latitude, b.longitude])).filter(([a, c]) => a || c);
-    if (pts.length) map.fitBounds(pts, { padding: [60, 60], maxZoom: 15 });
+    if (pts.length) map.fitBounds(pts, { paddingTopLeft: [40, 140], paddingBottomRight: [40, 260], maxZoom: 15 });
   }
 }
 
