@@ -15,7 +15,9 @@ data class StoreProfile(
     val menuImages: List<String> = emptyList(),
     val branches: List<Branch> = emptyList(),
     val phone: String = "",
-    val approved: Boolean = false
+    val approved: Boolean = false,
+    // ✓ موثّق (يحطها الأدمن بعد التحقق من السجل/العمل الحر)
+    val verified: Boolean = false
 ) {
     /** اسم قسم المنيو حسب نوع المتجر. */
     val menuLabel: String

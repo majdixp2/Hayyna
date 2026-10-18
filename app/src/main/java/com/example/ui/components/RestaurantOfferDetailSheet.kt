@@ -72,7 +72,8 @@ fun RestaurantOfferDetailSheet(
     onEdit: () -> Unit = {},
     // نفس العرض في كل فرع (مرتّب من الأقرب). فاضي = فرع واحد.
     branchOffers: List<RestaurantOffer> = emptyList(),
-    onOpenStore: (() -> Unit)? = null
+    onOpenStore: (() -> Unit)? = null,
+    isVerified: Boolean = false
 ) {
     val context = LocalContext.current
     val orderScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -224,6 +225,10 @@ fun RestaurantOfferDetailSheet(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
+                if (isVerified) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    VerifiedBadge()
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 if (onOpenStore != null) {
                     Surface(

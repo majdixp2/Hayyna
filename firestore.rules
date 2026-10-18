@@ -151,19 +151,43 @@ service cloud.firestore {
         && (!('favorites' in request.resource.data) || (request.resource.data.favorites is list && request.resource.data.favorites.size() <= 500));
     }
 
+    function validStoreWrite(uid) {
+      return !isSuspended(uid)
+        && (request.resource.data.approved == false || isTrusted(uid))
+        && request.resource.data.name is string && request.resource.data.name.size() <= 100
+        && request.resource.data.about is string && request.resource.data.about.size() <= 500
+        && request.resource.data.menuImages is list && request.resource.data.menuImages.size() <= 10
+        && request.resource.data.branches is list && request.resource.data.branches.size() <= 50;
+    }
+
+    // طلبات توثيق المتاجر: التاجر يرسل طلبه ويشوفه، والأدمن يقرّر
+    match /verificationRequests/{uid} {
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
+      allow create, update: if isAdmin()
+        || (isAuthenticated() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['uid', 'storeName', 'docType', 'docNumber', 'photoUrl', 'locationChecked', 'locationOk', 'distanceMeters', 'status', 'rejectReason', 'createdAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.rejectReason == ''
+          && request.resource.data.docNumber is string && request.resource.data.docNumber.size() <= 40
+          && request.resource.data.storeName is string && request.resource.data.storeName.size() <= 100
+          && request.resource.data.photoUrl is string && request.resource.data.photoUrl.size() <= 2000
+          && request.resource.data.createdAt == request.time);
+      allow delete: if isAdmin();
+    }
+
     // صفحة المتجر العامة: الكل يشوف المعتمدة، وصاحبها يعدّل (غير الموثوق تروح للمراجعة)
     match /stores/{uid} {
       allow read: if resource.data.approved == true
         || (isAuthenticated() && request.auth.uid == uid)
         || isAdmin();
-      allow create, update: if isAdmin()
-        || (isAuthenticated() && request.auth.uid == uid
-          && !isSuspended(uid)
-          && (request.resource.data.approved == false || isTrusted(uid))
-          && request.resource.data.name is string && request.resource.data.name.size() <= 100
-          && request.resource.data.about is string && request.resource.data.about.size() <= 500
-          && request.resource.data.menuImages is list && request.resource.data.menuImages.size() <= 10
-          && request.resource.data.branches is list && request.resource.data.branches.size() <= 50);
+      allow create: if isAdmin()
+        || (isAuthenticated() && request.auth.uid == uid && validStoreWrite(uid)
+          && request.resource.data.get('verified', false) == false);
+      // التاجر ما يقدر يوثّق نفسه — علامة ✓ يحطها الأدمن فقط
+      allow update: if isAdmin()
+        || (isAuthenticated() && request.auth.uid == uid && validStoreWrite(uid)
+          && request.resource.data.get('verified', false) == resource.data.get('verified', false));
       allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
     }
 

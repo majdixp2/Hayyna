@@ -94,6 +94,10 @@ fun MerchantPortalView(
     onShowFavorites: () -> Unit = {},
     onOpenContact: () -> Unit = {},
     unreadReplies: Int = 0,
+    verifyEnabled: Boolean = false,
+    isVerified: Boolean = false,
+    verifyStatus: String? = null,
+    onOpenVerify: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (!isLoggedIn) {
@@ -139,6 +143,10 @@ fun MerchantPortalView(
             isTrusted = isTrusted,
             onOpenContact = onOpenContact,
             unreadReplies = unreadReplies,
+            verifyEnabled = verifyEnabled,
+            isVerified = isVerified,
+            verifyStatus = verifyStatus,
+            onOpenVerify = onOpenVerify,
             modifier = modifier
         )
     }
@@ -435,6 +443,10 @@ private fun MerchantDashboard(
     isTrusted: Boolean,
     onOpenContact: () -> Unit,
     unreadReplies: Int,
+    verifyEnabled: Boolean,
+    isVerified: Boolean,
+    verifyStatus: String?,
+    onOpenVerify: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -512,6 +524,36 @@ private fun MerchantDashboard(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
+                    }
+                }
+            }
+        }
+
+        // التوثيق ✓
+        if (isVerified) {
+            item {
+                Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFE0F2FE), modifier = Modifier.fillMaxWidth()) {
+                    Text("✓ متجرك موثّق — العملاء يشوفون العلامة جنب اسمك", color = Color(0xFF0369A1), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(12.dp))
+                }
+            }
+        } else if (verifyEnabled) {
+            item {
+                Card(
+                    onClick = onOpenVerify,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F2FE)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("✓ وثّق متجرك", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color(0xFF0369A1))
+                            Text(
+                                verifyStatus ?: "علامة ✓ جنب اسمك، وثقة أكثر، وعروضك تنزل مباشرة",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text("›", fontSize = 22.sp, color = Color(0xFF0369A1))
                     }
                 }
             }

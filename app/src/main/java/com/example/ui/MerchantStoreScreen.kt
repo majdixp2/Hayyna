@@ -141,6 +141,11 @@ fun MerchantStoreScreen(
     val browsePlace by viewModel.browsePlace.collectAsStateWithLifecycle()
     val myStatus by viewModel.myStatus.collectAsStateWithLifecycle()
     val myFeedback by viewModel.myFeedback.collectAsStateWithLifecycle()
+    val verifyConfig by viewModel.verifyConfig.collectAsStateWithLifecycle()
+    val myVerification by viewModel.myVerification.collectAsStateWithLifecycle()
+    val pendingVerifications by viewModel.pendingVerifications.collectAsStateWithLifecycle()
+    val isVerifyOpen by viewModel.isVerifyOpen.collectAsStateWithLifecycle()
+    val isSubmittingVerification by viewModel.isSubmittingVerification.collectAsStateWithLifecycle()
     val aiConfig by viewModel.aiConfig.collectAsStateWithLifecycle()
     val poiConfig by viewModel.poiConfig.collectAsStateWithLifecycle()
     val selectedPoi by viewModel.selectedPoi.collectAsStateWithLifecycle()
@@ -656,6 +661,14 @@ fun MerchantStoreScreen(
                                 onBecomeMerchant = { viewModel.becomeMerchant() },
                                 favoritesCount = favoriteIds.size,
                                 onOpenContact = { viewModel.openContact() },
+                                verifyEnabled = verifyConfig.enabled,
+                                isVerified = myStatus?.verified == true,
+                                verifyStatus = when (myVerification?.status) {
+                                    com.example.data.model.VerificationRequest.STATUS_PENDING -> "⏳ طلبك قيد المراجعة"
+                                    com.example.data.model.VerificationRequest.STATUS_REJECTED -> "تم رفض الطلب — اضغط للتفاصيل"
+                                    else -> null
+                                },
+                                onOpenVerify = { viewModel.openVerify() },
                                 unreadReplies = myFeedback.count { !it.replySeen },
                                 onShowFavorites = {
                                     if (!favoritesOnly) viewModel.toggleFavoritesOnly()
@@ -723,6 +736,10 @@ fun MerchantStoreScreen(
                                 poiConfig = poiConfig,
                                 onSavePoiConfig = { viewModel.savePoiConfig(it) },
                                 topPoi = topPoi,
+                                pendingVerifications = pendingVerifications,
+                                onDecideVerification = { r, ok, reason -> viewModel.decideVerification(r, ok, reason) },
+                                verifyConfig = verifyConfig,
+                                onSaveVerifyConfig = { viewModel.saveVerifyConfig(it) },
                                 onOfferClick = { viewModel.openOfferDetail(it) },
                                 onApproveStore = { viewModel.approveStore(it) },
                                 modifier = Modifier
@@ -748,7 +765,8 @@ fun MerchantStoreScreen(
                 branchOffers = if (offer.branches.size > 1) {
                     offer.branches.map { viewModel.offerAtBranch(offer, it) }.sortedBy { it.distanceKm }
                 } else emptyList(),
-                onOpenStore = approvedStores.firstOrNull { it.uid == offer.merchantId }?.let { st -> { viewModel.openStorePage(st) } }
+                onOpenStore = approvedStores.firstOrNull { it.uid == offer.merchantId }?.let { st -> { viewModel.openStorePage(st) } },
+                isVerified = approvedStores.firstOrNull { it.uid == offer.merchantId }?.verified == true
             )
         }
 
@@ -760,6 +778,20 @@ fun MerchantStoreScreen(
                 onInvited = { viewModel.logInvite(poi) },
                 onClaim = { viewModel.claimPoi(poi) },
                 onDismiss = { viewModel.dismissPoi() }
+            )
+        }
+
+        // توثيق المتجر
+        if (isVerifyOpen) {
+            com.example.ui.components.VerificationPage(
+                config = verifyConfig,
+                current = myVerification,
+                isSubmitting = isSubmittingVerification,
+                hasBranches = merchantProfile?.branches?.isNotEmpty() == true,
+                measureDistance = { viewModel.distanceToNearestBranchMeters() },
+                onRequestLocation = { viewModel.requestLocationUpdates() },
+                onSubmit = { t, n, ph, d -> viewModel.submitVerification(t, n, ph, d) },
+                onClose = { viewModel.closeVerify() }
             )
         }
 

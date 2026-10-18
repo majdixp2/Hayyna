@@ -162,7 +162,8 @@ class RestaurantOfferRepository(
                     uid = uid,
                     trusted = snap?.getBoolean("trusted") ?: false,
                     suspended = snap?.getBoolean("suspended") ?: false,
-                    name = snap?.getString("name").orEmpty()
+                    name = snap?.getString("name").orEmpty(),
+                    verified = snap?.getBoolean("verified") ?: false
                 )
             )
         }
@@ -181,7 +182,8 @@ class RestaurantOfferRepository(
                     uid = d.id,
                     trusted = d.getBoolean("trusted") ?: false,
                     suspended = d.getBoolean("suspended") ?: false,
-                    name = d.getString("name").orEmpty()
+                    name = d.getString("name").orEmpty(),
+                    verified = d.getBoolean("verified") ?: false
                 )
             } ?: emptyList())
         }
@@ -194,6 +196,7 @@ class RestaurantOfferRepository(
                 "trusted" to status.trusted,
                 "suspended" to status.suspended,
                 "name" to status.name,
+                "verified" to status.verified,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
@@ -461,8 +464,108 @@ class RestaurantOfferRepository(
                 "phone" to store.phone.take(30),
                 "approved" to store.approved,
                 "updatedAt" to FieldValue.serverTimestamp()
+            ),
+            // دمج: عشان ما تنمسح علامة ✓ اللي يحطها الأدمن
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
+    // ---------------- التوثيق ----------------
+
+    private val verifyCollection = db.collection("verificationRequests")
+
+    private fun parseVerification(d: DocumentSnapshot) = com.example.data.model.VerificationRequest(
+        uid = d.id,
+        storeName = d.getString("storeName").orEmpty(),
+        docType = d.getString("docType").orEmpty(),
+        docNumber = d.getString("docNumber").orEmpty(),
+        photoUrl = d.getString("photoUrl").orEmpty(),
+        locationChecked = d.getBoolean("locationChecked") ?: false,
+        locationOk = d.getBoolean("locationOk") ?: false,
+        distanceMeters = (d.getLong("distanceMeters") ?: -1L).toInt(),
+        status = d.getString("status") ?: com.example.data.model.VerificationRequest.STATUS_PENDING,
+        rejectReason = d.getString("rejectReason").orEmpty(),
+        createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L
+    )
+
+    val verifyConfig: Flow<com.example.data.model.VerifyConfig> = callbackFlow {
+        val listener = configDoc.addSnapshotListener { snap, _ ->
+            trySend(
+                com.example.data.model.VerifyConfig(
+                    enabled = snap?.getBoolean("verifyEnabled") ?: true,
+                    requireDoc = snap?.getBoolean("verifyRequireDoc") ?: true,
+                    requirePhoto = snap?.getBoolean("verifyRequirePhoto") ?: true,
+                    requireLocation = snap?.getBoolean("verifyRequireLocation") ?: true
+                )
+            )
+        }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setVerifyConfig(c: com.example.data.model.VerifyConfig) {
+        configDoc.set(
+            hashMapOf(
+                "verifyEnabled" to c.enabled,
+                "verifyRequireDoc" to c.requireDoc,
+                "verifyRequirePhoto" to c.requirePhoto,
+                "verifyRequireLocation" to c.requireLocation
+            ),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
+    fun myVerification(uid: String): Flow<com.example.data.model.VerificationRequest?> = callbackFlow {
+        val listener = verifyCollection.document(uid).addSnapshotListener { snap, error ->
+            if (error != null || snap == null || !snap.exists()) {
+                trySend(null)
+                return@addSnapshotListener
+            }
+            trySend(parseVerification(snap))
+        }
+        awaitClose { listener.remove() }
+    }
+
+    val pendingVerifications: Flow<List<com.example.data.model.VerificationRequest>> = callbackFlow {
+        val listener = verifyCollection.whereEqualTo("status", com.example.data.model.VerificationRequest.STATUS_PENDING)
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                trySend(snap?.documents?.map { parseVerification(it) }?.sortedBy { it.createdAtMillis } ?: emptyList())
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun submitVerification(r: com.example.data.model.VerificationRequest) {
+        verifyCollection.document(r.uid).set(
+            hashMapOf(
+                "uid" to r.uid,
+                "storeName" to r.storeName.take(100),
+                "docType" to r.docType,
+                "docNumber" to r.docNumber.take(40),
+                "photoUrl" to r.photoUrl,
+                "locationChecked" to r.locationChecked,
+                "locationOk" to r.locationOk,
+                "distanceMeters" to r.distanceMeters,
+                "status" to com.example.data.model.VerificationRequest.STATUS_PENDING,
+                "rejectReason" to "",
+                "createdAt" to FieldValue.serverTimestamp()
             )
         ).await()
+    }
+
+    suspend fun decideVerification(uid: String, approved: Boolean, reason: String) {
+        verifyCollection.document(uid).update(
+            mapOf(
+                "status" to if (approved) com.example.data.model.VerificationRequest.STATUS_APPROVED else com.example.data.model.VerificationRequest.STATUS_REJECTED,
+                "rejectReason" to reason.take(300)
+            )
+        ).await()
+        val storeRef = storesCollection.document(uid)
+        if (storeRef.get().await().exists()) {
+            storeRef.update(mapOf("verified" to approved) + if (approved) mapOf("approved" to true) else emptyMap()).await()
+        }
     }
 
     /** الأدمن: يعتمد/يخفي صفحة متجر (لو موجودة). */
@@ -678,7 +781,8 @@ data class MerchantStatus(
     val uid: String,
     val trusted: Boolean = false,
     val suspended: Boolean = false,
-    val name: String = ""
+    val name: String = "",
+    val verified: Boolean = false
 )
 
 data class OfferReport(

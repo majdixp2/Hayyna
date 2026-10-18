@@ -290,6 +290,92 @@ class MerchantViewModel(
         }
     }
 
+    // ---------------- توثيق المتاجر ----------------
+
+    val verifyConfig: StateFlow<com.example.data.model.VerifyConfig> = repository.verifyConfig
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.model.VerifyConfig())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val myVerification: StateFlow<com.example.data.model.VerificationRequest?> = currentUser
+        .flatMapLatest { u -> if (u == null) flowOf(null) else repository.myVerification(u.uid) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val pendingVerifications: StateFlow<List<com.example.data.model.VerificationRequest>> = isAdmin
+        .flatMapLatest { admin -> if (admin) repository.pendingVerifications else flowOf(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val isVerifyOpen = MutableStateFlow(false)
+    val isSubmittingVerification = MutableStateFlow(false)
+    fun openVerify() { isVerifyOpen.value = true }
+    fun closeVerify() { isVerifyOpen.value = false }
+
+    /** المسافة من موقع المستخدم الحين لأقرب فرع (بالمتر)، أو null لو الموقع غير معروف. */
+    fun distanceToNearestBranchMeters(): Int? {
+        val loc = userLocation.value ?: return null
+        val branches = merchantProfile.value?.branches.orEmpty()
+        if (branches.isEmpty()) return null
+        return branches.minOf {
+            UserLocationManager.calculateDistanceKm(loc.latitude, loc.longitude, it.latitude, it.longitude)
+        }.let { (it * 1000).toInt() }
+    }
+
+    fun submitVerification(docType: String, docNumber: String, photoLocal: String?, distance: Int?) {
+        val user = currentUser.value ?: return
+        if (isSubmittingVerification.value) return
+        val cfg = verifyConfig.value
+        viewModelScope.launch {
+            isSubmittingVerification.value = true
+            try {
+                val photo = photoLocal?.let { MediaUploader.uploadOfferMedia(getApplication(), it, false) }.orEmpty()
+                repository.submitVerification(
+                    com.example.data.model.VerificationRequest(
+                        uid = user.uid,
+                        storeName = merchantProfile.value?.restaurantName.orEmpty(),
+                        docType = docType,
+                        docNumber = docNumber.trim(),
+                        photoUrl = photo,
+                        locationChecked = cfg.requireLocation && distance != null,
+                        locationOk = distance != null && distance <= com.example.data.model.VerificationRequest.MAX_DISTANCE_METERS,
+                        distanceMeters = distance ?: -1
+                    )
+                )
+                isVerifyOpen.value = false
+                toast("وصل طلب التوثيق ✅ بنراجعه ونرد عليك قريب")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "verification failed: ${e.message}", e)
+                toast("تعذّر إرسال الطلب: ${e.message ?: "خطأ"}")
+            } finally {
+                isSubmittingVerification.value = false
+            }
+        }
+    }
+
+    /** الأدمن: يوثّق المتجر (✓ + موثوق ينشر مباشرة) أو يرفض مع السبب. */
+    fun decideVerification(req: com.example.data.model.VerificationRequest, approve: Boolean, reason: String = "") {
+        launchSafely("تعذّر الحفظ.") {
+            repository.decideVerification(req.uid, approve, reason)
+            if (approve) {
+                val cur = merchantStatuses.value.firstOrNull { it.uid == req.uid }
+                repository.setMerchantStatus(
+                    (cur ?: com.example.data.repository.MerchantStatus(req.uid)).copy(
+                        trusted = true, suspended = false, verified = true, name = req.storeName
+                    )
+                )
+            }
+            toast(if (approve) "تم توثيق ${req.storeName} ✓" else "تم رفض الطلب")
+        }
+    }
+
+    fun saveVerifyConfig(c: com.example.data.model.VerifyConfig) {
+        launchSafely("تعذّر الحفظ.") {
+            repository.setVerifyConfig(c)
+            toast("تم الحفظ ✅")
+        }
+    }
+
     val isContactOpen = MutableStateFlow(false)
     val isSendingFeedback = MutableStateFlow(false)
 
@@ -923,8 +1009,9 @@ class MerchantViewModel(
     /** يوثّق التاجر مباشرة ويعتمد العرض. */
     fun trustMerchant(offer: RestaurantOffer) {
         launchSafely("تعذّر توثيق التاجر.") {
+            val cur = merchantStatuses.value.firstOrNull { it.uid == offer.merchantId }
             repository.setMerchantStatus(
-                com.example.data.repository.MerchantStatus(offer.merchantId, trusted = true, name = offer.restaurantName)
+                (cur ?: com.example.data.repository.MerchantStatus(offer.merchantId)).copy(trusted = true, suspended = false, name = offer.restaurantName)
             )
             repository.setOfferApproved(offer.id, true)
             runCatching { repository.setStoreApproved(offer.merchantId, true) }

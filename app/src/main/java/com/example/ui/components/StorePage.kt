@@ -157,7 +157,13 @@ fun StorePage(
                     }
 
                     Column(Modifier.offset(y = (-28).dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(store.name, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(store.name, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f, fill = false))
+                            if (store.verified) {
+                                Spacer(Modifier.width(8.dp))
+                                VerifiedBadge()
+                            }
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             if (store.category.isNotBlank()) {
                                 Surface(shape = RoundedCornerShape(8.dp), color = CalmSagePrimary.copy(alpha = 0.12f)) {

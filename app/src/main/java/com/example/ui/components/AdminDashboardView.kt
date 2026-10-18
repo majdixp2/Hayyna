@@ -83,6 +83,10 @@ fun AdminDashboardView(
     poiConfig: com.example.data.repository.PoiConfig = com.example.data.repository.PoiConfig(),
     onSavePoiConfig: (com.example.data.repository.PoiConfig) -> Unit = {},
     topPoi: List<com.example.data.repository.PoiInterest> = emptyList(),
+    pendingVerifications: List<com.example.data.model.VerificationRequest> = emptyList(),
+    onDecideVerification: (com.example.data.model.VerificationRequest, Boolean, String) -> Unit = { _, _, _ -> },
+    verifyConfig: com.example.data.model.VerifyConfig = com.example.data.model.VerifyConfig(),
+    onSaveVerifyConfig: (com.example.data.model.VerifyConfig) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var inboxType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
@@ -132,7 +136,7 @@ fun AdminDashboardView(
     var offerFilter by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
 
     val reviewCount = pending.size + hiddenByReports.size
-    val storesCount = visiblePendingStores.size
+    val storesCount = visiblePendingStores.size + pendingVerifications.size
     data class AdminTab(val title: String, val badge: Int)
     val tabs = listOf(
         AdminTab("🏠 الرئيسية", 0),
@@ -188,6 +192,7 @@ fun AdminDashboardView(
                         Triple("⏳ عروض تنتظر المراجعة", pending.size, 1),
                         Triple("🚩 عروض مخفية بسبب البلاغات", hiddenByReports.size, 1),
                         Triple("🏪 صفحات متاجر تنتظر الموافقة", visiblePendingStores.size, 2),
+                        Triple("🛡️ طلبات توثيق", pendingVerifications.size, 2),
                         Triple("📨 رسائل جديدة", newCount, 3)
                     )
                     if (todo.all { it.second == 0 }) {
@@ -295,6 +300,10 @@ fun AdminDashboardView(
 
                 // ---------------- 🏪 المتاجر ----------------
                 2 -> {
+                    item { SectionHeader(if (pendingVerifications.isEmpty()) "طلبات التوثيق: لا يوجد ✅" else "🛡️ طلبات التوثيق (${pendingVerifications.size})") }
+                    items(pendingVerifications, key = { "v_" + it.uid }) { r ->
+                        VerificationCard(r, onDecide = { ok, reason -> onDecideVerification(r, ok, reason) }, onOpenImage = { viewerImage = it })
+                    }
                     item { SectionHeader(if (visiblePendingStores.isEmpty()) "صفحات تنتظر الموافقة: لا يوجد ✅" else "🏪 صفحات تنتظر الموافقة (${visiblePendingStores.size})") }
                     items(visiblePendingStores, key = { "st_" + it.uid }) { st ->
                         PendingStoreCard(st, onApprove = { onApproveStore(st) }, onSuspend = { onSuspendMerchant(st.uid, st.name) })
@@ -449,6 +458,7 @@ fun AdminDashboardView(
                     item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
                     item { AiSettingsCard(enabled = aiEnabled, model = aiModel, onSave = onSaveAi) }
                     item { PoiSettingsCard(config = poiConfig, onSave = onSavePoiConfig) }
+                    item { VerifySettingsCard(config = verifyConfig, onSave = onSaveVerifyConfig) }
                     if (lastAiError != null) {
                         item {
                             androidx.compose.foundation.text.selection.SelectionContainer {
@@ -918,6 +928,102 @@ private fun PoiSettingsCard(
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
                 shape = RoundedCornerShape(10.dp)
             ) { Text("حفظ النص والرابط") }
+        }
+    }
+}
+
+@Composable
+private fun VerificationCard(
+    r: com.example.data.model.VerificationRequest,
+    onDecide: (Boolean, String) -> Unit,
+    onOpenImage: (String) -> Unit
+) {
+    var reason by androidx.compose.runtime.remember(r.uid) { androidx.compose.runtime.mutableStateOf("") }
+    var rejecting by androidx.compose.runtime.remember(r.uid) { androidx.compose.runtime.mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(r.storeName.ifBlank { r.uid.take(8) }, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = CalmSagePrimary)
+            if (r.docNumber.isNotBlank()) {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text("${com.example.data.model.VerificationRequest.docLabel(r.docType)}: ${r.docNumber}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+                androidx.compose.material3.TextButton(onClick = {
+                    runCatching {
+                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(
+                            if (r.docType == com.example.data.model.VerificationRequest.DOC_FREELANCE) "https://freelance.sa" else "https://mc.gov.sa"
+                        )))
+                    }
+                }) { Text("تحقق من الموقع الرسمي ›", fontSize = 12.sp) }
+            }
+            Text(
+                when {
+                    !r.locationChecked -> "📍 الموقع: ما تم التحقق"
+                    r.locationOk -> "📍 كان عند المحل ✅ (${r.distanceMeters} م)"
+                    else -> "📍 كان بعيد عن المحل ⚠️ (${r.distanceMeters} م)"
+                },
+                fontSize = 13.sp
+            )
+            if (r.photoUrl.isNotBlank()) {
+                coil.compose.AsyncImage(
+                    model = com.example.data.CloudinaryUrls.image(r.photoUrl, 500),
+                    contentDescription = "صورة الواجهة",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height(160.dp).clickable { onOpenImage(r.photoUrl) }
+                )
+            }
+            if (rejecting) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("سبب الرفض (يظهر للتاجر)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                if (!rejecting) {
+                    androidx.compose.material3.Button(
+                        onClick = { onDecide(true, "") },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("✓ وثّق") }
+                    OutlinedButton(onClick = { rejecting = true }, shape = RoundedCornerShape(10.dp)) {
+                        Text("رفض", color = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    androidx.compose.material3.Button(
+                        onClick = { onDecide(false, reason.trim()) },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("تأكيد الرفض") }
+                    OutlinedButton(onClick = { rejecting = false }, shape = RoundedCornerShape(10.dp)) { Text("إلغاء") }
+                }
+            }
+        }
+    }
+}
+
+/** تشغيل/إيقاف التوثيق وكل شرط فيه. */
+@Composable
+private fun VerifySettingsCard(
+    config: com.example.data.model.VerifyConfig,
+    onSave: (com.example.data.model.VerifyConfig) -> Unit
+) {
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("🛡️ توثيق المتاجر", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("التوثيق اختياري للتاجر: الموثّق ياخذ ✓ وينشر مباشرة، وغيره عروضه تمر بالمراجعة.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            @Composable
+            fun toggle(label: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, fontSize = 13.sp, modifier = Modifier.weight(1f), color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Switch(checked = checked, enabled = enabled, onCheckedChange = onChange)
+                }
+            }
+            toggle("تفعيل التوثيق (زر \"وثّق متجرك\" للتجار)", config.enabled) { onSave(config.copy(enabled = it)) }
+            toggle("رقم السجل التجاري / العمل الحر", config.requireDoc, config.enabled) { onSave(config.copy(requireDoc = it)) }
+            toggle("صورة حيّة لواجهة المحل", config.requirePhoto, config.enabled) { onSave(config.copy(requirePhoto = it)) }
+            toggle("التأكد إنه عند المحل (GPS)", config.requireLocation, config.enabled) { onSave(config.copy(requireLocation = it)) }
         }
     }
 }
