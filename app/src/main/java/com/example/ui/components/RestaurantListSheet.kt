@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.model.priceLabel
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -236,7 +237,7 @@ fun RestaurantListSheet(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Text(
-                                            text = "${offer.price} ${offer.currency}",
+                                            text = offer.priceLabel(),
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = CalmSagePrimary

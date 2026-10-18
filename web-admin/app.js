@@ -171,7 +171,7 @@ function offerCard(o, extra = "", buttons = "") {
       <div style="flex:1;min-width:0">
         <div class="name">${esc(o.restaurantName)}</div>
         <div><b>${esc(o.offerTitle)}</b></div>
-        <div class="muted">${esc(o.price)} ر.س ${o.originalPrice ? `<s>${esc(o.originalPrice)}</s>` : ""} • ${esc(o.district)} • 👁 ${o.viewsCount || 0}</div>
+        <div class="muted">${o.price > 0 ? `${esc(o.price)} ر.س ${o.originalPrice ? `<s>${esc(o.originalPrice)}</s>` : ""}` : `خصم ${(o.dailyPercents && o.dailyPercents.length) ? esc(o.dailyPercents.join("/")) : esc(o.discountPercent || 0)}% ${esc(o.itemsScope || "")}`}${o.startsAt && o.startsAt.toMillis && o.startsAt.toMillis() > Date.now() ? " • 🔜 قريباً" : ""}${o.grandOpening ? " • 🎉 افتتاح" : ""} • ${esc(o.district)} • 👁 ${o.viewsCount || 0}</div>
         ${o.description ? `<div class="muted">${esc(o.description).slice(0, 200)}</div>` : ""}
         ${(o.mediaUris || []).length > 1 ? `<div class="actions">${o.mediaUris.slice(1).map((u) => `<img class="thumb small" src="${esc(img(u, 150))}" data-view="${esc(u)}">`).join("")}</div>` : ""}
         ${extra}

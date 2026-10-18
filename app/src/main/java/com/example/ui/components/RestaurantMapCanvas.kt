@@ -206,7 +206,7 @@ fun FullScreenRestaurantMap(
             .map { group ->
                 group.sortedWith(
                     compareByDescending<RestaurantOffer> { it.isFeatured }
-                        .thenByDescending { (it.originalPrice ?: it.price) - it.price }
+                        .thenByDescending { com.example.data.model.OfferPricing.effectivePercent(it) }
                 )
             }
     }
@@ -486,9 +486,8 @@ private suspend fun loadMarkerBitmap(context: Context, url: String): ImageBitmap
 
 /** نسبة الخصم من السعرين، مثل "-34%". */
 private fun discountPercentLabel(offer: RestaurantOffer): String? {
-    val original = offer.originalPrice ?: return null
-    if (original <= 0 || offer.price >= original) return null
-    val pct = ((original - offer.price) / original * 100).toInt()
+    if (com.example.data.model.OfferPricing.isUpcoming(offer)) return "قريباً"
+    val pct = com.example.data.model.OfferPricing.effectivePercent(offer)
     return if (pct >= 1) "-$pct%" else null
 }
 
@@ -647,7 +646,7 @@ fun OfferCircleMarker(
         if (badge != null) {
             Surface(
                 shape = RoundedCornerShape(8.dp),
-                color = Color(0xFFE05A47),
+                color = if (badge == "قريباً") Color(0xFF2563EB) else Color(0xFFE05A47),
                 shadowElevation = 3.dp,
                 border = BorderStroke(1.dp, Color.White),
                 modifier = Modifier.offset(y = (-4).dp)

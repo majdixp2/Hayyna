@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.model.priceLabel
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
@@ -279,7 +280,7 @@ fun RestaurantOfferDetailSheet(
             // Price & Discount
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "${offer.price} ${offer.currency}",
+                    text = offer.priceLabel(),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.primary
@@ -308,6 +309,22 @@ fun RestaurantOfferDetailSheet(
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
+                    }
+                }
+            }
+
+            // تفاصيل الخصم: متدرّج / يبدأ متى / افتتاح
+            run {
+                val tiers = com.example.data.model.OfferPricing.tiersText(offer)
+                val starts = com.example.data.model.OfferPricing.startsText(offer)
+                if (tiers != null || starts != null || offer.itemsScope.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFFFF4E0), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(10.dp)) {
+                            if (starts != null) Text("🔜 $starts", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1D4ED8))
+                            if (tiers != null) Text("📅 $tiers", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF8A5A00))
+                            if (offer.itemsScope.isNotBlank()) Text("🏷️ ${offer.itemsScope}", fontSize = 13.sp, color = Color(0xFF8A5A00))
+                        }
                     }
                 }
             }
@@ -472,7 +489,7 @@ fun RestaurantOfferDetailSheet(
             ) {
                 Button(
                     onClick = {
-                        val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} بسعر ${offer.price} ر.س المعلن عنه في تطبيق حيّنا."
+                        val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} (${offer.priceLabel()}) المعلن عنه في تطبيق حيّنا."
                         com.example.data.OfferTracker.whatsapp(offer.id)
                             orderScope.launch { com.example.data.OfferSharer.orderViaWhatsApp(context, shown, shown.phone, message) }
                     },

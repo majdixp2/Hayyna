@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.model.priceLabel
 import com.example.data.repository.OfferReport
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.clickable
@@ -544,7 +545,7 @@ private fun AdminOfferRow(
                     Text(offer.restaurantName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CalmSagePrimary, maxLines = 1)
                     Text(offer.offerTitle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "${offer.district} • ${offer.price} ر.س • 👁 ${offer.viewsCount}",
+                        "${offer.district} • ${offer.priceLabel()} • 👁 ${offer.viewsCount}",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
@@ -642,7 +643,7 @@ private fun ReviewCard(
                     Text(offer.restaurantName, fontWeight = FontWeight.Bold, color = CalmSagePrimary, fontSize = 14.sp)
                     Text(offer.offerTitle, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "${offer.price} ر.س • ${offer.district}",
+                        "${offer.priceLabel()} • ${offer.district}",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.model.priceLabel
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -212,7 +213,7 @@ fun RestaurantOfferCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${offer.price} ${offer.currency}",
+                        text = offer.priceLabel(),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = CalmSagePrimary

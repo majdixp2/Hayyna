@@ -12,6 +12,7 @@ object OfferTime {
 
     /** نص العد التنازلي مثل "باقي 3 ساعات" أو null إذا العرض بلا انتهاء. */
     fun remainingText(offer: RestaurantOffer, nowMillis: Long = System.currentTimeMillis()): String? {
+        OfferPricing.startsText(offer, nowMillis)?.let { return it }
         val exp = offer.expiresAt ?: return null
         val diffMin = (exp.toDate().time - nowMillis) / 60_000L
         return when {
@@ -40,6 +41,7 @@ object OfferTime {
 
     /** أقل من 3 ساعات = عرض ينتهي قريباً (يُبرز بلون مختلف). */
     fun isEndingSoon(offer: RestaurantOffer, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (OfferPricing.isUpcoming(offer, nowMillis)) return false
         val exp = offer.expiresAt ?: return false
         val diff = exp.toDate().time - nowMillis
         return diff in 1..(3 * 60 * 60 * 1000L)

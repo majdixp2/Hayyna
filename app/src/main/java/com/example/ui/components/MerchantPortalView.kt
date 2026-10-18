@@ -729,7 +729,7 @@ private fun MerchantOfferRow(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
-                    } else if (offer.expiresAt == null) {
+                    } else if (offer.expiresAt == null && !com.example.data.model.OfferPricing.isUpcoming(offer, nowMillis)) {
                         Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFE7F6EC)) {
                             Text(
                                 "نشط",

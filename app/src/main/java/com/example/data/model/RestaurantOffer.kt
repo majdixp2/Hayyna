@@ -52,6 +52,16 @@ data class RestaurantOffer(
     val closeMinute: Int = -1,
     // وقت انتهاء العرض (null = بدون انتهاء)
     val expiresAt: Timestamp? = null,
+    // وقت بداية العرض (null = يبدأ فوراً). قبله يطلع "قريباً" على الخريطة
+    val startsAt: Timestamp? = null,
+    // خصم بالنسبة بدون سعر محدد (مثل: 30% على جميع الأصناف). 0 = عرض بسعر عادي
+    val discountPercent: Int = 0,
+    // خصم متدرّج حسب الأيام: [50, 30, 30] = اليوم الأول 50% ثم اليوم الثاني والثالث 30%
+    val dailyPercents: List<Long> = emptyList(),
+    // نطاق الخصم، مثل "على جميع الأصناف"
+    val itemsScope: String = "",
+    // عرض افتتاح محل جديد 🎉
+    val grandOpening: Boolean = false,
     // صور العرض (حتى 3). mediaUri يبقى الصورة الأولى/الغلاف للتوافق مع العروض القديمة.
     val mediaUris: List<String> = emptyList(),
     // شعار المتجر (يظهر صغير على أيقونة الخريطة)

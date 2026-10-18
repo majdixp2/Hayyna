@@ -25,14 +25,16 @@ fun OfferExpiryChip(
     val text = OfferTime.remainingText(offer, nowMillis) ?: return
     val expired = OfferTime.isExpired(offer, nowMillis)
     val soon = OfferTime.isEndingSoon(offer, nowMillis)
+    val upcoming = com.example.data.model.OfferPricing.isUpcoming(offer, nowMillis)
     val (bg, fg) = when {
+        upcoming -> Color(0xFFE0ECFF) to Color(0xFF1D4ED8)
         expired -> Color(0xFFE5E7EB) to Color(0xFF6B7280)
         soon -> Color(0xFFFDE8E6) to Color(0xFFB42318)
         else -> Color(0xFFFFF4E0) to Color(0xFF8A5A00)
     }
     Surface(shape = RoundedCornerShape(8.dp), color = bg, modifier = modifier) {
         Text(
-            text = "⏰ $text",
+            text = if (upcoming) "🔜 $text" else "⏰ $text",
             color = fg,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
@@ -67,10 +69,13 @@ fun OpenNowChip(offer: RestaurantOffer, modifier: Modifier = Modifier) {
  */
 val RestaurantOffer.displayBadge: String
     get() {
-        val original = originalPrice ?: return ""
-        if (original <= 0 || price >= original) return ""
-        val pct = ((original - price) / original * 100).toInt()
-        return if (pct >= 1) "خصم $pct% 🔥" else ""
+        val now = System.currentTimeMillis()
+        val pct = com.example.data.model.OfferPricing.effectivePercent(this, now)
+        val parts = buildList {
+            if (grandOpening) add("🎉 افتتاح")
+            if (pct >= 1) add("خصم $pct% 🔥")
+        }
+        return parts.joinToString(" • ")
     }
 
 /** شعار المتجر صغير ودائري (لا يظهر شي إذا ما عنده شعار). */

@@ -584,8 +584,8 @@ class MerchantViewModel(
 
         // العروض المميزة (المدفوعة) دائماً في الأعلى، ثم حسب الترتيب المختار
         val sorted = when (params.sortBy) {
-            "PRICE_LOW" -> filtered.sortedBy { it.price }
-            "DISCOUNT" -> filtered.sortedByDescending { (it.originalPrice ?: it.price) - it.price }
+            "PRICE_LOW" -> filtered.sortedBy { if (it.price > 0) it.price else Double.MAX_VALUE }
+            "DISCOUNT" -> filtered.sortedByDescending { com.example.data.model.OfferPricing.effectivePercent(it, now) }
             else -> if (browse != null) {
                 // يتصفح حي ثاني: الترتيب حسب القرب من ذاك الحي (المسافة المعروضة تظل من موقعه هو)
                 filtered.sortedBy { o ->

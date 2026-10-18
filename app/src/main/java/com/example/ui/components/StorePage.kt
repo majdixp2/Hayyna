@@ -239,7 +239,7 @@ fun StorePage(
                                             Column(Modifier.padding(8.dp)) {
                                                 Text(o.offerTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                 Text(
-                                                    "${formatStorePrice(o.price)} ر.س " + o.displayBadge,
+                                                    (if (com.example.data.model.OfferPricing.isPercentOnly(o)) "" else "${formatStorePrice(o.price)} ر.س ") + o.displayBadge,
                                                     fontSize = 12.sp,
                                                     color = CalmSagePrimary,
                                                     fontWeight = FontWeight.Bold,

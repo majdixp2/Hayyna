@@ -71,6 +71,7 @@ import com.example.data.model.Branch
 import com.example.data.model.LocationPresets
 import com.example.data.model.MediaType
 import com.example.data.model.MerchantProfile
+import com.example.data.model.OfferPricing
 import com.example.data.model.OfferTime
 import com.example.data.model.RestaurantOffer
 import com.example.data.model.gallery
@@ -108,6 +109,21 @@ fun AddRestaurantOfferSheet(
     }
     var priceText by remember { mutableStateOf(editingOffer?.price?.let { formatPrice(it) }.orEmpty()) }
     var originalPriceText by remember { mutableStateOf(editingOffer?.originalPrice?.let { formatPrice(it) }.orEmpty()) }
+
+    // ---------- خصم بالنسبة / متدرّج / بداية / افتتاح ----------
+    var percentMode by remember { mutableStateOf(editingOffer?.let { OfferPricing.isPercentOnly(it) } ?: false) }
+    var percentText by remember { mutableStateOf(editingOffer?.discountPercent?.takeIf { it > 0 }?.toString().orEmpty()) }
+    var tiered by remember { mutableStateOf(editingOffer?.dailyPercents?.isNotEmpty() == true) }
+    val dayPercents = remember {
+        mutableStateListOf<String>().apply {
+            editingOffer?.dailyPercents?.forEach { add(it.toString()) }
+            if (isEmpty()) { add(""); add("") }
+        }
+    }
+    var itemsScope by remember { mutableStateOf(editingOffer?.itemsScope.orEmpty()) }
+    var grandOpening by remember { mutableStateOf(editingOffer?.grandOpening ?: false) }
+    var startMillis by remember { mutableStateOf(editingOffer?.startsAt?.toDate()?.time) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
     // ---------- الصور / الفيديو ----------
     var mediaType by remember { mutableStateOf(editingOffer?.mediaType ?: MediaType.IMAGE) }
@@ -168,8 +184,19 @@ fun AddRestaurantOfferSheet(
     }
 
     fun submit() {
-        val price = priceText.toDoubleOrNull()
-        val original = originalPriceText.toDoubleOrNull()
+        val price = if (percentMode) 0.0 else priceText.toDoubleOrNull()
+        val original = if (percentMode) null else originalPriceText.toDoubleOrNull()
+        val pct = percentText.trim().toIntOrNull()
+        val steps = dayPercents.mapNotNull { it.trim().toIntOrNull() }
+        val now = System.currentTimeMillis()
+        val dayMs = 24 * 3_600_000L
+        val useTiers = percentMode && tiered
+        val base = startMillis ?: (if (useTiers) editingOffer?.createdAt?.toDate()?.time else null) ?: now
+        val newExpiry: Long? = when {
+            useTiers -> OfferPricing.midnight(base) + steps.size * dayMs
+            keepCurrentExpiry -> editingOffer?.expiresAt?.toDate()?.time
+            else -> EXPIRY_OPTIONS[expiryOptionIndex].days?.let { base + it * dayMs }
+        }
         val chosenBranches: List<Branch> = if (hasBranches) {
             if (allBranches) profileBranches else profileBranches.filter { it.id in selectedIds }
         } else {
@@ -192,7 +219,11 @@ fun AddRestaurantOfferSheet(
         errorMessage = when {
             restaurantName.isBlank() -> "يرجى كتابة اسم المتجر."
             offerTitle.isBlank() -> "يرجى كتابة عنوان العرض."
-            price == null || price <= 0 -> "يرجى إدخال سعر صحيح للعرض."
+            !percentMode && (price == null || price <= 0) -> "يرجى إدخال سعر صحيح للعرض."
+            useTiers && (steps.size < 2 || steps.size != dayPercents.size || steps.any { it !in 1..99 }) -> "اكتب نسبة الخصم لكل يوم (من 1 إلى 99)."
+            percentMode && !useTiers && (pct == null || pct !in 1..99) -> "اكتب نسبة الخصم (من 1 إلى 99)."
+            startMillis != null && startMillis!! > now + 60 * dayMs -> "تاريخ البداية بعيد، اختر تاريخ خلال شهرين."
+            newExpiry != null && newExpiry <= now -> "حسب التاريخ والمدة العرض منتهي، عدّل تاريخ البداية أو المدة."
             media.isEmpty() -> "يرجى إرفاق صورة أو فيديو للعرض."
             !hasBranches && district.isBlank() -> "حدد موقع المحل واكتب الحي."
             !hasBranches && normalizeSaudiPhone(phone) == null -> "يرجى كتابة رقم جوال صحيح مثل 05xxxxxxxx."
@@ -202,7 +233,12 @@ fun AddRestaurantOfferSheet(
         if (errorMessage.isNotBlank() || price == null) return
 
         val primary = chosenBranches.first()
-        val discountPct = if (original != null && original > price) ((original - price) / original * 100).toInt() else 0
+        val discountPct = when {
+            useTiers -> steps.first()
+            percentMode -> pct ?: 0
+            original != null && original > price -> ((original - price) / original * 100).toInt()
+            else -> 0
+        }
         val badge = when {
             discountPct >= 1 -> "خصم $discountPct% 🔥"
             mediaType == MediaType.VIDEO -> "فيديو إعلاني 🎬"
@@ -230,7 +266,12 @@ fun AddRestaurantOfferSheet(
             closeMinute = primary.closeMinute,
             workingHours = OfferTime.hoursText(RestaurantOffer(openMinute = primary.openMinute, closeMinute = primary.closeMinute)),
             logoUrl = profile?.logoUrl.orEmpty(),
-            expiresAt = if (keepCurrentExpiry) editingOffer?.expiresAt else EXPIRY_OPTIONS[expiryOptionIndex].expiresAt()
+            expiresAt = newExpiry?.let { com.google.firebase.Timestamp(java.util.Date(it)) },
+            startsAt = startMillis?.let { com.google.firebase.Timestamp(java.util.Date(it)) },
+            discountPercent = if (percentMode) (if (useTiers) steps.first() else pct ?: 0) else 0,
+            dailyPercents = if (useTiers) steps.map { it.toLong() } else emptyList(),
+            itemsScope = if (percentMode) itemsScope.trim().take(40) else "",
+            grandOpening = grandOpening
         )
         onSaveOffer(offer)
     }
@@ -358,6 +399,27 @@ fun AddRestaurantOfferSheet(
                                     if (d.description.isNotBlank()) description = d.description
                                     d.price?.let { priceText = formatPrice(it) }
                                     d.originalPrice?.let { originalPriceText = formatPrice(it) }
+                                    if (d.storeName.isNotBlank() && restaurantName.isBlank()) restaurantName = d.storeName
+                                    if (d.dailyPercents.size >= 2) {
+                                        percentMode = true
+                                        tiered = true
+                                        dayPercents.clear()
+                                        d.dailyPercents.forEach { dayPercents.add(it.toString()) }
+                                    } else if (d.price == null && d.discountPercent != null) {
+                                        percentMode = true
+                                        tiered = false
+                                        percentText = d.discountPercent.toString()
+                                    }
+                                    if (d.itemsScope.isNotBlank()) itemsScope = d.itemsScope
+                                    d.startDateMillis?.let { ms ->
+                                        val today = OfferPricing.midnight(System.currentTimeMillis())
+                                        startMillis = if (ms == today) null else ms.takeIf { it > today - 14 * 24 * 3_600_000L }
+                                    }
+                                    if (d.grandOpening) grandOpening = true
+                                    if (!hasBranches) {
+                                        if (phone.isBlank() && d.phone.isNotBlank()) phone = toLocalPhone(d.phone)
+                                        if (district.isBlank() && d.district.isNotBlank()) district = d.district
+                                    }
                                     d.days?.let { days ->
                                         val idx = EXPIRY_OPTIONS.indexOfFirst { it.label == com.example.ui.durationLabel(days) }
                                         if (idx >= 0) {
@@ -390,22 +452,80 @@ fun AddRestaurantOfferSheet(
                         modifier = Modifier.fillMaxWidth().testTag("input_offer_title")
                     )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // نوع الخصم: سعر محدد أو نسبة (على جميع الأصناف)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = !percentMode, onClick = { percentMode = false }, label = { Text("💰 سعر محدد", fontSize = 12.sp) })
+                        FilterChip(selected = percentMode, onClick = { percentMode = true }, label = { Text("٪ خصم بالنسبة", fontSize = 12.sp) })
+                    }
+                    if (!percentMode) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(
+                                value = priceText,
+                                onValueChange = { priceText = it },
+                                label = { Text("السعر (ر.س) *") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                singleLine = true,
+                                modifier = Modifier.weight(1f).testTag("input_offer_price")
+                            )
+                            OutlinedTextField(
+                                value = originalPriceText,
+                                onValueChange = { originalPriceText = it },
+                                label = { Text("قبل الخصم") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = tiered, onCheckedChange = { tiered = it })
+                            Text("الخصم يتغيّر حسب اليوم (مثل: أول يوم 50% وبعدها 30%)", fontSize = 13.sp)
+                        }
+                        if (!tiered) {
+                            OutlinedTextField(
+                                value = percentText,
+                                onValueChange = { v -> percentText = v.filter { it.isDigit() }.take(2) },
+                                label = { Text("نسبة الخصم % *") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            dayPercents.forEachIndexed { i, v ->
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("اليوم ${OfferPricing.ordinal(i)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(96.dp))
+                                    OutlinedTextField(
+                                        value = v,
+                                        onValueChange = { nv -> dayPercents[i] = nv.filter { it.isDigit() }.take(2) },
+                                        placeholder = { Text(if (i > 0) dayPercents[i - 1].ifBlank { "%" } else "%") },
+                                        suffix = { Text("%") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (dayPercents.size > 2) {
+                                        IconButton(onClick = { dayPercents.removeAt(i) }) {
+                                            Icon(Icons.Default.Close, contentDescription = "حذف اليوم", modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            }
+                            if (dayPercents.size < 14) {
+                                TextButton(onClick = { dayPercents.add(dayPercents.lastOrNull().orEmpty()) }) { Text("+ أضف يوم") }
+                            }
+                            Text(
+                                "مدة العرض = ${dayPercents.size} أيام، ويتغيّر الخصم تلقائياً كل يوم.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         OutlinedTextField(
-                            value = priceText,
-                            onValueChange = { priceText = it },
-                            label = { Text("السعر (ر.س) *") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            value = itemsScope,
+                            onValueChange = { itemsScope = it.take(40) },
+                            label = { Text("على وش الخصم؟") },
+                            placeholder = { Text("على جميع الأصناف") },
                             singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("input_offer_price")
-                        )
-                        OutlinedTextField(
-                            value = originalPriceText,
-                            onValueChange = { originalPriceText = it },
-                            label = { Text("قبل الخصم") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
 
@@ -509,7 +629,31 @@ fun AddRestaurantOfferSheet(
                         }
                     }
 
+                    // ---------- البداية ----------
+                    Text("متى يبدأ العرض؟ 🔜", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = startMillis == null, onClick = { startMillis = null }, label = { Text("الحين", fontSize = 12.sp) })
+                        FilterChip(
+                            selected = startMillis != null,
+                            onClick = { showDatePicker = true },
+                            label = {
+                                Text(
+                                    startMillis?.let { "📅 " + OfferPricing.dateText(it) } ?: "📅 بتاريخ معيّن",
+                                    fontSize = 12.sp
+                                )
+                            }
+                        )
+                    }
+                    if (startMillis != null && startMillis!! > System.currentTimeMillis()) {
+                        Text("قبل البداية يطلع على الخريطة بعلامة \"قريباً\" عشان يتشوّق له الناس.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = grandOpening, onCheckedChange = { grandOpening = it })
+                        Text("🎉 عرض افتتاح (محل جديد)", fontSize = 13.sp)
+                    }
+
                     // ---------- المدة ----------
+                    if (!(percentMode && tiered)) {
                     Text("مدة العرض ⏰", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (isEditing) {
@@ -532,6 +676,7 @@ fun AddRestaurantOfferSheet(
                                 label = { Text(EXPIRY_OPTIONS[index].label, fontSize = 12.sp) }
                             )
                         }
+                    }
                     }
                     Text("بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -563,6 +708,17 @@ fun AddRestaurantOfferSheet(
             }
         }
 
+        if (showDatePicker) {
+            StartDatePickerDialog(
+                initialMillis = startMillis,
+                onPick = { picked ->
+                    showDatePicker = false
+                    startMillis = picked?.takeIf { it > System.currentTimeMillis() }
+                },
+                onDismiss = { showDatePicker = false }
+            )
+        }
+
         if (showDiscardDialog) {
             AlertDialog(
                 onDismissRequest = { showDiscardDialog = false },
@@ -581,17 +737,60 @@ fun AddRestaurantOfferSheet(
 }
 
 /** خيارات مدة العرض. */
-private data class ExpiryOption(val label: String, val expiresAt: () -> com.google.firebase.Timestamp?)
+private data class ExpiryOption(val label: String, val days: Int?)
 
 // الخيارات تُبنى من ملف OfferDurations.kt (عدّل الأيام هناك)
 private val EXPIRY_OPTIONS: List<ExpiryOption> =
-    (if (com.example.ui.ALLOW_NO_EXPIRY) listOf(ExpiryOption("بدون انتهاء") { null }) else emptyList()) +
+    (if (com.example.ui.ALLOW_NO_EXPIRY) listOf(ExpiryOption("بدون انتهاء", null)) else emptyList()) +
         com.example.ui.OFFER_DURATION_DAYS.filter { it > 0 }.map { days ->
-            ExpiryOption(com.example.ui.durationLabel(days)) { timestampAfterHours(days * 24) }
+            ExpiryOption(com.example.ui.durationLabel(days), days)
         }
 
-private fun timestampAfterHours(hours: Int): com.google.firebase.Timestamp =
-    com.google.firebase.Timestamp(java.util.Date(System.currentTimeMillis() + hours * 3_600_000L))
+/** اختيار تاريخ بداية العرض (من اليوم وطالع). يرجّع منتصف الليل بالتوقيت المحلي. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun StartDatePickerDialog(initialMillis: Long?, onPick: (Long?) -> Unit, onDismiss: () -> Unit) {
+    val utc = java.util.TimeZone.getTimeZone("UTC")
+    val todayUtc = remember {
+        val local = java.util.Calendar.getInstance()
+        java.util.Calendar.getInstance(utc).apply {
+            clear()
+            set(local.get(java.util.Calendar.YEAR), local.get(java.util.Calendar.MONTH), local.get(java.util.Calendar.DAY_OF_MONTH))
+        }.timeInMillis
+    }
+    val initialUtc = initialMillis?.let { ms ->
+        val local = java.util.Calendar.getInstance().apply { timeInMillis = ms }
+        java.util.Calendar.getInstance(utc).apply {
+            clear()
+            set(local.get(java.util.Calendar.YEAR), local.get(java.util.Calendar.MONTH), local.get(java.util.Calendar.DAY_OF_MONTH))
+        }.timeInMillis
+    }
+    val state = androidx.compose.material3.rememberDatePickerState(
+        initialSelectedDateMillis = initialUtc ?: (todayUtc + 24 * 3_600_000L),
+        selectableDates = object : androidx.compose.material3.SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                utcTimeMillis >= todayUtc && utcTimeMillis <= todayUtc + 60L * 24 * 3_600_000L
+        }
+    )
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                val sel = state.selectedDateMillis
+                if (sel == null) { onDismiss(); return@TextButton }
+                val u = java.util.Calendar.getInstance(utc).apply { timeInMillis = sel }
+                val local = java.util.Calendar.getInstance().apply {
+                    clear()
+                    set(u.get(java.util.Calendar.YEAR), u.get(java.util.Calendar.MONTH), u.get(java.util.Calendar.DAY_OF_MONTH))
+                }
+                onPick(local.timeInMillis)
+            }) { Text("تم") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    ) {
+        androidx.compose.material3.DatePicker(state = state, title = null, headline = null, showModeToggle = false)
+    }
+}
 
 private fun formatPrice(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()

@@ -1,5 +1,6 @@
 package com.example.data
 
+import com.example.data.model.priceLabel
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -22,12 +23,18 @@ object OfferSharer {
         append("🍽️ ").append(offer.restaurantName)
         if (offer.district.isNotBlank()) append(" — ").append(offer.district)
         append('\n')
-        val price = if (offer.price % 1.0 == 0.0) offer.price.toLong().toString() else offer.price.toString()
-        append("💰 ").append(price).append(' ').append(offer.currency)
-        offer.originalPrice?.takeIf { it > offer.price }?.let { orig ->
-            val o = if (orig % 1.0 == 0.0) orig.toLong().toString() else orig.toString()
-            append(" بدل ").append(o)
+        if (com.example.data.model.OfferPricing.isPercentOnly(offer)) {
+            append("💰 ").append(offer.priceLabel())
+            com.example.data.model.OfferPricing.tiersText(offer)?.let { append(" (").append(it).append(')') }
+        } else {
+            val price = if (offer.price % 1.0 == 0.0) offer.price.toLong().toString() else offer.price.toString()
+            append("💰 ").append(price).append(' ').append(offer.currency)
+            offer.originalPrice?.takeIf { it > offer.price }?.let { orig ->
+                val o = if (orig % 1.0 == 0.0) orig.toLong().toString() else orig.toString()
+                append(" بدل ").append(o)
+            }
         }
+        com.example.data.model.OfferPricing.startsText(offer)?.let { append('\n').append("🔜 ").append(it) }
         append('\n')
         append("📍 https://maps.google.com/?q=").append(offer.latitude).append(',').append(offer.longitude).append('\n')
         append('\n').append("شفته في تطبيق حيّنا 📍")

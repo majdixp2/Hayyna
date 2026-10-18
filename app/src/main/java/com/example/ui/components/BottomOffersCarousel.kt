@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.data.model.priceLabel
 import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -308,7 +309,7 @@ fun SelectedRestaurantOfferCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "${offer.price} ${offer.currency}",
+                            text = offer.priceLabel(),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = CalmSagePrimary
