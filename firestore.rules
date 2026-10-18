@@ -99,6 +99,30 @@ service cloud.firestore {
         && request.resource.data.get('reportsCount', 0) == resource.data.get('reportsCount', 0);
     }
 
+    // إعدادات عامة (رقم الدعم...): الكل يقرأ، الأدمن فقط يكتب
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // تواصل معنا: أي أحد يرسل، وصاحب الرسالة يشوف رسائله وردودها، والأدمن يدير الكل
+    match /feedback/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['uid', 'userName', 'role', 'type', 'message', 'screenshotUrl', 'contact', 'appVersion', 'device', 'status', 'reply', 'replySeen', 'createdAt'])
+        && (request.resource.data.uid == null || (isAuthenticated() && request.resource.data.uid == request.auth.uid))
+        && request.resource.data.message is string && request.resource.data.message.size() > 0 && request.resource.data.message.size() <= 2000
+        && request.resource.data.type is string && request.resource.data.type.size() <= 40
+        && request.resource.data.screenshotUrl is string && request.resource.data.screenshotUrl.size() <= 2000
+        && request.resource.data.status == 'new'
+        && request.resource.data.reply == ''
+        && request.resource.data.createdAt == request.time;
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      // صاحب الرسالة يعلّم الرد "مقروء" فقط
+      allow update: if isAdmin()
+        || (isAuthenticated() && resource.data.uid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replySeen']));
+      allow delete: if isAdmin();
+    }
+
     // نوع الحساب (عميل / تاجر): صاحبه فقط
     match /users/{uid} {
       allow read, delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());

@@ -92,6 +92,8 @@ fun MerchantPortalView(
     onBecomeMerchant: () -> Unit = {},
     favoritesCount: Int = 0,
     onShowFavorites: () -> Unit = {},
+    onOpenContact: () -> Unit = {},
+    unreadReplies: Int = 0,
     modifier: Modifier = Modifier
 ) {
     if (!isLoggedIn) {
@@ -99,6 +101,7 @@ fun MerchantPortalView(
             isSigningIn = isSigningIn,
             onGoogleSignIn = onGoogleSignIn,
             onCustomerSignIn = onCustomerSignIn,
+            onOpenContact = onOpenContact,
             modifier = modifier
         )
     } else if (isRoleLoading) {
@@ -114,6 +117,8 @@ fun MerchantPortalView(
             onBecomeMerchant = onBecomeMerchant,
             onLogout = onLogout,
             onDeleteAccount = onDeleteAccount,
+            onOpenContact = onOpenContact,
+            unreadReplies = unreadReplies,
             modifier = modifier
         )
     } else {
@@ -132,6 +137,8 @@ fun MerchantPortalView(
             onManageBranches = onManageBranches,
             isSuspended = isSuspended,
             isTrusted = isTrusted,
+            onOpenContact = onOpenContact,
+            unreadReplies = unreadReplies,
             modifier = modifier
         )
     }
@@ -142,6 +149,7 @@ private fun MerchantLoginView(
     isSigningIn: Boolean,
     onGoogleSignIn: () -> Unit,
     onCustomerSignIn: () -> Unit,
+    onOpenContact: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -194,6 +202,40 @@ private fun MerchantLoginView(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+        ContactUsButton(unread = 0, onClick = onOpenContact)
+    }
+}
+
+/** زر "تواصل معنا" مع علامة للردود الجديدة. */
+@Composable
+private fun ContactUsButton(unread: Int, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("📨", fontSize = 22.sp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("تواصل معنا", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("مشكلة، اقتراح، أو فكرة؟ نسمعك", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (unread > 0) {
+                Surface(shape = CircleShape, color = Color(0xFFE05A47)) {
+                    Text(
+                        "$unread رد جديد",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            } else {
+                Text("›", fontSize = 22.sp, color = CalmSagePrimary)
+            }
+        }
     }
 }
 
@@ -260,6 +302,8 @@ private fun CustomerAccountView(
     onBecomeMerchant: () -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
+    onOpenContact: () -> Unit,
+    unreadReplies: Int,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -334,6 +378,8 @@ private fun CustomerAccountView(
             }
         }
 
+        ContactUsButton(unread = unreadReplies, onClick = onOpenContact)
+
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             TextButton(onClick = { showPrivacy = true }) { Text("سياسة الخصوصية") }
             TextButton(onClick = { confirmDelete = true }) { Text("حذف حسابي", color = MaterialTheme.colorScheme.error) }
@@ -387,6 +433,8 @@ private fun MerchantDashboard(
     onManageBranches: () -> Unit,
     isSuspended: Boolean,
     isTrusted: Boolean,
+    onOpenContact: () -> Unit,
+    unreadReplies: Int,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -542,6 +590,8 @@ private fun MerchantDashboard(
                 )
             }
         }
+
+        item { ContactUsButton(unread = unreadReplies, onClick = onOpenContact) }
 
         // الحساب والخصوصية
         item {

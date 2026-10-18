@@ -140,6 +140,11 @@ fun MerchantStoreScreen(
 
     val browsePlace by viewModel.browsePlace.collectAsStateWithLifecycle()
     val myStatus by viewModel.myStatus.collectAsStateWithLifecycle()
+    val myFeedback by viewModel.myFeedback.collectAsStateWithLifecycle()
+    val allFeedback by viewModel.allFeedback.collectAsStateWithLifecycle()
+    val supportWhatsapp by viewModel.supportWhatsapp.collectAsStateWithLifecycle()
+    val isContactOpen by viewModel.isContactOpen.collectAsStateWithLifecycle()
+    val isSendingFeedback by viewModel.isSendingFeedback.collectAsStateWithLifecycle()
     val userRole by viewModel.userRole.collectAsStateWithLifecycle()
     val isRoleLoading by viewModel.isRoleLoading.collectAsStateWithLifecycle()
     val approvedStores by viewModel.approvedStores.collectAsStateWithLifecycle()
@@ -640,6 +645,8 @@ fun MerchantStoreScreen(
                                 isRoleLoading = isRoleLoading,
                                 onBecomeMerchant = { viewModel.becomeMerchant() },
                                 favoritesCount = favoriteIds.size,
+                                onOpenContact = { viewModel.openContact() },
+                                unreadReplies = myFeedback.count { !it.replySeen },
                                 onShowFavorites = {
                                     if (!favoritesOnly) viewModel.toggleFavoritesOnly()
                                     viewModel.setRole(AppRole.CUSTOMER_MAP)
@@ -690,6 +697,12 @@ fun MerchantStoreScreen(
                                 onUnsuspend = { viewModel.unsuspendMerchant(it) },
                                 onKeepReported = { viewModel.keepReportedOffer(it) },
                                 pendingStores = pendingStores,
+                                feedback = allFeedback,
+                                onReplyFeedback = { id, r, st -> viewModel.replyFeedback(id, r, st) },
+                                onFeedbackStatus = { id, st -> viewModel.setFeedbackStatus(id, st) },
+                                onDeleteFeedback = { viewModel.deleteFeedback(it) },
+                                supportNumber = supportWhatsapp,
+                                onSaveSupportNumber = { viewModel.saveSupportWhatsapp(it) },
                                 onApproveStore = { viewModel.approveStore(it) },
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -715,6 +728,20 @@ fun MerchantStoreScreen(
                     offer.branches.map { viewModel.offerAtBranch(offer, it) }.sortedBy { it.distanceKm }
                 } else emptyList(),
                 onOpenStore = approvedStores.firstOrNull { it.uid == offer.merchantId }?.let { st -> { viewModel.openStorePage(st) } }
+            )
+        }
+
+        // تواصل معنا
+        if (isContactOpen) {
+            com.example.ui.components.ContactPage(
+                supportNumber = supportWhatsapp,
+                myMessages = myFeedback,
+                isLoggedIn = currentUser != null,
+                isSending = isSendingFeedback,
+                appVersion = viewModel.appVersion,
+                onSend = { t, m, shot, c, done -> viewModel.sendFeedback(t, m, shot, c, done) },
+                onSeenReplies = { viewModel.markRepliesSeen() },
+                onClose = { viewModel.closeContact() }
             )
         }
 

@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import com.example.data.repository.OfferReport
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,8 +66,22 @@ fun AdminDashboardView(
     onKeepReported: (RestaurantOffer) -> Unit = {},
     pendingStores: List<com.example.data.model.StoreProfile> = emptyList(),
     onApproveStore: (com.example.data.model.StoreProfile) -> Unit = {},
+    feedback: List<com.example.data.model.Feedback> = emptyList(),
+    onReplyFeedback: (String, String, String) -> Unit = { _, _, _ -> },
+    onFeedbackStatus: (String, String) -> Unit = { _, _ -> },
+    onDeleteFeedback: (String) -> Unit = {},
+    supportNumber: String = "",
+    onSaveSupportNumber: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var inboxType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
+    var showDone by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var viewerImage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    val inbox = feedback.filter { f ->
+        (inboxType == "الكل" || f.type == inboxType) &&
+            (showDone || f.status != com.example.data.model.Feedback.STATUS_DONE)
+    }
+    val newCount = feedback.count { it.status == com.example.data.model.Feedback.STATUS_NEW }
     val pending = offers.filter { !it.isApproved && merchantStatuses.none { s -> s.uid == it.merchantId && s.suspended } }
     val hiddenByReports = offers.filter { it.isApproved && it.reportsCount >= com.example.ui.MerchantViewModel.AUTO_HIDE_REPORTS }
     val suspended = merchantStatuses.filter { it.suspended }
@@ -87,10 +102,64 @@ fun AdminDashboardView(
         )
     }
 
+    viewerImage?.let { img ->
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { viewerImage = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            FullScreenImageViewer(images = listOf(img), startIndex = 0, onClose = { viewerImage = null })
+        }
+    }
+
     LazyColumn(
         modifier = modifier.testTag("admin_dashboard_view"),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // 📨 رسائل المستخدمين
+        item {
+            Text(
+                text = "📨 رسائل المستخدمين" + if (newCount > 0) " ($newCount جديدة)" else "",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = if (newCount > 0) CalmSagePrimary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 6.dp)
+            ) {
+                val types = listOf("الكل") + com.example.data.model.Feedback.TYPES
+                items(types.size) { i ->
+                    androidx.compose.material3.FilterChip(
+                        selected = inboxType == types[i],
+                        onClick = { inboxType = types[i] },
+                        label = { Text(types[i], fontSize = 11.sp) }
+                    )
+                }
+                item {
+                    androidx.compose.material3.FilterChip(
+                        selected = showDone,
+                        onClick = { showDone = !showDone },
+                        label = { Text("إظهار المنتهية", fontSize = 11.sp) }
+                    )
+                }
+            }
+        }
+        if (inbox.isEmpty()) {
+            item { Text("لا توجد رسائل ✅", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        items(inbox, key = { "fb_" + it.id }) { f ->
+            FeedbackCard(
+                f = f,
+                onReply = { r, st -> onReplyFeedback(f.id, r, st) },
+                onStatus = { st -> onFeedbackStatus(f.id, st) },
+                onDelete = { onDeleteFeedback(f.id) },
+                onOpenImage = { viewerImage = it }
+            )
+        }
+
+        // ⚙️ رقم واتساب الدعم
+        item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
+
         // ⏳ بانتظار المراجعة
         item {
             Text(
@@ -540,6 +609,134 @@ private fun ReviewCard(
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackCard(
+    f: com.example.data.model.Feedback,
+    onReply: (String, String) -> Unit,
+    onStatus: (String) -> Unit,
+    onDelete: () -> Unit,
+    onOpenImage: (String) -> Unit
+) {
+    var reply by androidx.compose.runtime.remember(f.id) { androidx.compose.runtime.mutableStateOf(f.reply) }
+    val isNew = f.status == com.example.data.model.Feedback.STATUS_NEW
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isNew) Color(0xFFF0F7F3) else MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(f.type, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text(com.example.data.model.Feedback.statusLabel(f.status), fontSize = 11.sp, color = CalmSagePrimary, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                listOf(f.role, f.userName, f.contact).filter { it.isNotBlank() }.joinToString(" • "),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (f.createdAtMillis > 0) {
+                Text(
+                    java.text.SimpleDateFormat("d/M/yyyy h:mm a", java.util.Locale("ar")).format(java.util.Date(f.createdAtMillis)),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(f.message, fontSize = 14.sp)
+            if (f.screenshotUrl.isNotBlank()) {
+                coil.compose.AsyncImage(
+                    model = com.example.data.CloudinaryUrls.image(f.screenshotUrl, 400),
+                    contentDescription = "صورة الشاشة",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .size(90.dp)
+                        .clickable { onOpenImage(f.screenshotUrl) }
+                )
+            }
+            Text("📱 ${f.device} • إصدار ${f.appVersion}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            if (f.uid != null) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = reply,
+                    onValueChange = { reply = it },
+                    label = { Text("ردّك (يظهر له في التطبيق)") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else if (f.contact.isBlank()) {
+                Text("زائر بدون طريقة تواصل — ما يمديك ترد عليه", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (f.uid != null) {
+                    androidx.compose.material3.Button(
+                        onClick = { onReply(reply, com.example.data.model.Feedback.STATUS_DONE) },
+                        enabled = reply.isNotBlank(),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+                    ) { Text("أرسل الرد", fontSize = 12.sp) }
+                }
+                if (f.status != com.example.data.model.Feedback.STATUS_PROGRESS && f.status != com.example.data.model.Feedback.STATUS_DONE) {
+                    OutlinedButton(
+                        onClick = { onStatus(com.example.data.model.Feedback.STATUS_PROGRESS) },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                    ) { Text("قيد المتابعة", fontSize = 11.sp) }
+                }
+                if (f.status != com.example.data.model.Feedback.STATUS_DONE) {
+                    OutlinedButton(
+                        onClick = { onStatus(com.example.data.model.Feedback.STATUS_DONE) },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                    ) { Text("تمت", fontSize = 11.sp) }
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SupportNumberEditor(current: String, onSave: (String) -> Unit) {
+    var editing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var value by androidx.compose.runtime.remember(current) { androidx.compose.runtime.mutableStateOf(current) }
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("⚙️ رقم واتساب الدعم", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(current, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.TextButton(onClick = { editing = !editing }) { Text(if (editing) "إلغاء" else "تغيير") }
+            }
+            if (editing) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text("الرقم الجديد") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                androidx.compose.material3.Button(
+                    onClick = {
+                        onSave(value)
+                        editing = false
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.padding(top = 6.dp)
+                ) { Text("حفظ") }
             }
         }
     }

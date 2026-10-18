@@ -162,6 +162,101 @@ class MerchantViewModel(
 
     fun closeStorePage() { openStore.value = null }
 
+    // ---------------- تواصل معنا ----------------
+
+    val supportWhatsapp: StateFlow<String> = repository.supportWhatsapp
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.model.Feedback.DEFAULT_SUPPORT_WHATSAPP)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val myFeedback: StateFlow<List<com.example.data.model.Feedback>> = currentUser
+        .flatMapLatest { u -> if (u == null) flowOf(emptyList()) else repository.myFeedback(u.uid) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allFeedback: StateFlow<List<com.example.data.model.Feedback>> = isAdmin
+        .flatMapLatest { admin -> if (admin) repository.allFeedback else flowOf(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val isContactOpen = MutableStateFlow(false)
+    val isSendingFeedback = MutableStateFlow(false)
+
+    fun openContact() { isContactOpen.value = true }
+    fun closeContact() { isContactOpen.value = false }
+
+    val deviceInfo: String
+        get() = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} • Android ${android.os.Build.VERSION.RELEASE}"
+    val appVersion: String get() = com.example.BuildConfig.VERSION_NAME
+
+    fun sendFeedback(type: String, message: String, screenshotLocal: String?, contact: String, onSent: () -> Unit) {
+        if (isSendingFeedback.value) return
+        viewModelScope.launch {
+            isSendingFeedback.value = true
+            try {
+                val shot = screenshotLocal?.let { MediaUploader.uploadOfferMedia(getApplication(), it, false) }.orEmpty()
+                val user = currentUser.value
+                repository.sendFeedback(
+                    com.example.data.model.Feedback(
+                        uid = user?.uid,
+                        userName = user?.displayName.orEmpty(),
+                        role = when {
+                            user == null -> "زائر"
+                            isMerchantAccount -> "تاجر"
+                            else -> "عميل"
+                        },
+                        type = type,
+                        message = message.trim(),
+                        screenshotUrl = shot,
+                        contact = contact.trim().ifBlank { user?.email.orEmpty() },
+                        appVersion = appVersion,
+                        device = deviceInfo
+                    )
+                )
+                toast("وصلت رسالتك، شكراً لك 🙏 بنرد عليك بأقرب وقت")
+                onSent()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "sendFeedback failed: ${e.message}", e)
+                toast(if (e is MediaUploader.UploadException) e.message ?: "تعذّر رفع الصورة" else "تعذّر الإرسال، حاول مرة ثانية")
+            } finally {
+                isSendingFeedback.value = false
+            }
+        }
+    }
+
+    fun markRepliesSeen() {
+        myFeedback.value.filter { !it.replySeen }.forEach { f ->
+            launchSafely { repository.markReplySeen(f.id) }
+        }
+    }
+
+    fun replyFeedback(id: String, reply: String, status: String) {
+        launchSafely("تعذّر إرسال الرد.") {
+            repository.replyFeedback(id, reply, status)
+            toast("تم ✅")
+        }
+    }
+
+    fun setFeedbackStatus(id: String, status: String) {
+        launchSafely("تعذّر التحديث.") { repository.setFeedbackStatus(id, status) }
+    }
+
+    fun deleteFeedback(id: String) {
+        launchSafely("تعذّر الحذف.") { repository.deleteFeedback(id) }
+    }
+
+    fun saveSupportWhatsapp(number: String) {
+        val normalized = com.example.ui.components.normalizeSaudiPhone(number)
+        if (normalized == null) {
+            toast("اكتب رقم جوال صحيح مثل 05xxxxxxxx")
+            return
+        }
+        launchSafely("تعذّر حفظ الرقم.") {
+            repository.setSupportWhatsapp(com.example.ui.components.toLocalPhone(normalized))
+            toast("تم تحديث رقم الدعم ✅")
+        }
+    }
+
     // ---------------- الحماية: حالة التاجر ----------------
 
     /** حالة التاجر الحالي (موثوق / موقوف). */

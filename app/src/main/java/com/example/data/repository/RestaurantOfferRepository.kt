@@ -234,6 +234,106 @@ class RestaurantOfferRepository(
         ).await()
     }
 
+    // ---------------- تواصل معنا ----------------
+
+    private val feedbackCollection = db.collection("feedback")
+    private val configDoc = db.collection("config").document("app")
+
+    private fun parseFeedback(d: DocumentSnapshot) = com.example.data.model.Feedback(
+        id = d.id,
+        uid = d.getString("uid"),
+        userName = d.getString("userName").orEmpty(),
+        role = d.getString("role").orEmpty(),
+        type = d.getString("type").orEmpty(),
+        message = d.getString("message").orEmpty(),
+        screenshotUrl = d.getString("screenshotUrl").orEmpty(),
+        contact = d.getString("contact").orEmpty(),
+        appVersion = d.getString("appVersion").orEmpty(),
+        device = d.getString("device").orEmpty(),
+        status = d.getString("status") ?: com.example.data.model.Feedback.STATUS_NEW,
+        reply = d.getString("reply").orEmpty(),
+        replySeen = d.getBoolean("replySeen") ?: true,
+        createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L
+    )
+
+    suspend fun sendFeedback(f: com.example.data.model.Feedback) {
+        feedbackCollection.add(
+            hashMapOf(
+                "uid" to f.uid,
+                "userName" to f.userName.take(100),
+                "role" to f.role.take(20),
+                "type" to f.type.take(40),
+                "message" to f.message.take(2000),
+                "screenshotUrl" to f.screenshotUrl.take(2000),
+                "contact" to f.contact.take(100),
+                "appVersion" to f.appVersion.take(30),
+                "device" to f.device.take(100),
+                "status" to com.example.data.model.Feedback.STATUS_NEW,
+                "reply" to "",
+                "replySeen" to true,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+        ).await()
+    }
+
+    /** رسائل المستخدم نفسه (مع ردود الإدارة). */
+    fun myFeedback(uid: String): Flow<List<com.example.data.model.Feedback>> = callbackFlow {
+        val listener = feedbackCollection.whereEqualTo("uid", uid).addSnapshotListener { snap, error ->
+            if (error != null) {
+                trySend(emptyList())
+                return@addSnapshotListener
+            }
+            trySend(snap?.documents?.map { parseFeedback(it) }?.sortedByDescending { it.createdAtMillis } ?: emptyList())
+        }
+        awaitClose { listener.remove() }
+    }
+
+    /** كل الرسائل (للأدمن). */
+    val allFeedback: Flow<List<com.example.data.model.Feedback>> = callbackFlow {
+        val listener = feedbackCollection
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(300)
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                trySend(snap?.documents?.map { parseFeedback(it) } ?: emptyList())
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun replyFeedback(id: String, reply: String, status: String) {
+        feedbackCollection.document(id).update(
+            mapOf("reply" to reply.take(2000), "status" to status, "replySeen" to reply.isBlank())
+        ).await()
+    }
+
+    suspend fun setFeedbackStatus(id: String, status: String) {
+        feedbackCollection.document(id).update("status", status).await()
+    }
+
+    suspend fun markReplySeen(id: String) {
+        feedbackCollection.document(id).update("replySeen", true).await()
+    }
+
+    suspend fun deleteFeedback(id: String) {
+        feedbackCollection.document(id).delete().await()
+    }
+
+    /** إعدادات عامة يغيّرها الأدمن (مثل رقم الدعم). */
+    val supportWhatsapp: Flow<String> = callbackFlow {
+        val listener = configDoc.addSnapshotListener { snap, _ ->
+            trySend(snap?.getString("supportWhatsapp")?.takeIf { it.isNotBlank() }
+                ?: com.example.data.model.Feedback.DEFAULT_SUPPORT_WHATSAPP)
+        }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setSupportWhatsapp(number: String) {
+        configDoc.set(hashMapOf("supportWhatsapp" to number.take(20)), com.google.firebase.firestore.SetOptions.merge()).await()
+    }
+
     // ---------------- صفحات المتاجر (عامة) ----------------
 
     private val storesCollection = db.collection("stores")
