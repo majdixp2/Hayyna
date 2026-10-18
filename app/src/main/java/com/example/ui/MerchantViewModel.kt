@@ -1163,3 +1163,5 @@ internal fun searchNorm(text: String): String =
         .replace(Regex("[\u064B-\u0652\u0640]"), "")
         .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
         .replace('ة', 'ه').replace('ى', 'ي')
+        // آخر الكلمة: ا / ه سواء (شاورما = شاورمه)
+        .replace(Regex("[اه](?=\\s|$)"), "ه")

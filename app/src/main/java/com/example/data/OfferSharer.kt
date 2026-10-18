@@ -18,6 +18,9 @@ import java.io.File
 /** مشاركة العرض (صورة + وصف + رابط الموقع) على واتساب أو أي تطبيق. */
 object OfferSharer {
 
+    /** موقع حيّنا على الويب (يفتح العرض حتى لمستخدمي الآيفون). */
+    const val WEB_BASE = "https://gen-lang-client-0536850806.web.app"
+
     fun shareText(offer: RestaurantOffer): String = buildString {
         append("🔥 ").append(offer.offerTitle).append('\n')
         append("🍽️ ").append(offer.restaurantName)
@@ -37,6 +40,7 @@ object OfferSharer {
         com.example.data.model.OfferPricing.startsText(offer)?.let { append('\n').append("🔜 ").append(it) }
         append('\n')
         append("📍 https://maps.google.com/?q=").append(offer.latitude).append(',').append(offer.longitude).append('\n')
+        append("🔗 ").append(WEB_BASE).append("/o/").append(offer.id).append('\n')
         append('\n').append("شفته في تطبيق حيّنا 📍")
     }
 

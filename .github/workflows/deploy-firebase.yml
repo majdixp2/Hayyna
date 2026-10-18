@@ -1,10 +1,10 @@
-name: Deploy admin web + Firestore rules
+name: Deploy web + Firestore rules
 
 on:
   push:
     branches: [main]
     paths:
-      - "web-admin/**"
+      - "web/**"
       - "firestore.rules"
       - "firebase.json"
       - ".github/workflows/deploy-firebase.yml"

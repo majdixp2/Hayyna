@@ -1,9 +1,14 @@
 {
   "hosting": {
-    "public": "web-admin",
+    "public": "web",
     "ignore": ["firebase.json", "**/.*"],
+    "cleanUrls": true,
+    "rewrites": [
+      { "source": "/o/**", "destination": "/index.html" },
+      { "source": "/s/**", "destination": "/index.html" }
+    ],
     "headers": [
-      { "source": "**/*.@(js|css|html)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+      { "source": "**/*.@(js|css|html|webmanifest)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
     ]
   },
   "firestore": [

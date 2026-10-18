@@ -7,7 +7,7 @@ import {
   getFirestore, collection, doc, onSnapshot, query, where, orderBy, limit,
   updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
-import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS } from "./config.js";
+import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS } from "../config.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
