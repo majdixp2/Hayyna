@@ -15,12 +15,16 @@ class HayynaApp : Application() {
         } catch (e: Exception) {
             Log.e("HayynaApp", "Failed to initialize FirebaseApp in onCreate", e)
         }
-        // حماية App Check (مطلوبة للذكاء الاصطناعي). نسخة التجربة تستخدم "رمز تجربة"
-        // يظهر للأدمن في لوحة الإدارة، ويُسجَّل مرة وحدة في Firebase.
+        // حماية App Check (مطلوبة للذكاء الاصطناعي):
+        // - نسخة التجربة (debug): "رمز تجربة" يظهر للأدمن في لوحة الإدارة ويُسجَّل في Firebase.
+        // - نسخة المتجر (release): Play Integrity — تشتغل تلقائياً للي نزّل التطبيق من قوقل بلاي.
         try {
-            com.google.firebase.appcheck.FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+            val factory = if (BuildConfig.DEBUG) {
                 com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory.getInstance()
-            )
+            } else {
+                com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory.getInstance()
+            }
+            com.google.firebase.appcheck.FirebaseAppCheck.getInstance().installAppCheckProviderFactory(factory)
         } catch (e: Exception) {
             Log.e("HayynaApp", "App Check init failed", e)
         }

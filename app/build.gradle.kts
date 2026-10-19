@@ -18,8 +18,9 @@ android {
     applicationId = "com.hayyna.app"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    // نسخة المتجر: الرقم يزيد تلقائياً مع كل بناء (من GitHub Actions)
+    versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+    versionName = System.getenv("VERSION_NAME") ?: "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -143,6 +144,7 @@ dependencies {
   implementation(libs.play.services.location)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.firebase.appcheck.debug)
+  implementation(libs.firebase.appcheck.playintegrity)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)

@@ -1,0 +1,73 @@
+name: Release AAB (Google Play)
+
+# نسخة المتجر: تشتغل لما تضغط "Run workflow" من صفحة Actions، أو لما ينرفع tag مثل v1.0.0
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "رقم الإصدار اللي يشوفه الناس (مثل 1.0.0)"
+        required: true
+        default: "1.0.0"
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
+      STORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+      KEY_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check signing secrets
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$STORE_PASSWORD" ]; then
+            echo "::error::أضف UPLOAD_KEYSTORE_BASE64 و UPLOAD_KEYSTORE_PASSWORD في Settings > Secrets and variables > Actions"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Prepare keystore and .env
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          if [ -n "$MAPS_API_KEY" ]; then echo "MAPS_API_KEY=$MAPS_API_KEY" > .env; fi
+          # رقم النسخة الداخلي يزيد تلقائياً (قوقل بلاي يرفض نفس الرقم مرتين)
+          echo "VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          NAME="${{ github.event.inputs.version_name }}"
+          if [ -z "$NAME" ]; then NAME="${GITHUB_REF_NAME#v}"; fi
+          echo "VERSION_NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Build release bundle
+        run: |
+          set -o pipefail
+          gradle :app:bundleRelease 2>&1 | tee build.log
+
+      - name: Report errors
+        if: failure()
+        run: |
+          grep -E "^e: |What went wrong|error:" build.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done || true
+
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp app/build/outputs/bundle/release/app-release.aab "out/hayyna-${VERSION_NAME}-${VERSION_CODE}.aab"
+          echo "::notice::AAB جاهز: الإصدار $VERSION_NAME (رقم $VERSION_CODE)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hayyna-play-aab
+          path: out/*.aab
