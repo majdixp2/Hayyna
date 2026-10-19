@@ -1,0 +1,586 @@
+// حيّنا على الويب — نفس تجربة التطبيق: خريطة، عروض، مفضلة، حسابي (زبون / تاجر).
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import {
+  getFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, addDoc, increment, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
+import * as X from "./logic.js";
+import { createMap } from "./map.js";
+
+const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf, km, distText, openNow, hoursText,
+  remainingText, tiersText, startsText, deliveryText, badge, waDigits, norm, districtLabel, money, gallery, videoThumb } = X;
+
+export const fbApp = initializeApp(firebaseConfig);
+export const auth = getAuth(fbApp);
+export const db = getFirestore(fbApp, FIRESTORE_DB_ID);
+export const $ = (id) => document.getElementById(id);
+
+export const state = {
+  offers: [], stores: [], q: "", cat: "الكل", sort: "near", openOnly: false, browse: null,
+  me: null, selected: null, branchId: null, view: null, tab: "map",
+  favs: new Set(), user: null, role: null, roleLoading: false, pendingRole: null,
+  config: {}, loaded: false, storesLoaded: false,
+};
+
+// ---------------- أدوات الواجهة (مشتركة مع لوحة التاجر) ----------------
+export const toast = (m, long) => { const t = $("toast"); t.textContent = m; t.classList.remove("hidden"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add("hidden"), long ? 4500 : 2600); };
+export function showSheet(html) {
+  $("sheetBody").innerHTML = html; $("sheetBody").scrollTop = 0;
+  $("sheet").classList.remove("hidden"); $("sheetBackdrop").classList.remove("hidden");
+}
+export function hideSheet() { $("sheet").classList.add("hidden"); $("sheetBackdrop").classList.add("hidden"); state.view = null; }
+let pageOnClose = null;
+export function openPage(title, body, foot = "", onClose = null) {
+  $("pageTitle").textContent = title; $("pageBody").innerHTML = body; $("pageFoot").innerHTML = foot;
+  $("pageFoot").classList.toggle("hidden", !foot); $("pageBody").scrollTop = 0;
+  $("page").classList.remove("hidden"); pageOnClose = onClose;
+  history.pushState({ page: 1 }, "", location.pathname);
+}
+export function closePage(fromPop) {
+  if ($("page").classList.contains("hidden")) return;
+  if (pageOnClose && pageOnClose() === false) { if (fromPop) history.pushState({ page: 1 }, "", location.pathname); return; }
+  $("page").classList.add("hidden"); $("pageBody").innerHTML = "";
+  if (!fromPop && history.state?.page) history.back();
+}
+$("pageClose").onclick = () => closePage(false);
+
+export async function uploadImage(file, maxSide = 1600) {
+  // نصغّر الصورة قبل الرفع (أسرع وأوفر)
+  const blob = await new Promise((resolve) => {
+    if (!file.type.startsWith("image/") || file.type === "image/gif") return resolve(file);
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      c.toBlob((b) => resolve(b || file), "image/jpeg", 0.85);
+    };
+    img.onerror = () => resolve(file); img.src = url;
+  });
+  const isVideo = file.type.startsWith("video/");
+  const fd = new FormData(); fd.append("upload_preset", "hayyna_offers"); fd.append("file", isVideo ? file : blob, isVideo ? "offer.mp4" : "offer.jpg");
+  const r = await fetch(`https://api.cloudinary.com/v1_1/ffhqn5dw/${isVideo ? "video" : "image"}/upload`, { method: "POST", body: fd });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.secure_url) throw new Error("تعذّر رفع الملف" + (j.error?.message ? ": " + j.error.message : ""));
+  return j.secure_url;
+}
+
+const bump = (id, field) => updateDoc(doc(db, "offers", id), { [field]: increment(1) }).catch(() => {});
+const offerUrl = (o) => `${location.origin}/o/${encodeURIComponent(o.id)}`;
+const storeUrl = (uid) => `${location.origin}/s/${encodeURIComponent(uid)}`;
+const heartSvg = (on) => `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="${on ? "#E05A47" : "none"}" stroke="${on ? "#E05A47" : "currentColor"}" stroke-width="2" d="M12 20.5l-1.2-1.1C6.2 15.2 3 12.3 3 8.8 3 6.1 5.1 4 7.8 4c1.6 0 3.1.8 4.2 2 1.1-1.2 2.6-2 4.2-2C18.9 4 21 6.1 21 8.8c0 3.5-3.2 6.4-7.8 10.6L12 20.5z"/></svg>`;
+
+function nearestBranch(o) {
+  const bs = branchesOf(o);
+  const ref = state.browse || state.me;
+  if (!ref) return { b: bs[0], d: null };
+  let best = bs[0], bd = Infinity;
+  bs.forEach((b) => { const d = km(ref, { lat: b.latitude, lng: b.longitude }); if (d < bd) { bd = d; best = b; } });
+  const dMe = state.me ? km(state.me, { lat: best.latitude, lng: best.longitude }) : null;
+  return { b: best, d: dMe, dSort: bd };
+}
+
+// ---------------- المفضلة ----------------
+try { JSON.parse(localStorage.getItem("hayyna_favs") || "[]").forEach((id) => state.favs.add(id)); } catch {}
+function saveFavsLocal() { try { localStorage.setItem("hayyna_favs", JSON.stringify([...state.favs])); } catch {} }
+export function toggleFav(id) {
+  if (state.favs.has(id)) state.favs.delete(id); else { state.favs.add(id); toast("انحفظ في المفضلة ❤️"); }
+  saveFavsLocal();
+  if (state.user && state.role) setDoc(doc(db, "users", state.user.uid), { role: state.role, favorites: [...state.favs].slice(0, 500) }, { merge: true }).catch(() => {});
+  renderAll();
+}
+
+// ---------------- الفلترة ----------------
+function filtered({ ignoreQuery = false } = {}) {
+  const now = Date.now(), q = ignoreQuery ? "" : norm(state.q), catKey = state.cat.replace(/[^\p{L}\s]/gu, "").trim();
+  const list = state.offers.filter((o) => {
+    if (X.isExpired(o, now) || (o.reportsCount || 0) >= AUTO_HIDE_REPORTS) return false;
+    if (state.cat !== "الكل" && !String(o.cuisineType || "").includes(catKey)) return false;
+    if (state.openOnly && !branchesOf(o).some((b) => openNow(b) === true)) return false;
+    if (!q) return true;
+    const hay = [o.restaurantName, o.offerTitle, o.description, o.district, o.cuisineType, o.itemsScope, ...(o.tags || []),
+      ...branchesOf(o).flatMap((b) => [b.district, b.landmark, b.name])];
+    return hay.some((h) => norm(h).includes(q));
+  }).map((o) => ({ o, ...nearestBranch(o) }));
+  const feat = (a, b) => (b.o.isFeatured ? 1 : 0) - (a.o.isFeatured ? 1 : 0);
+  if (state.sort === "cheap") list.sort((a, b) => feat(a, b) || ((a.o.price > 0 ? a.o.price : 1e9) - (b.o.price > 0 ? b.o.price : 1e9)));
+  else if (state.sort === "discount") list.sort((a, b) => feat(a, b) || effectivePercent(b.o) - effectivePercent(a.o));
+  else if (state.sort === "new") list.sort((a, b) => feat(a, b) || (X.ms(b.o.createdAt) || 0) - (X.ms(a.o.createdAt) || 0));
+  else list.sort((a, b) => feat(a, b) || (a.dSort ?? 0) - (b.dSort ?? 0));
+  return list;
+}
+
+// ---------------- الخريطة ----------------
+let map = null, fitted = false;
+function markerHtml(o, extra, on) {
+  const bd = badge(o);
+  const logo = o.logoUrl ? `<img class="lg" src="${esc(cld(o.logoUrl, 80))}" alt="">` : "";
+  return `<div class="mk${on ? " on" : ""}"><div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
+    + (extra > 0 ? `<span class="more">+${extra}</span>` : "")
+    + (bd ? `<span class="pct${bd.soon ? " soon" : ""}">${esc(bd.t)}</span>` : "") + `</div>`;
+}
+function renderMap(list) {
+  if (!map) return;
+  const groups = new Map();
+  list.forEach(({ o }) => branchesOf(o).forEach((b) => {
+    if (!b.latitude && !b.longitude) return;
+    const key = `${o.merchantId || o.restaurantName}|${Math.round(b.latitude * 20000)}|${Math.round(b.longitude * 20000)}`;
+    if (!groups.has(key)) groups.set(key, { b, items: [] });
+    groups.get(key).items.push(o);
+  }));
+  const items = [];
+  groups.forEach(({ b, items: arr }) => {
+    arr.sort((x, y) => (y.isFeatured ? 1 : 0) - (x.isFeatured ? 1 : 0) || effectivePercent(y) - effectivePercent(x));
+    const top = arr[0], on = state.selected === top.id;
+    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : top.isFeatured ? 500 : 10,
+      onClick: () => { state.selected = top.id; renderAll(); scrollCardIntoView(top.id); if (arr.length > 1) openGroup(arr); } });
+  });
+  map.setMarkers(items);
+  const withOffers = new Set(list.map(({ o }) => o.merchantId));
+  const dots = [];
+  if (!state.q && state.cat === "الكل" && !state.openOnly) {
+    state.stores.filter((s) => !withOffers.has(s.uid)).forEach((s) => (s.branches || []).forEach((b) => {
+      if (b.latitude || b.longitude) dots.push({ lat: b.latitude, lng: b.longitude, html: '<div class="dot"></div>', z: 1, onClick: () => openStore(s.uid, true) });
+    }));
+  }
+  map.setDots(dots);
+  if (!fitted && list.length && !state.me && !state.view && !state.browse) {
+    fitted = true;
+    map.fitBounds(list.flatMap(({ o }) => branchesOf(o).map((b) => [b.latitude, b.longitude])).filter(([a, c]) => a || c));
+  }
+}
+function openGroup(arr) {
+  showSheet(`<div class="pad"><div class="section-title">${esc(arr[0].restaurantName)} — ${arr.length} عروض</div>
+    <div class="list">${arr.map((o) => listCard(o)).join("")}</div></div>`);
+}
+
+// ---------------- البطاقات ----------------
+function carouselCard({ o, b, d }) {
+  const bd = badge(o), rem = remainingText(o), op = openNow(b), fav = state.favs.has(o.id);
+  const meta = [districtLabel(b.district || o.district), distText(d), o.delivery ? "🛵" : ""].filter(Boolean).join(" • ");
+  return `<div class="card${state.selected === o.id ? " on" : ""}" data-id="${esc(o.id)}" role="button">
+    <div class="thumb"><img src="${esc(thumb(o))}" alt="" loading="lazy">${bd ? `<span class="badge${bd.soon ? " soon" : ""}">${esc(bd.t)}</span>` : ""}</div>
+    <div class="info">
+      <div class="store-row">${o.logoUrl ? `<img class="logo" src="${esc(cld(o.logoUrl, 60))}" alt="">` : ""}<span>${esc(o.restaurantName)}</span>
+        <button class="heart" data-fav="${esc(o.id)}" aria-label="مفضلة">${heartSvg(fav)}</button></div>
+      <div class="title">${esc(o.offerTitle)}</div>
+      <div class="price">${esc(priceLabel(o))}${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)}</s>` : ""}</div>
+      <div class="meta">${esc(meta)}</div>
+      <div class="pills">${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+    </div></div>`;
+}
+function listCard(o) {
+  const { b, d } = nearestBranch(o), bd = badge(o), rem = remainingText(o), op = openNow(b), fav = state.favs.has(o.id);
+  return `<div class="lcard" data-id="${esc(o.id)}" role="button">
+    <div class="lthumb"><img src="${esc(thumb(o, 500))}" alt="" loading="lazy">${bd ? `<span class="badge${bd.soon ? " soon" : ""}">${esc(bd.t)}</span>` : ""}
+      <button class="heart float" data-fav="${esc(o.id)}" aria-label="مفضلة">${heartSvg(fav)}</button></div>
+    <div class="linfo">
+      <div class="store-row">${o.logoUrl ? `<img class="logo" src="${esc(cld(o.logoUrl, 60))}" alt="">` : ""}<span>${esc(o.restaurantName)}</span></div>
+      <div class="title">${esc(o.offerTitle)}</div>
+      <div class="price">${esc(priceLabel(o, true))}${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)}</s>` : ""}</div>
+      <div class="meta">${esc([districtLabel(b.district || o.district), distText(d), deliveryText(o) || ""].filter(Boolean).join(" • "))}</div>
+      <div class="pills">${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+    </div></div>`;
+}
+function scrollCardIntoView(id) {
+  const el = document.querySelector(`#carousel .card[data-id="${CSS.escape(id)}"]`);
+  if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+}
+
+// ---------------- الرسم ----------------
+export function renderAll() {
+  const list = filtered();
+  renderMap(list);
+  const car = $("carousel"), sl = car.scrollLeft;
+  car.innerHTML = list.map(carouselCard).join("");
+  car.scrollLeft = sl;
+  car.classList.toggle("hidden", !list.length);
+  const empty = $("empty");
+  if (state.loaded && !list.length) {
+    empty.innerHTML = state.offers.length ? `<b>ما لقينا عروض مطابقة</b>جرّب كلمة ثانية أو شيل الفلاتر` : `<b>لا توجد عروض حالياً</b>المحلات تنزّل عروضها أول بأول 🔥`;
+    empty.classList.remove("hidden");
+  } else empty.classList.add("hidden");
+  $("filterDot").classList.toggle("hidden", !(state.openOnly || state.sort !== "near"));
+  $("placeLabel").textContent = state.browse ? state.browse.name : "حولي";
+  // قائمة العروض
+  $("sortbar").innerHTML = [["near", "📍 الأقرب"], ["discount", "🔥 أكبر خصم"], ["cheap", "💰 الأرخص"], ["new", "🆕 الأحدث"]]
+    .map(([k, l]) => `<button class="chip${state.sort === k ? " on" : ""}" data-sort="${k}">${l}</button>`).join("")
+    + `<button class="chip${state.openOnly ? " on" : ""}" data-open="1">● مفتوح الآن</button>`;
+  $("list").innerHTML = list.length ? list.map(({ o }) => listCard(o)).join("") : `<div class="empty-inline">ما فيه عروض مطابقة</div>`;
+  // المفضلة
+  const favList = state.offers.filter((o) => state.favs.has(o.id) && !X.isExpired(o));
+  $("favs").innerHTML = favList.length ? favList.map(listCard).join("")
+    : `<div class="empty-inline"><div style="font-size:40px">🤍</div><b>ما عندك مفضلة للحين</b><br>اضغط القلب على أي عرض عشان تحفظه هنا</div>`;
+  if (state.tab === "account") renderAccount();
+}
+
+// ---------------- تفاصيل العرض ----------------
+function galleryHtml(o) {
+  const items = gallery(o);
+  const inner = items.map((u) => o.mediaType === "VIDEO"
+    ? `<video src="${esc(u)}" poster="${esc(videoThumb(u, 800))}" controls playsinline preload="none"></video>`
+    : `<img src="${esc(cld(u, 900))}" data-full="${esc(cld(u, 1600))}" alt="">`).join("");
+  return `<div class="gallery">${inner}</div>${items.length > 1 ? `<div class="dots">${items.map(() => "<i></i>").join("")}</div>` : ""}`;
+}
+export function openOffer(id, push) {
+  const o = state.offers.find((x) => x.id === id);
+  if (!o) { if (state.loaded) { toast("العرض انتهى أو غير متاح"); go("/", true); } return; }
+  state.view = { type: "o", id }; state.selected = id;
+  if (push) history.pushState({ v: "o", id }, "", `/o/${encodeURIComponent(id)}`);
+  document.title = `${o.offerTitle} — ${o.restaurantName} | حيّنا`;
+  if (!sessionStorage.getItem("v_" + id)) { sessionStorage.setItem("v_" + id, "1"); bump(id, "viewsCount"); }
+  const bs = branchesOf(o);
+  let br = bs.find((b) => b.id === state.branchId) || nearestBranch(o).b;
+  if (map && br) map.panTo(br.latitude, br.longitude);
+  const draw = () => {
+    const d = state.me ? km(state.me, { lat: br.latitude, lng: br.longitude }) : null;
+    const rem = remainingText(o), op = openNow(br), tiers = tiersText(o), starts = startsText(o), del = deliveryText(o);
+    const store = state.stores.find((s) => s.uid === o.merchantId), fav = state.favs.has(o.id);
+    const isOwner = state.user && state.user.uid === o.merchantId;
+    showSheet(`${galleryHtml(o)}
+      <div class="pad">
+        <div class="store-link">
+          <div class="name">${o.logoUrl ? `<img src="${esc(cld(o.logoUrl, 100))}" alt="">` : ""}<span>${esc(o.restaurantName)}${store && store.verified ? ' <span class="verified" title="متجر موثّق">✔</span>' : ""}</span></div>
+          ${store ? `<button class="btn-soft" data-store="${esc(store.uid)}">🏪 صفحة المتجر ›</button>` : ""}
+        </div>
+        <h1 class="title">${esc(o.offerTitle)}</h1>
+        <div class="pills">${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+        <div class="row3">
+          <button class="btn-out" data-act="fav">${heartSvg(fav)} ${fav ? "محفوظ" : "حفظ"}</button>
+          <button class="btn-out" data-act="share">↗︎ مشاركة</button>
+          ${isOwner ? `<button class="btn-out" data-act="edit">✎ تعديل</button>` : `<button class="btn-out" data-act="report">🚩 بلاغ</button>`}
+        </div>
+        <div class="big-price"><span class="p">${esc(priceLabel(o, true))}</span>${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)} ر.س</s>` : ""}${!isPercentOnly(o) && effectivePercent(o) > 0 ? `<span class="pill urgent">خصم ${effectivePercent(o)}% 🔥</span>` : ""}</div>
+        ${tiers || starts ? `<div class="box">${starts ? `<div class="soon">🔜 ${esc(starts)}</div>` : ""}${tiers ? `<div>📅 ${esc(tiers)}</div>` : ""}</div>` : ""}
+        ${del ? `<div class="info-pill">${esc(del)}</div>` : ""}
+        ${(o.tags || []).length ? `<div class="tags">${o.tags.map((t) => `<span>#${esc(t)}</span>`).join("")}</div>` : ""}
+        ${o.description ? `<p class="desc">${esc(o.description)}</p>` : ""}
+        ${bs.length > 1 ? `<div class="section-title">📍 الفروع (${bs.length})</div><div class="branches">${bs.map((b) => {
+          const bd = state.me ? km(state.me, { lat: b.latitude, lng: b.longitude }) : null;
+          return `<button class="branch${b === br ? " on" : ""}" data-branch="${esc(b.id)}"><div class="b-main"><div class="b-name">${esc(b.name || districtLabel(b.district) || "الفرع")}</div><div class="b-sub">${esc([districtLabel(b.district), b.landmark, hoursText(b)].filter(Boolean).join(" • "))}</div></div><div class="b-sub">${esc(distText(bd))}</div></button>`;
+        }).join("")}</div>` : `<div class="info-pill gray">📍 ${esc([districtLabel(br.district), br.landmark, br.region].filter(Boolean).join(" • "))}${d != null ? ` — ${esc(distText(d))} عنك` : ""}</div>`}
+        <div class="actions">
+          <a class="btn dir" data-act="dir" href="https://www.google.com/maps/dir/?api=1&destination=${br.latitude},${br.longitude}" target="_blank" rel="noopener">🧭 الاتجاهات إلى المحل</a>
+          <a class="btn wa" data-act="wa" href="https://wa.me/${waDigits(br.phone || o.phone)}?text=${encodeURIComponent(`مرحباً، أود طلب العرض: ${o.offerTitle} (${priceLabel(o)}) المعلن عنه في حيّنا\n${offerUrl(o)}`)}" target="_blank" rel="noopener">💬 طلب واتساب</a>
+          <a class="btn call" href="tel:${esc(br.phone || o.phone)}">📞 اتصال</a>
+        </div>
+      </div>`);
+    const body = $("sheetBody");
+    body.querySelectorAll("[data-branch]").forEach((el) => el.onclick = () => {
+      br = bs.find((b) => b.id === el.dataset.branch) || br; state.branchId = br.id;
+      if (map) map.panTo(br.latitude, br.longitude); draw();
+    });
+    body.querySelector("[data-store]")?.addEventListener("click", (e) => openStore(e.currentTarget.dataset.store, true));
+    body.querySelector('[data-act="dir"]').addEventListener("click", () => bump(o.id, "directionsCount"));
+    body.querySelector('[data-act="wa"]').addEventListener("click", () => bump(o.id, "whatsappCount"));
+    body.querySelector('[data-act="fav"]').onclick = () => { toggleFav(o.id); draw(); };
+    body.querySelector('[data-act="share"]').onclick = () => share(`🔥 ${o.offerTitle}\n📍 ${o.restaurantName}${o.district ? " — " + o.district : ""}\n💰 ${priceLabel(o, true)}`, offerUrl(o), o.offerTitle);
+    body.querySelector('[data-act="report"]')?.addEventListener("click", () => reportOffer(o));
+    body.querySelector('[data-act="edit"]')?.addEventListener("click", async () => { const m = await import("./merchant.js"); m.openOfferForm(o); });
+    body.querySelectorAll(".gallery img").forEach((im) => im.onclick = () => openViewer(im.dataset.full));
+  };
+  draw();
+  renderAll();
+}
+
+function reportOffer(o) {
+  showSheet(`<div class="pad"><div class="section-title">🚩 بلاغ عن العرض</div><p class="desc">${esc(o.offerTitle)}</p>
+    <div class="radio-list">${X.REPORT_REASONS.map((r, i) => `<label class="radio"><input type="radio" name="rr" value="${esc(r)}" ${i === 0 ? "checked" : ""}> ${esc(r)}</label>`).join("")}</div>
+    <button class="btn danger" id="sendReport">إرسال البلاغ</button></div>`);
+  $("sendReport").onclick = async () => {
+    const reason = document.querySelector('input[name="rr"]:checked')?.value || "أخرى";
+    try {
+      await addDoc(collection(db, "reports"), { offerId: o.id, offerTitle: (o.offerTitle || "").slice(0, 150), restaurantName: (o.restaurantName || "").slice(0, 100),
+        merchantId: o.merchantId || "", reason, reporterUid: state.user?.uid || null, createdAt: serverTimestamp() });
+      let reported = false; try { reported = localStorage.getItem("rep_" + o.id) === "1"; localStorage.setItem("rep_" + o.id, "1"); } catch {}
+      if (!reported) bump(o.id, "reportsCount");
+      toast("وصل بلاغك، شكراً لك 🙏"); openOffer(o.id, false);
+    } catch (e) { toast("تعذّر إرسال البلاغ، حاول مرة ثانية"); }
+  };
+}
+
+// ---------------- صفحة المتجر ----------------
+export function openStore(uid, push) {
+  const s = state.stores.find((x) => x.uid === uid);
+  if (!s) { if (state.storesLoaded) { toast("صفحة المتجر غير متاحة"); go("/", true); } return; }
+  state.view = { type: "s", id: uid };
+  if (push) history.pushState({ v: "s", id: uid }, "", `/s/${encodeURIComponent(uid)}`);
+  document.title = `${s.name} | حيّنا`;
+  const offers = state.offers.filter((o) => o.merchantId === uid && !X.isExpired(o) && (o.reportsCount || 0) < AUTO_HIDE_REPORTS);
+  const del = deliveryText(s), phone = s.phone || (s.branches || [])[0]?.phone || "";
+  showSheet(`${s.coverUrl ? `<img class="cover" src="${esc(cld(s.coverUrl, 1000))}" alt="">` : `<div class="cover"></div>`}
+    <div class="pad">
+      <div class="store-head">${s.logoUrl ? `<img src="${esc(cld(s.logoUrl, 200))}" alt="">` : `<div class="logo-ph">🏪</div>`}<div class="nm">${esc(s.name)}${s.verified ? ' <span class="verified">✔ موثّق</span>' : ""}</div></div>
+      ${s.category ? `<div class="pills"><span class="pill">${esc(s.category)}</span></div>` : ""}
+      ${s.priceFrom > 0 ? `<div class="box">💰 الأسعار تبدأ من ${money(s.priceFrom)} ر.س</div>` : ""}
+      ${del ? `<div class="info-pill">${esc(del)}</div>` : ""}
+      ${s.about ? `<p class="desc">${esc(s.about)}</p>` : ""}
+      ${phone ? `<div class="actions"><a class="btn wa" href="https://wa.me/${waDigits(phone)}" target="_blank" rel="noopener">💬 واتساب</a><a class="btn call" href="tel:${esc(phone)}">📞 اتصال</a></div>` : ""}
+      ${offers.length ? `<div class="section-title">🔥 العروض الحالية (${offers.length})</div><div class="hscroll">${offers.map((o) =>
+        `<button class="mini" data-offer="${esc(o.id)}"><img src="${esc(thumb(o))}" alt=""><div>${esc(o.offerTitle)}<small>${esc(priceLabel(o))}</small></div></button>`).join("")}</div>` : ""}
+      ${(s.menuImages || []).length ? `<div class="section-title">📋 ${X.menuLabel(s.category)}</div><div class="hscroll">${s.menuImages.map((u) =>
+        `<img class="menu-img" src="${esc(cld(u, 400))}" data-full="${esc(cld(u, 1600))}" alt="">`).join("")}</div>` : ""}
+      ${(s.branches || []).length ? `<div class="section-title">📍 الفروع (${s.branches.length})</div><div class="branches">${s.branches.map((b) => {
+        const d = state.me ? km(state.me, { lat: b.latitude, lng: b.longitude }) : null, op = openNow(b);
+        return `<a class="branch" href="https://www.google.com/maps/dir/?api=1&destination=${b.latitude},${b.longitude}" target="_blank" rel="noopener"><div class="b-main"><div class="b-name">${esc(b.name || districtLabel(b.district) || "الفرع")} ${op === true ? '<span class="pill open">مفتوح</span>' : op === false ? '<span class="pill closed">مغلق</span>' : ""}</div><div class="b-sub">${esc([districtLabel(b.district), b.landmark, hoursText(b)].filter(Boolean).join(" • "))}</div></div><div class="b-sub">${esc(distText(d))} 🧭</div></a>`;
+      }).join("")}</div>` : ""}
+      <button class="btn share" data-act="share">↗︎ شارك صفحة المتجر</button>
+    </div>`);
+  const body = $("sheetBody");
+  body.querySelectorAll("[data-offer]").forEach((el) => el.onclick = () => openOffer(el.dataset.offer, true));
+  body.querySelectorAll(".menu-img").forEach((im) => im.onclick = () => openViewer(im.dataset.full));
+  body.querySelector('[data-act="share"]').onclick = () => share(`🏪 ${s.name} على حيّنا`, storeUrl(uid), s.name);
+}
+
+async function share(text, url, title) {
+  if (navigator.share) { try { await navigator.share({ title, text, url }); return; } catch (e) { if (e.name === "AbortError") return; } }
+  try { await navigator.clipboard.writeText(`${text}\n${url}`); toast("نسخنا الرابط ✅"); } catch { prompt("انسخ الرابط:", url); }
+}
+function openViewer(src) { $("viewerImg").src = src; $("viewer").classList.remove("hidden"); }
+
+// ---------------- الفلاتر والأحياء ----------------
+function openFilters() {
+  showSheet(`<div class="pad"><div class="section-title">الفلاتر</div>
+    <label class="switch-row"><span>● مفتوح الآن فقط</span><input type="checkbox" id="fOpen" ${state.openOnly ? "checked" : ""}></label>
+    <div class="label">الترتيب</div>
+    <div class="chips wrap">${[["near", "📍 الأقرب"], ["discount", "🔥 أكبر خصم"], ["cheap", "💰 الأرخص"], ["new", "🆕 الأحدث"]]
+      .map(([k, l]) => `<button class="chip${state.sort === k ? " on" : ""}" data-sort="${k}">${l}</button>`).join("")}</div>
+    <div class="row2"><button class="btn call" id="fReset">مسح الفلاتر</button><button class="btn dir" id="fDone">تم</button></div></div>`);
+  $("fOpen").onchange = (e) => { state.openOnly = e.target.checked; renderAll(); };
+  $("sheetBody").querySelectorAll("[data-sort]").forEach((b) => b.onclick = () => { state.sort = b.dataset.sort; openFilters(); renderAll(); });
+  $("fReset").onclick = () => { state.openOnly = false; state.sort = "near"; renderAll(); hideSheet(); };
+  $("fDone").onclick = hideSheet;
+}
+function openPlaces() {
+  const now = Date.now(), counts = new Map();
+  state.offers.filter((o) => !X.isExpired(o, now)).forEach((o) => branchesOf(o).forEach((b) => {
+    if (!b.district) return; const k = norm(b.district.replace(/^حي\s+/, ""));
+    const c = counts.get(k) || { name: districtLabel(b.district), n: 0, lat: b.latitude, lng: b.longitude }; c.n++; counts.set(k, c);
+  }));
+  state.stores.forEach((s) => (s.branches || []).forEach((b) => {
+    if (!b.district) return; const k = norm(b.district.replace(/^حي\s+/, ""));
+    if (!counts.has(k)) counts.set(k, { name: districtLabel(b.district), n: 0, lat: b.latitude, lng: b.longitude });
+  }));
+  const arr = [...counts.values()].sort((a, b) => b.n - a.n);
+  showSheet(`<div class="pad"><div class="section-title">📍 تصفّح حي</div>
+    <input id="placeQ" class="input" placeholder="ابحث عن حي…">
+    <button class="place-row ${!state.browse ? "on" : ""}" data-here="1"><span>📍 حولي (موقعي)</span></button>
+    <div id="placeList">${arr.map((c, i) => `<button class="place-row${state.browse?.name === c.name ? " on" : ""}" data-i="${i}"><span>${esc(c.name)}</span><small>${c.n ? c.n + " عرض" : "متاجر"}</small></button>`).join("")}</div></div>`);
+  const body = $("sheetBody");
+  body.querySelector("[data-here]").onclick = () => { state.browse = null; hideSheet(); if (state.me) map?.setView(state.me.lat, state.me.lng, 14); else locate(true); renderAll(); };
+  body.querySelectorAll("[data-i]").forEach((el) => el.onclick = () => {
+    const c = arr[+el.dataset.i]; state.browse = { name: c.name, lat: c.lat, lng: c.lng }; hideSheet();
+    map?.setView(c.lat, c.lng, 14); renderAll();
+  });
+  $("placeQ").oninput = (e) => { const q = norm(e.target.value); body.querySelectorAll("[data-i]").forEach((el) => el.classList.toggle("hidden", q && !norm(el.textContent).includes(q))); };
+}
+
+// ---------------- حسابي ----------------
+export function renderAccount() {
+  const el = $("account");
+  const u = state.user;
+  const support = X.toLocalPhone(state.config.supportWhatsapp || "0552793379");
+  if (!u) {
+    el.innerHTML = `<div class="acc-hero"><img src="/img/icon-192.png" alt=""><h1>أهلاً بك في حيّنا</h1><p>سجّل دخولك عشان تحفظ مفضلتك، أو تنشر عروض محلك</p></div>
+      <div class="pad">
+        <button class="role-card" data-login="customer"><div class="rc-ico">🛍️</div><div><b>أنا زبون</b><br><small>احفظ العروض اللي تعجبك وتابعها من أي جهاز</small></div></button>
+        <button class="role-card" data-login="merchant"><div class="rc-ico">🏪</div><div><b>أنا صاحب محل</b><br><small>انشر عروضك مجاناً وخلّ أهل الحي يوصلون لك</small></div></button>
+        <p class="hint">الدخول بحساب Google</p>
+        <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
+      </div>`;
+    el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => login(b.dataset.login));
+    $("contactBtn").onclick = openContact;
+    return;
+  }
+  const isAdmin = ADMIN_EMAILS.includes(u.email);
+  const head = `<div class="acc-user">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="">` : `<div class="avatar">${esc((u.displayName || "؟")[0])}</div>`}
+    <div><b>${esc(u.displayName || "")}</b><br><small>${esc(u.email || "")}</small></div></div>`;
+  if (state.roleLoading) { el.innerHTML = head + `<div class="pad"><div class="spinner"></div></div>`; return; }
+  if (state.role === "merchant" || isAdmin) {
+    el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>`;
+    import("./merchant.js").then((m) => m.renderMerchant($("merchantRoot"), { isAdmin, support, logout: doLogout, contact: openContact }));
+    return;
+  }
+  el.innerHTML = head + `<div class="pad">
+    <div class="stat-row"><div class="stat"><b>${state.favs.size}</b><small>في المفضلة</small></div></div>
+    <button class="role-card" id="becomeMerchant"><div class="rc-ico">🏪</div><div><b>عندك محل؟</b><br><small>حوّل حسابك لحساب تاجر وانشر عروضك مجاناً</small></div></button>
+    <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
+    <a class="btn call" href="https://wa.me/${waDigits(support)}" target="_blank" rel="noopener">واتساب الدعم ${esc(support)}</a>
+    <button class="btn ghost" id="logoutBtn">تسجيل الخروج</button></div>`;
+  $("becomeMerchant").onclick = async () => {
+    state.role = "merchant";
+    await setDoc(doc(db, "users", u.uid), { role: "merchant", updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+    toast("صار حسابك حساب تاجر 🏪"); renderAccount();
+  };
+  $("contactBtn").onclick = openContact;
+  $("logoutBtn").onclick = doLogout;
+}
+async function login(role) {
+  state.pendingRole = role;
+  try { sessionStorage.setItem("hayyna_pending_role", role); } catch {}
+  const provider = new GoogleAuthProvider(); provider.setCustomParameters({ prompt: "select_account" });
+  try { await signInWithPopup(auth, provider); }
+  catch (e) {
+    if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") { await signInWithRedirect(auth, provider); return; }
+    if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") toast("تعذّر الدخول: " + (e.message || e.code));
+  }
+}
+async function doLogout() { await signOut(auth); state.role = null; toast("سجّلت خروج"); }
+
+function openContact() {
+  const support = X.toLocalPhone(state.config.supportWhatsapp || "0552793379");
+  showSheet(`<div class="pad"><div class="section-title">💬 تواصل معنا</div>
+    <div class="chips wrap" id="fbTypes">${X.FEEDBACK_TYPES.map((t, i) => `<button class="chip${i === 0 ? " on" : ""}" data-t="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+    <textarea id="fbMsg" class="input" rows="5" placeholder="اكتب رسالتك…" maxlength="2000"></textarea>
+    ${state.user ? "" : `<input id="fbContact" class="input" placeholder="رقم جوالك أو إيميلك (عشان نرد عليك)">`}
+    <button class="btn dir" id="fbSend">إرسال</button>
+    <a class="btn wa" href="https://wa.me/${waDigits(support)}" target="_blank" rel="noopener">أو كلّمنا واتساب ${esc(support)}</a></div>`);
+  let type = X.FEEDBACK_TYPES[0];
+  $("fbTypes").querySelectorAll("[data-t]").forEach((b) => b.onclick = () => { type = b.dataset.t; $("fbTypes").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === b)); });
+  $("fbSend").onclick = async () => {
+    const message = $("fbMsg").value.trim(); if (!message) return toast("اكتب رسالتك أول");
+    try {
+      await addDoc(collection(db, "feedback"), {
+        uid: state.user?.uid || null, userName: (state.user?.displayName || "").slice(0, 100), role: state.role || "visitor", type,
+        message: message.slice(0, 2000), screenshotUrl: "", contact: (state.user?.email || $("fbContact")?.value || "").slice(0, 100),
+        appVersion: "web", device: navigator.userAgent.slice(0, 100), status: "new", reply: "", replySeen: false, createdAt: serverTimestamp()
+      });
+      toast("وصلت رسالتك ✅ بنرد عليك قريب"); hideSheet();
+    } catch (e) { toast("تعذّر الإرسال، حاول مرة ثانية"); }
+  };
+}
+
+// ---------------- التبويبات والتنقل ----------------
+export function setTab(t) {
+  state.tab = t;
+  document.querySelectorAll(".tab").forEach((s) => s.classList.toggle("on", s.id === "tab-" + t));
+  document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  if (t === "map") setTimeout(() => map?.resize(), 50);
+  if (t === "account") renderAccount();
+  try { sessionStorage.setItem("hayyna_tab", t); } catch {}
+}
+$("nav").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { hideSheet(); if (location.pathname !== "/") history.replaceState({}, "", "/"); setTab(b.dataset.tab); } };
+
+function route() {
+  const m = location.pathname.match(/^\/(o|s)\/([^/]+)/);
+  if (!m) { hideSheet(); document.title = "حيّنا — عروض المحلات حولك على الخريطة"; return; }
+  const id = decodeURIComponent(m[2]);
+  if (m[1] === "o") {
+    setTab("map"); openOffer(id, false);
+    const o = state.offers.find((x) => x.id === id);
+    if (o && map) { const { b } = nearestBranch(o); map.setView(b.latitude, b.longitude, 15); }
+  } else openStore(id, false);
+}
+export function go(path, replace) { (replace ? history.replaceState : history.pushState).call(history, {}, "", path); route(); }
+window.addEventListener("popstate", () => {
+  if (!$("page").classList.contains("hidden")) { closePage(true); return; }
+  route();
+});
+const closeSheet = () => { if (location.pathname !== "/") { history.state?.v ? history.back() : go("/", true); } else hideSheet(); };
+$("sheetClose").onclick = closeSheet;
+$("sheetBackdrop").onclick = closeSheet;
+$("viewerClose").onclick = () => $("viewer").classList.add("hidden");
+$("viewer").onclick = (e) => { if (e.target.id === "viewer") $("viewer").classList.add("hidden"); };
+
+// أحداث البطاقات (خريطة + قائمة + مفضلة + لوحة)
+document.addEventListener("click", (e) => {
+  const h = e.target.closest("[data-fav]"); if (h) { e.stopPropagation(); toggleFav(h.dataset.fav); return; }
+  const s = e.target.closest("#sortbar [data-sort]"); if (s) { state.sort = s.dataset.sort; renderAll(); return; }
+  const op = e.target.closest("#sortbar [data-open]"); if (op) { state.openOnly = !state.openOnly; renderAll(); return; }
+  const c = e.target.closest(".card[data-id], .lcard[data-id]"); if (c) { openOffer(c.dataset.id, true); }
+});
+
+$("chips").innerHTML = X.CATEGORIES.map((c) => `<button class="chip${c === "الكل" ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+$("chips").onclick = (e) => {
+  const b = e.target.closest("[data-cat]"); if (!b) return;
+  state.cat = b.dataset.cat; fitted = false;
+  document.querySelectorAll("#chips .chip").forEach((x) => x.classList.toggle("on", x === b));
+  renderAll();
+};
+let qt;
+$("q").oninput = (e) => { state.q = e.target.value; $("clearQ").classList.toggle("hidden", !state.q); clearTimeout(qt); qt = setTimeout(() => { fitted = false; renderAll(); }, 200); };
+$("clearQ").onclick = () => { $("q").value = ""; state.q = ""; $("clearQ").classList.add("hidden"); renderAll(); };
+$("filterBtn").onclick = openFilters;
+$("placeBtn").onclick = openPlaces;
+
+// ---------------- موقعي ----------------
+function locate(center) {
+  if (!navigator.geolocation) return toast("المتصفح ما يدعم تحديد الموقع");
+  navigator.geolocation.getCurrentPosition((p) => {
+    state.me = { lat: p.coords.latitude, lng: p.coords.longitude };
+    map?.setMe(state.me.lat, state.me.lng);
+    if (center) { state.browse = null; map?.setView(state.me.lat, state.me.lng, 14); }
+    renderAll();
+  }, () => { if (center) toast("فعّل الموقع عشان نرتّب العروض حسب الأقرب لك"); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+export const getMyLocation = () => new Promise((resolve, reject) => {
+  if (!navigator.geolocation) return reject(new Error("no geo"));
+  navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }), reject, { enableHighAccuracy: true, timeout: 12000 });
+});
+$("locate").onclick = () => locate(true);
+navigator.permissions?.query({ name: "geolocation" }).then((r) => { if (r.state === "granted") locate(!location.pathname.startsWith("/o/")); }).catch(() => {});
+
+// تلميح التثبيت للآيفون
+(() => {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const standalone = window.navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+  let seen = false; try { seen = localStorage.getItem("hayyna_install_tip") === "1"; } catch {}
+  if (ios && !standalone && !seen) setTimeout(() => $("installTip").classList.remove("hidden"), 5000);
+  $("installClose").onclick = () => { $("installTip").classList.add("hidden"); try { localStorage.setItem("hayyna_install_tip", "1"); } catch {} };
+})();
+
+// ---------------- الدخول ----------------
+getRedirectResult(auth).catch(() => {});
+onAuthStateChanged(auth, async (u) => {
+  state.user = u;
+  if (!u) { state.role = null; renderAll(); return; }
+  state.roleLoading = true; renderAccount();
+  let pending = state.pendingRole; try { pending = pending || sessionStorage.getItem("hayyna_pending_role"); sessionStorage.removeItem("hayyna_pending_role"); } catch {}
+  try {
+    const ref = doc(db, "users", u.uid), snap = await getDoc(ref);
+    let role = snap.exists() ? snap.data().role : null;
+    if (!role) {
+      const merchant = await getDoc(doc(db, "merchants", u.uid)).catch(() => null);
+      role = merchant?.exists() ? "merchant" : (pending || "customer");
+      await setDoc(ref, { role, updatedAt: serverTimestamp() }, { merge: true });
+    } else if (pending === "merchant" && role !== "merchant") {
+      role = "merchant"; await setDoc(ref, { role }, { merge: true });
+    }
+    state.role = role;
+    const remote = new Set(snap.exists() ? (snap.data().favorites || []) : []);
+    const merged = new Set([...remote, ...state.favs]);
+    state.favs = merged; saveFavsLocal();
+    if (merged.size !== remote.size) setDoc(ref, { role, favorites: [...merged].slice(0, 500) }, { merge: true }).catch(() => {});
+  } catch (e) { console.error(e); state.role = state.role || "customer"; }
+  state.roleLoading = false; state.pendingRole = null;
+  if (pending) { setTab("account"); toast(state.role === "merchant" ? "أهلاً بك 🏪 من هنا تدير محلك وعروضك" : "أهلاً بك 👋"); }
+  renderAll();
+});
+
+// ---------------- البيانات ----------------
+onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; }, () => {});
+onSnapshot(query(collection(db, "offers"), where("isApproved", "==", true)), (snap) => {
+  state.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+  const first = !state.loaded; state.loaded = true;
+  renderAll(); if (first) route();
+}, (e) => { console.error(e); toast("تعذّر تحميل العروض، حدّث الصفحة"); });
+onSnapshot(query(collection(db, "stores"), where("approved", "==", true)), (snap) => {
+  state.stores = snap.docs.map((d) => ({ ...d.data(), uid: d.id }));
+  const first = !state.storesLoaded; state.storesLoaded = true;
+  renderAll();
+  if (first && location.pathname.startsWith("/s/")) route();
+  else if (first && state.view?.type === "o" && !$("sheet").classList.contains("hidden")) openOffer(state.view.id, false);
+}, (e) => console.error(e));
+setInterval(renderAll, 60000);
+
+// الخريطة (تتحمّل بعد الواجهة)
+createMap($("map"), { key: MAPS_WEB_KEY, showShops: false }).then((m) => {
+  map = m; if (state.me) map.setMe(state.me.lat, state.me.lng);
+  renderAll();
+  if (state.view?.type === "o") { const o = state.offers.find((x) => x.id === state.view.id); if (o) { const { b } = nearestBranch(o); map.setView(b.latitude, b.longitude, 15); } }
+}).catch((e) => { console.error(e); toast("تعذّر تحميل الخريطة"); });
+
+try { const t = sessionStorage.getItem("hayyna_tab"); if (t && !location.pathname.match(/^\/(o|s)\//)) setTab(t); } catch {}

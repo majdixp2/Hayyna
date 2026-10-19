@@ -16,3 +16,6 @@ export const FIRESTORE_DB_ID = "ai-studio-android-307cc811-cd30-4d36-b6c1-76e9fb
 export const ADMIN_EMAILS = ["majdixp2@gmail.com"];
 
 export const AUTO_HIDE_REPORTS = 3;
+
+// مفتاح خرائط قوقل للويب (Maps JavaScript API، مقيّد على دومين الموقع). فاضي = خريطة OpenStreetMap مؤقتاً.
+export const MAPS_WEB_KEY = "";

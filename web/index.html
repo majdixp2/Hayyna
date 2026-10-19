@@ -19,39 +19,78 @@
   <meta name="apple-mobile-web-app-title" content="حيّنا">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <div id="map" dir="ltr" aria-label="خريطة العروض"></div>
+  <!-- ===== تبويب الخريطة ===== -->
+  <section id="tab-map" class="tab on">
+    <div id="map"></div>
+    <header class="top">
+      <div class="searchbar">
+        <img src="/img/icon-192.png" alt="حيّنا" class="brand">
+        <input id="q" type="search" placeholder="ابحث: شاورما، قهوة، جوالات، اسم حي…" autocomplete="off" enterkeyhint="search">
+        <button id="clearQ" class="icon-btn hidden" aria-label="مسح">✕</button>
+        <button id="filterBtn" class="icon-btn filter-btn" aria-label="الفلاتر">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M3 5h18v2H3zm4 6h10v2H7zm3 6h4v2h-4z"/></svg>
+          <span id="filterDot" class="fdot hidden"></span>
+        </button>
+      </div>
+      <div class="row-chips">
+        <button id="placeBtn" class="chip place">📍 <span id="placeLabel">حولي</span> ▾</button>
+        <div id="chips" class="chips"></div>
+      </div>
+    </header>
+    <button id="locate" class="fab" aria-label="موقعي">
+      <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8.94 3A9 9 0 0 0 13 3.06V1h-2v2.06A9 9 0 0 0 3.06 11H1v2h2.06A9 9 0 0 0 11 20.94V23h2v-2.06A9 9 0 0 0 20.94 13H23v-2h-2.06zM12 19a7 7 0 1 1 0-14 7 7 0 0 1 0 14z"/></svg>
+    </button>
+    <section id="carousel" class="carousel" aria-label="العروض"></section>
+    <div id="empty" class="empty hidden"></div>
+  </section>
 
-  <!-- البحث والتصنيفات -->
-  <header class="top">
-    <div class="searchbar">
-      <img src="/img/icon-192.png" alt="حيّنا" class="brand">
-      <input id="q" type="search" placeholder="ابحث: شاورما، قهوة، جوالات، اسم حي…" autocomplete="off" enterkeyhint="search">
-      <button id="clearQ" class="icon-btn hidden" aria-label="مسح">✕</button>
-    </div>
-    <div id="chips" class="chips"></div>
-  </header>
+  <!-- ===== تبويب العروض (قائمة) ===== -->
+  <section id="tab-list" class="tab page">
+    <header class="page-head">
+      <h1>العروض</h1>
+      <div class="sortbar" id="sortbar"></div>
+    </header>
+    <div id="list" class="list"></div>
+  </section>
 
-  <button id="locate" class="fab" aria-label="موقعي">◎</button>
+  <!-- ===== تبويب المفضلة ===== -->
+  <section id="tab-favs" class="tab page">
+    <header class="page-head"><h1>المفضلة ❤️</h1></header>
+    <div id="favs" class="list"></div>
+  </section>
 
-  <!-- العروض أسفل الشاشة -->
-  <section id="carousel" class="carousel" aria-label="العروض"></section>
-  <div id="empty" class="empty hidden"></div>
+  <!-- ===== تبويب حسابي ===== -->
+  <section id="tab-account" class="tab page">
+    <div id="account"></div>
+  </section>
 
-  <!-- لوحة التفاصيل (عرض أو متجر) -->
+  <!-- ===== الشريط السفلي ===== -->
+  <nav class="bottomnav" id="nav">
+    <button data-tab="map" class="on"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg><span>الخريطة</span></button>
+    <button data-tab="list"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg><span>العروض</span></button>
+    <button data-tab="favs"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg><span>المفضلة</span></button>
+    <button data-tab="account"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg><span>حسابي</span></button>
+  </nav>
+
+  <!-- ===== لوحة منبثقة (عرض / متجر / نماذج) ===== -->
   <div id="sheetBackdrop" class="backdrop hidden"></div>
   <article id="sheet" class="sheet hidden" aria-modal="true" role="dialog">
     <button id="sheetClose" class="sheet-close" aria-label="إغلاق">✕</button>
     <div id="sheetBody" class="sheet-body"></div>
   </article>
 
-  <!-- عارض الصور -->
+  <!-- صفحة كاملة للنماذج (عرض جديد / صفحة متجري) -->
+  <div id="page" class="fullpage hidden">
+    <header class="fp-head"><button id="pageClose" class="icon-btn" aria-label="رجوع">✕</button><h2 id="pageTitle"></h2></header>
+    <div id="pageBody" class="fp-body"></div>
+    <footer id="pageFoot" class="fp-foot"></footer>
+  </div>
+
   <div id="viewer" class="viewer hidden"><img id="viewerImg" alt=""><button id="viewerClose" class="viewer-close" aria-label="إغلاق">✕</button></div>
 
-  <!-- إضافة للشاشة الرئيسية (آيفون) -->
   <div id="installTip" class="install hidden">
     <img src="/img/icon-192.png" alt="">
     <div><b>ثبّت حيّنا على جوالك</b><br>اضغط <span class="share-ico">⬆︎</span> مشاركة، ثم «إضافة إلى الشاشة الرئيسية»</div>
@@ -59,8 +98,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/js/app.js"></script>
 </body>
 </html>
