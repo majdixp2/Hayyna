@@ -31,7 +31,7 @@ function loadGoogle(key) {
     window.__hayynaMapsReady = () => resolve(window.google.maps);
     if (googleFailed) return reject(new Error("maps auth failed"));
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=ar&region=SA&callback=__hayynaMapsReady&loading=async`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=ar&region=SA&libraries=places&callback=__hayynaMapsReady&loading=async`;
     s.async = true; s.onerror = () => reject(new Error("maps load failed"));
     document.head.appendChild(s);
     setTimeout(() => reject(new Error("maps timeout")), 15000);
@@ -55,8 +55,8 @@ function loadLeaflet() {
  * يرسم خريطة في العنصر el. items في setMarkers: [{lat,lng,html,z,onClick}].
  * يرجّع null لو فشل كل شي.
  */
-export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 12, showShops = false, onMapClick } = {}) {
-  const opts = { center, zoom, showShops, onMapClick };
+export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 12, showShops = false, onMapClick, onPoiClick } = {}) {
+  const opts = { center, zoom, showShops, onMapClick, onPoiClick };
   // واجهة ثابتة تحوّل لـ OpenStreetMap لو رفضت قوقل المفتاح (حتى بعد ما تنرسم الخريطة)
   const last = {};
   let impl = null, switching = false;
@@ -92,6 +92,8 @@ export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 1
     setMe: (lat, lng) => { last.me = [lat, lng]; impl.setMe(lat, lng); },
     setPin: (lat, lng) => { last.pin = [lat, lng]; impl.setPin(lat, lng); },
     setCircle: (c) => { last.circle = c; impl.setCircle(c); },
+    setShowShops: (on) => impl.setShowShops?.(on),
+    placeName: (id) => impl.placeName ? impl.placeName(id) : Promise.resolve(""),
     center: () => impl.center(),
     resize: () => impl.resize(),
   };
@@ -102,10 +104,10 @@ const googleFailHandlers = new Set();
 let googleFailed = false;
 window.gm_authFailure = () => { googleFailed = true; googleFailHandlers.forEach((f) => f()); };
 
-function googleMap(g, el, { center, zoom, showShops, onMapClick }) {
+function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
   const map = new g.Map(el, {
     center: { lat: center[0], lng: center[1] }, zoom, styles: showShops ? SHOPS_STYLE : CLEAN_STYLE,
-    disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: false, backgroundColor: "#F5F3EF",
+    disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: !!(showShops && onPoiClick), backgroundColor: "#F5F3EF",
   });
   class Html extends g.OverlayView {
     constructor(pos, node, z) { super(); this.pos = new g.LatLng(pos.lat, pos.lng); this.node = node; this.z = z || 0; }
@@ -129,9 +131,24 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick }) {
     layers[layer].forEach((o) => o.setMap(null));
     layers[layer] = items.map((it) => { const o = new Html({ lat: it.lat, lng: it.lng }, node(it.html, cls, it.onClick), it.z); o.setMap(map); return o; });
   };
-  if (onMapClick) map.addListener("click", (e) => onMapClick({ lat: e.latLng.lat(), lng: e.latLng.lng() }));
+  map.addListener("click", (e) => {
+    // ضغط على محل من محلات Google: نوقف بطاقة قوقل ونعرض بطاقتنا
+    if (e.placeId && onPoiClick) { e.stop(); onPoiClick({ placeId: e.placeId, lat: e.latLng.lat(), lng: e.latLng.lng() }); return; }
+    if (onMapClick) onMapClick({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+  });
+  let places = null;
   return {
     kind: "google",
+    setShowShops: (on) => map.setOptions({ styles: on ? SHOPS_STYLE : CLEAN_STYLE, clickableIcons: !!(on && onPoiClick) }),
+    // اسم المحل (يحتاج Places API على المفتاح، وإلا يرجع فاضي)
+    placeName: (placeId) => new Promise((resolve) => {
+      try {
+        if (!g.places) return resolve("");
+        places = places || new g.places.PlacesService(map);
+        places.getDetails({ placeId, fields: ["name"] }, (r, status) => resolve(status === "OK" && r ? r.name || "" : ""));
+        setTimeout(() => resolve(""), 4000);
+      } catch { resolve(""); }
+    }),
     setMarkers: (items) => put("markers", items, "ov-mk"),
     setDots: (items) => put("dots", items, "ov-dot"),
     panTo: (lat, lng, z) => { map.panTo({ lat, lng }); if (z) map.setZoom(z); },

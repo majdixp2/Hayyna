@@ -312,3 +312,7 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .scope-pill.active { background: var(--green-soft); color: var(--green); border-color: #9BD3B0; }
 .scope-pill.flash { animation: scopeFlash .9s ease-out; }
 @keyframes scopeFlash { 0% { box-shadow: 0 0 0 0 rgba(45,106,79,.55); background: #BFE6CD; } 100% { box-shadow: 0 0 0 14px rgba(45,106,79,0); } }
+
+/* بطاقة محل Google غير المسجّل */
+.poi-card { text-align: center; }
+.poi-ico { font-size: 44px; width: 76px; height: 76px; border-radius: 22px; background: var(--green-soft); display: flex; align-items: center; justify-content: center; margin: 4px auto 6px; }

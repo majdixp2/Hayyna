@@ -387,10 +387,44 @@ export function openStore(uid, push) {
 }
 
 async function share(text, url, title) {
-  if (navigator.share) { try { await navigator.share({ title, text, url }); return; } catch (e) { if (e.name === "AbortError") return; } }
+  if (navigator.share) { try { await navigator.share(url ? { title, text, url } : { title, text }); return; } catch (e) { if (e.name === "AbortError") return; } }
+  if (!url) { window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank"); return; }
   try { await navigator.clipboard.writeText(`${text}\n${url}`); toast("نسخنا الرابط ✅"); } catch { prompt("انسخ الرابط:", url); }
 }
 function openViewer(src) { $("viewerImg").src = src; $("viewer").classList.remove("hidden"); }
+
+// ---------------- محلات Google غير المسجّلة: ادعه / أنا صاحب المحل ----------------
+const poiLog = (placeId, field) => setDoc(doc(db, "poiInterest", placeId), { [field]: increment(1), lastAt: serverTimestamp() }, { merge: true }).catch(() => {});
+async function openPoi({ placeId, lat, lng }) {
+  poiLog(placeId, "taps");
+  showSheet(`<div class="pad"><div class="spinner"></div></div>`);
+  const name = (await map?.placeName(placeId)) || "";
+  const cfg = state.config;
+  const shown = name || "هذا المحل";
+  const appLink = cfg.appLink || location.origin;
+  const invite = (cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة حيّنا. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')
+    .replace(/\{name\}/g, name || "محلكم") + "\n" + appLink;
+  showSheet(`<div class="pad poi-card">
+    <div class="poi-ico">🏪</div>
+    <div class="section-title" style="text-align:center">${esc(shown)}</div>
+    <p class="desc" style="text-align:center">هذا المحل مو مسجّل في حيّنا للحين</p>
+    ${cfg.poiInviteEnabled !== false ? `<button class="btn wa" id="poiInvite">📨 ادعه لحيّنا</button>` : ""}
+    <button class="btn dir" id="poiClaim">🏪 أنا صاحب المحل — سجّله</button>
+    <a class="btn call" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${encodeURIComponent(placeId)}" target="_blank" rel="noopener">فتح في Google Maps</a>
+  </div>`);
+  $("poiInvite")?.addEventListener("click", () => { poiLog(placeId, "invites"); share(invite, "", "حيّنا"); });
+  $("poiClaim").onclick = () => {
+    poiLog(placeId, "claims");
+    try { sessionStorage.setItem("hayyna_claim", JSON.stringify({ name, lat, lng })); } catch {}
+    hideSheet();
+    if (!state.user) { setTab("account"); openLogin("merchant"); return; }
+    if (state.role !== "merchant") setRole("merchant");
+    setTab("account");
+  };
+}
+export function takeClaim() {
+  try { const c = JSON.parse(sessionStorage.getItem("hayyna_claim") || "null"); sessionStorage.removeItem("hayyna_claim"); return c; } catch { return null; }
+}
 
 // ---------------- الفلاتر والأحياء ----------------
 function openFilters() {
@@ -742,7 +776,7 @@ onAuthStateChanged(auth, async (u) => {
 });
 
 // ---------------- البيانات ----------------
-onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; renderChips(); }, () => {});
+onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); }, () => {});
 onSnapshot(query(collection(db, "offers"), where("isApproved", "==", true)), (snap) => {
   state.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
   const first = !state.loaded; state.loaded = true;
@@ -758,8 +792,9 @@ onSnapshot(query(collection(db, "stores"), where("approved", "==", true)), (snap
 setInterval(renderAll, 60000);
 
 // الخريطة (تتحمّل بعد الواجهة)
-createMap($("map"), { key: MAPS_WEB_KEY, showShops: false }).then((m) => {
+createMap($("map"), { key: MAPS_WEB_KEY, showShops: state.config.showGooglePoi !== false, onPoiClick: (p) => openPoi(p) }).then((m) => {
   map = m; if (state.me) map.setMe(state.me.lat, state.me.lng);
+  map.setShowShops(state.config.showGooglePoi !== false);
   renderAll();
   if (state.view?.type === "o") { const o = state.offers.find((x) => x.id === state.view.id); if (o) { const { b } = nearestBranch(o); map.setView(b.latitude, b.longitude, 15); } }
 }).catch((e) => { console.error(e); toast("تعذّر تحميل الخريطة"); });

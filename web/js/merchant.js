@@ -3,7 +3,7 @@ import {
   collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDocs, getDoc, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { MAPS_WEB_KEY } from "../config.js";
-import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories } from "./app.js";
+import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
 
@@ -58,6 +58,9 @@ function draw() {
     <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
     <button class="btn call" id="mContact">💬 تواصل معنا</button>`;
   $("editStore").onclick = () => openStoreForm();
+  // جاي من "أنا صاحب المحل" على الخريطة: نفتح صفحة المتجر بموقع المحل
+  const claim = takeClaim();
+  if (claim) setTimeout(() => openStoreForm(claim), 50);
   $("newOffer").onclick = () => hasStore ? openOfferForm(null) : (toast("جهّز صفحة متجرك وموقعك أول 📍"), openStoreForm());
   $("mContact").onclick = m.ctx.contact;
   root.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => openOfferForm(m.offers.find((o) => o.id === b.dataset.edit)));
@@ -93,7 +96,7 @@ function mediaTile(src, key, label = "") {
   return `<div class="tile"><img src="${esc(src)}" alt=""><button class="tile-x" data-rm="${esc(key)}" aria-label="إزالة">✕</button>${label ? `<span class="tile-l">${label}</span>` : ""}</div>`;
 }
 
-export function openStoreForm() {
+export function openStoreForm(claim = null) {
   const p = m.profile || {};
   const f = {
     name: p.restaurantName || state.user?.displayName || "", category: p.cuisineType || "", about: p.about || "",
@@ -104,9 +107,11 @@ export function openStoreForm() {
     menu: (p.menuImages || []).map((u) => ({ url: u })), branches: JSON.parse(JSON.stringify(p.branches || [])),
   };
   if (!f.branches.length && (p.latitude || p.longitude)) f.branches.push({ id: "main", name: "الفرع الرئيسي", latitude: p.latitude, longitude: p.longitude, district: p.district || "", region: p.region || "", phone: p.phone || "", openMinute: p.openMinute ?? -1, closeMinute: p.closeMinute ?? -1, landmark: "" });
-  let dirty = false, saving = false;
+  if (claim && !p.restaurantName && claim.name) f.name = claim.name;
+  let dirty = !!claim, saving = false;
   const render = () => {
     $("pageBody").innerHTML = `<div class="form">
+      ${claim ? `<div class="hint-box">📍 حددنا موقع المحل من الخريطة. كمّل بيانات الفرع (الحي والجوال) واحفظ.</div>` : ""}
       <label class="label">اسم المتجر *</label><input id="sName" class="input" value="${esc(f.name)}" maxlength="100">
       <label class="label">التصنيف *</label>
       <div class="chips wrap">${[...new Set([...categories(), f.category].filter(Boolean))].map((c) => `<button class="chip${f.category === c ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
@@ -142,6 +147,8 @@ export function openStoreForm() {
   openPage("صفحة متجري", "", `<div id="sErr" class="err"></div><button class="btn dir big" id="sSave">حفظ صفحة المتجر ✓</button>`,
     () => (dirty && !saving ? confirm("في تعديلات ما انحفظت. تطلع بدون حفظ؟") : true));
   render();
+  if (claim) branchEditor({ id: "b" + Date.now().toString(36), name: f.branches.length ? (claim.name || "") : "الفرع الرئيسي", latitude: claim.lat, longitude: claim.lng,
+    district: "", region: "", phone: state.profile?.phone || "", openMinute: 720, closeMinute: 0, landmark: "" }, (nb) => { f.branches.push(nb); dirty = true; render(); }, true);
   $("sSave").onclick = async () => {
     const err = (t) => { $("sErr").textContent = t; };
     if (!f.name.trim()) return err("اكتب اسم المتجر.");
@@ -197,11 +204,11 @@ async function syncOffers(profile, direct) {
   }
 }
 
-function branchEditor(branch, onDone) {
+function branchEditor(branch, onDone, asNew = false) {
   const b = branch ? { ...branch } : { id: "b" + Date.now().toString(36), name: "", latitude: 0, longitude: 0, district: "", region: "", phone: "", openMinute: 720, closeMinute: 0, landmark: "" };
   const open24 = b.openMinute >= 0 && b.openMinute === b.closeMinute;
   showSheet(`<div class="pad form">
-    <div class="section-title">${branch ? "تعديل الفرع" : "فرع جديد"}</div>
+    <div class="section-title">${branch && !asNew ? "تعديل الفرع" : "فرع جديد"}</div>
     <label class="label">اسم الفرع (اختياري)</label><input id="bName" class="input" value="${esc(b.name)}" placeholder="مثال: فرع الحمدانية">
     <label class="label">موقع المحل * <small>(اضغط على الخريطة أو استخدم موقعك)</small></label>
     <div id="bMap" class="mini-map"></div>
@@ -214,7 +221,7 @@ function branchEditor(branch, onDone) {
     <div class="row2" id="bHours"><div><label class="label">يفتح</label>${hoursSelect("bOpen", b.openMinute >= 0 ? b.openMinute : 720)}</div>
       <div><label class="label">يقفل</label>${hoursSelect("bClose", b.closeMinute >= 0 ? b.closeMinute : 0)}</div></div>
     <div id="bErr" class="err"></div>
-    <button class="btn dir" id="bSave">${branch ? "حفظ الفرع" : "أضف الفرع"}</button></div>`);
+    <button class="btn dir" id="bSave">${branch && !asNew ? "حفظ الفرع" : "أضف الفرع"}</button></div>`);
   $("bHours").classList.toggle("hidden", open24);
   $("b24").onchange = (e) => $("bHours").classList.toggle("hidden", e.target.checked);
   let pos = (b.latitude || b.longitude) ? { lat: b.latitude, lng: b.longitude } : null, mapObj = null;
