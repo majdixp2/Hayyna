@@ -229,6 +229,20 @@ class RestaurantOfferRepository(
         ).await()
     }
 
+    /** بيانات الحساب: النوع والاسم والجوال (null = ما له وثيقة). */
+    suspend fun getUserProfile(uid: String): UserProfile? {
+        val d = usersCollection.document(uid).get().await()
+        if (!d.exists()) return null
+        return UserProfile(d.getString("role"), d.getString("name").orEmpty(), d.getString("phone").orEmpty())
+    }
+
+    suspend fun saveUserProfile(uid: String, role: String, name: String, phone: String) {
+        usersCollection.document(uid).set(
+            hashMapOf("role" to role, "name" to name.take(60), "phone" to phone.take(20), "updatedAt" to FieldValue.serverTimestamp()),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
     suspend fun getFavorites(uid: String): Set<String> =
         (usersCollection.document(uid).get().await().get("favorites") as? List<*>)
             ?.filterIsInstance<String>()?.toSet() ?: emptySet()
@@ -780,6 +794,8 @@ class RestaurantOfferRepository(
         runCatching { usersCollection.document(uid).delete().await() }
     }
 }
+
+data class UserProfile(val role: String?, val name: String, val phone: String)
 
 data class PoiConfig(
     val showGooglePoi: Boolean = true,

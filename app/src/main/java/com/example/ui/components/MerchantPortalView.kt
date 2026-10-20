@@ -98,9 +98,33 @@ fun MerchantPortalView(
     isVerified: Boolean = false,
     verifyStatus: String? = null,
     onOpenVerify: () -> Unit = {},
+    // الاسم والجوال
+    userName: String = "",
+    userPhone: String = "",
+    currentRole: String = com.example.ui.MerchantViewModel.ROLE_CUSTOMER,
+    onSaveProfile: (name: String, phone: String, role: String) -> Unit = { _, _, _ -> },
+    roleResolved: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    if (!isLoggedIn) {
+    var editProfile by remember { mutableStateOf(false) }
+    if (editProfile) {
+        ProfileEditDialog(
+            initialName = userName, initialPhone = userPhone, initialRole = currentRole, email = merchantEmail.orEmpty(),
+            onSave = onSaveProfile, onDismiss = { editProfile = false }
+        )
+    }
+    val subtitle = listOf(userName, toLocalPhone(userPhone)).filter { it.isNotBlank() }.joinToString(" • ")
+    if (isLoggedIn && !isRoleLoading && roleResolved && (userName.isBlank() || userPhone.isBlank())) {
+        ProfileSetupView(
+            initialName = userName,
+            initialPhone = userPhone,
+            initialRole = currentRole,
+            isSaving = false,
+            onSave = onSaveProfile,
+            onLogout = onLogout,
+            modifier = modifier
+        )
+    } else if (!isLoggedIn) {
         MerchantLoginView(
             isSigningIn = isSigningIn,
             onGoogleSignIn = onGoogleSignIn,
@@ -114,8 +138,9 @@ fun MerchantPortalView(
         }
     } else if (!isMerchantAccount) {
         CustomerAccountView(
-            email = merchantEmail.orEmpty(),
-            name = merchantRestaurantName,
+            email = toLocalPhone(userPhone),
+            name = userName,
+            onEditProfile = { editProfile = true },
             favoritesCount = favoritesCount,
             onShowFavorites = onShowFavorites,
             onBecomeMerchant = onBecomeMerchant,
@@ -127,7 +152,8 @@ fun MerchantPortalView(
         )
     } else {
         MerchantDashboard(
-            merchantEmail = merchantEmail.orEmpty(),
+            merchantEmail = subtitle,
+            onEditProfile = { editProfile = true },
             merchantName = merchantRestaurantName,
             offers = merchantOffers,
             nowMillis = nowMillis,
@@ -305,6 +331,7 @@ private fun AccountChoiceCard(
 private fun CustomerAccountView(
     email: String,
     name: String,
+    onEditProfile: () -> Unit,
     favoritesCount: Int,
     onShowFavorites: () -> Unit,
     onBecomeMerchant: () -> Unit,
@@ -338,6 +365,10 @@ private fun CustomerAccountView(
                 Column(Modifier.weight(1f)) {
                     Text(name.ifBlank { "أهلاً بك" }, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("🛍️ حساب زبون", fontSize = 11.sp, color = CalmSagePrimary, fontWeight = FontWeight.Bold)
+                }
+                androidx.compose.material3.IconButton(onClick = onEditProfile) {
+                    Icon(Icons.Default.Edit, contentDescription = "تعديل بياناتي", tint = CalmSagePrimary)
                 }
                 OutlinedButton(
                     onClick = onLogout,
@@ -428,6 +459,7 @@ private fun CustomerAccountView(
 @Composable
 private fun MerchantDashboard(
     merchantEmail: String,
+    onEditProfile: () -> Unit,
     merchantName: String,
     offers: List<RestaurantOffer>,
     nowMillis: Long,
@@ -485,6 +517,9 @@ private fun MerchantDashboard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                        }
+                        androidx.compose.material3.IconButton(onClick = onEditProfile) {
+                            Icon(Icons.Default.Edit, contentDescription = "تعديل بياناتي", tint = CalmSagePrimary)
                         }
                         OutlinedButton(
                             onClick = onLogout,

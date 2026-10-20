@@ -616,12 +616,18 @@ class MerchantViewModel(
     val isRoleLoading = MutableStateFlow(false)
     private var pendingRole: String? = null
 
+    /** اسم المستخدم ورقم جواله (يكتبها أول مرة يدخل). */
+    val userName = MutableStateFlow("")
+    val userPhone = MutableStateFlow("")
+
     init {
         auth?.addAuthStateListener(authListener)
         viewModelScope.launch {
             currentUser.collect { user ->
                 merchantProfile.value = null
                 userRole.value = null
+                userName.value = ""
+                userPhone.value = ""
                 if (user != null) {
                     resolveRole(user.uid)
                     merchantProfile.value = runCatching { repository.getMerchantProfile(user.uid) }.getOrNull()
@@ -640,8 +646,13 @@ class MerchantViewModel(
     private suspend fun resolveRole(uid: String) {
         isRoleLoading.value = true
         try {
-            val saved = runCatching { repository.getUserRole(uid) }.getOrNull()
+            val profile = runCatching { repository.getUserProfile(uid) }.getOrNull()
+            val saved = profile?.role
+            userName.value = profile?.name.orEmpty()
+            userPhone.value = profile?.phone.orEmpty()
             val role = when {
+                // اختار نوع الحساب من الزر وهو حساب جديد
+                saved == null && pendingRole != null -> pendingRole!!
                 saved != null -> saved
                 // حسابات قديمة: عنده ملف متجر = تاجر
                 pendingRole == null && runCatching { repository.getMerchantProfile(uid) }.getOrNull() != null -> ROLE_MERCHANT
@@ -662,6 +673,19 @@ class MerchantViewModel(
             if (pendingClaim.value != null && (userRole.value == ROLE_MERCHANT || isAdmin.value)) {
                 isBranchesPageOpen.value = true
             }
+        }
+    }
+
+    /** يحفظ الاسم والجوال ونوع الحساب (أول دخول أو تعديل). */
+    fun saveProfile(name: String, phone: String, role: String) {
+        val user = currentUser.value ?: return
+        launchSafely("تعذّر حفظ بياناتك. حاول مرة ثانية.") {
+            repository.saveUserProfile(user.uid, role, name.trim(), phone)
+            userName.value = name.trim()
+            userPhone.value = phone
+            val becameMerchant = role == ROLE_MERCHANT && userRole.value != ROLE_MERCHANT
+            userRole.value = role
+            toast(if (becameMerchant) "أهلاً بك 🏪 ابدأ بتجهيز صفحة متجرك" else "انحفظت بياناتك ✅")
         }
     }
 

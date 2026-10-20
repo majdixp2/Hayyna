@@ -159,6 +159,8 @@ fun MerchantStoreScreen(
     val isContactOpen by viewModel.isContactOpen.collectAsStateWithLifecycle()
     val isSendingFeedback by viewModel.isSendingFeedback.collectAsStateWithLifecycle()
     val userRole by viewModel.userRole.collectAsStateWithLifecycle()
+    val userName by viewModel.userName.collectAsStateWithLifecycle()
+    val userPhone by viewModel.userPhone.collectAsStateWithLifecycle()
     val isRoleLoading by viewModel.isRoleLoading.collectAsStateWithLifecycle()
     val approvedStores by viewModel.approvedStores.collectAsStateWithLifecycle()
     val pendingStores by viewModel.pendingStores.collectAsStateWithLifecycle()
@@ -680,6 +682,11 @@ fun MerchantStoreScreen(
                                     }
                                 },
                                 isMerchantAccount = isAdmin || userRole == MerchantViewModel.ROLE_MERCHANT,
+                                userName = userName,
+                                userPhone = userPhone,
+                                currentRole = userRole ?: MerchantViewModel.ROLE_CUSTOMER,
+                                roleResolved = userRole != null,
+                                onSaveProfile = { n, p, r -> viewModel.saveProfile(n, p, r) },
                                 isRoleLoading = isRoleLoading,
                                 onBecomeMerchant = { viewModel.becomeMerchant() },
                                 favoritesCount = favoriteIds.size,
