@@ -159,7 +159,8 @@ fun RestaurantOfferDetailSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
+                    // الفيديو طولي مثل الريلز، فنعطيه مساحة أطول
+                    .height(if (offer.mediaType == MediaType.VIDEO) 420.dp else 240.dp)
             ) {
                 val gallery = offer.gallery
                 if (offer.mediaType == MediaType.IMAGE && gallery.size > 1) {
@@ -338,7 +339,7 @@ fun RestaurantOfferDetailSheet(
 
             // التوصيل والمَعلَم والأصناف
             run {
-                val del = deliveryText(offer.delivery, offer.deliveryFee, offer.deliveryMinOrder)
+                val del = deliveryText(offer.delivery, offer.deliveryFee, offer.deliveryMinOrder, offer.deliveryFreeOver)
                 val lm = (offer.branches.firstOrNull { it.id == shown.selectedBranchId } ?: offer.effectiveBranches.firstOrNull())
                     ?.landmark.orEmpty()
                 if (del != null || lm.isNotBlank()) {

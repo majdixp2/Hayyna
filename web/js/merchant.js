@@ -99,6 +99,7 @@ export function openStoreForm() {
     name: p.restaurantName || state.user?.displayName || "", category: p.cuisineType || "", about: p.about || "",
     priceFrom: p.priceFrom > 0 ? String(p.priceFrom) : "", delivery: !!p.delivery,
     fee: p.deliveryFee > 0 ? String(p.deliveryFee) : "", min: p.deliveryMinOrder > 0 ? String(p.deliveryMinOrder) : "",
+    free: p.deliveryFreeOver > 0 ? String(p.deliveryFreeOver) : "",
     logo: p.logoUrl || "", logoFile: null, cover: p.coverUrl || "", coverFile: null,
     menu: (p.menuImages || []).map((u) => ({ url: u })), branches: JSON.parse(JSON.stringify(p.branches || [])),
   };
@@ -158,6 +159,7 @@ export function openStoreForm() {
         logoUrl: logo || "", branches: f.branches.slice(0, 50), coverUrl: cover || "", about: f.about.trim().slice(0, 500),
         priceFrom: Number(f.priceFrom) > 0 ? Number(f.priceFrom) : 0, menuImages: menu.slice(0, 10),
         delivery: f.delivery, deliveryFee: f.delivery ? Number(f.fee) || 0 : 0, deliveryMinOrder: f.delivery ? Number(f.min) || 0 : 0,
+        deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0,
         updatedAt: serverTimestamp(),
       };
       const uid = state.user.uid, direct = canPublishDirectly();
@@ -165,7 +167,7 @@ export function openStoreForm() {
       await setDoc(doc(db, "stores", uid), {
         uid, name: profile.restaurantName, logoUrl: profile.logoUrl, coverUrl: profile.coverUrl, about: profile.about, category: profile.cuisineType.slice(0, 60),
         priceFrom: profile.priceFrom, menuImages: profile.menuImages, branches: profile.branches, phone: (primary.phone || "").slice(0, 30), approved: direct,
-        delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, updatedAt: serverTimestamp(),
+        delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver, updatedAt: serverTimestamp(),
       }, { merge: true });
       await syncOffers(profile, direct);
       saving = false; dirty = false; closePage(false);
@@ -186,7 +188,7 @@ async function syncOffers(profile, direct) {
     const branches = (o.branches || []).length && !updated.length ? o.branches : updated;
     const primary = branches[0];
     const patch = {
-      logoUrl: profile.logoUrl, branches, delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder,
+      logoUrl: profile.logoUrl, branches, delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver,
       ...(primary ? { latitude: primary.latitude, longitude: primary.longitude, region: primary.region || o.region, district: primary.district || o.district,
         phone: primary.phone || o.phone, openMinute: primary.openMinute ?? o.openMinute, closeMinute: primary.closeMinute ?? o.closeMinute } : {}),
       ...(direct ? {} : { isApproved: false }),
@@ -239,12 +241,14 @@ function branchEditor(branch, onDone) {
 function deliveryFields(f) {
   return `<label class="switch-row"><span>🛵 عندنا توصيل</span><input type="checkbox" id="dOn" ${f.delivery ? "checked" : ""}></label>
     ${f.delivery ? `<div class="row2"><div><label class="label">رسوم التوصيل (0 = مجاني)</label><input id="dFee" class="input" inputmode="decimal" value="${esc(f.fee)}" placeholder="0"></div>
-      <div><label class="label">للطلبات فوق (اختياري)</label><input id="dMin" class="input" inputmode="decimal" value="${esc(f.min)}" placeholder="مثال: 40"></div></div>` : ""}`;
+      <div><label class="label">أقل طلب للتوصيل (اختياري)</label><input id="dMin" class="input" inputmode="decimal" value="${esc(f.min)}" placeholder="مثال: 40"></div></div>
+      <label class="label">توصيل مجاني للطلبات فوق (اختياري)</label><input id="dFree" class="input" inputmode="decimal" value="${esc(f.free || "")}" placeholder="مثال: 50">` : ""}`;
 }
 function bindDelivery(f, rerender) {
   $("dOn").onchange = (e) => { f.delivery = e.target.checked; rerender(); };
   if ($("dFee")) $("dFee").oninput = (e) => { f.fee = e.target.value; };
   if ($("dMin")) $("dMin").oninput = (e) => { f.min = e.target.value; };
+  if ($("dFree")) $("dFree").oninput = (e) => { f.free = e.target.value; };
 }
 
 // =================== نموذج العرض ===================
@@ -266,6 +270,7 @@ export async function openOfferForm(editing) {
     days: (e?.dailyPercents || []).length ? e.dailyPercents.map(String) : ["", ""], scope: e?.itemsScope || "",
     tags: (e?.tags || []).join("، "), delivery: e ? !!e.delivery : !!p.delivery,
     fee: X.money((e ? e.deliveryFee : p.deliveryFee) || 0).replace(/^0$/, ""), min: X.money((e ? e.deliveryMinOrder : p.deliveryMinOrder) || 0).replace(/^0$/, ""),
+    free: X.money((e ? e.deliveryFreeOver : p.deliveryFreeOver) || 0).replace(/^0$/, ""), customDays: "",
     opening: !!e?.grandOpening, start: X.ms(e?.startsAt) || null, durIdx: 1, keepExpiry: !!e,
     all: !e || !(e.branches || []).length || p.branches.every((b) => (e.branches || []).some((x) => x.id === b.id)),
     sel: new Set((e?.branches || []).map((b) => b.id)),
@@ -302,7 +307,9 @@ export async function openOfferForm(editing) {
       <label class="switch-row"><span>🎉 عرض افتتاح (محل جديد)</span><input type="checkbox" id="oOpen" ${f.opening ? "checked" : ""}></label>
       ${f.percentMode && f.tiered ? "" : `<div class="section-title">⏰ مدة العرض</div><div class="chips wrap">
         ${e ? `<button class="chip${f.keepExpiry ? " on" : ""}" data-dur="keep">بدون تغيير (${esc(X.remainingText(e)?.t || "بدون انتهاء")})</button>` : ""}
-        ${X.DURATIONS.map((d, i) => `<button class="chip${!f.keepExpiry && f.durIdx === i ? " on" : ""}" data-dur="${i}">${d.label}</button>`).join("")}</div>`}
+        ${X.DURATIONS.map((d, i) => `<button class="chip${!f.keepExpiry && f.durIdx === i ? " on" : ""}" data-dur="${i}">${d.label}</button>`).join("")}
+        <button class="chip${!f.keepExpiry && f.durIdx === -1 ? " on" : ""}" data-dur="-1">✎ عدد أيام</button></div>
+        ${!f.keepExpiry && f.durIdx === -1 ? `<input id="oDays" class="input" inputmode="numeric" maxlength="2" value="${esc(f.customDays)}" placeholder="كم يوم؟ مثال: 2">` : ""}`}
       <small class="hint">بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة. ✨ التعبئة الذكية من الصورة متاحة في تطبيق أندرويد.</small>
     </div>`;
     const set = (id, k) => { const el = $(id); if (el) el.oninput = (ev) => { f[k] = ev.target.value; dirty = true; }; };
@@ -323,6 +330,7 @@ export async function openOfferForm(editing) {
     $("oNow").onclick = () => { f.start = null; render(); };
     $("oStart").onchange = (ev) => { if (!ev.target.value) { f.start = null; } else { const [y, mo, d] = ev.target.value.split("-").map(Number); f.start = new Date(y, mo - 1, d).getTime(); } render(); };
     $("oOpen").onchange = (ev) => { f.opening = ev.target.checked; };
+    $("oDays")?.addEventListener("input", (ev) => { f.customDays = ev.target.value.replace(/\D/g, "").slice(0, 2); });
     body.querySelectorAll("[data-dur]").forEach((b) => b.onclick = () => { if (b.dataset.dur === "keep") f.keepExpiry = true; else { f.keepExpiry = false; f.durIdx = +b.dataset.dur; } render(); });
   };
   openPage(e ? "تعديل العرض" : "عرض جديد", "", `<div id="oErr" class="err"></div><button class="btn dir big" id="oSave">${e ? "حفظ التعديلات ✓" : "انشر العرض ✨"}</button>`,
@@ -338,9 +346,12 @@ export async function openOfferForm(editing) {
     const created = X.ms(e?.createdAt);
     const base = f.start || (useTiers && created ? created : now);
     const expiry = useTiers ? X.midnight(base) + steps.length * DAY
-      : f.keepExpiry && e ? X.ms(e.expiresAt) : (X.DURATIONS[f.durIdx].days ? base + X.DURATIONS[f.durIdx].days * DAY : null);
+      : f.keepExpiry && e ? X.ms(e.expiresAt)
+      : f.durIdx === -1 ? ((+f.customDays >= 1 && +f.customDays <= 90) ? base + (+f.customDays) * DAY : null)
+      : (X.DURATIONS[f.durIdx].days ? base + X.DURATIONS[f.durIdx].days * DAY : null);
     if (!f.media.length) return err("أرفق صورة أو فيديو للعرض.");
     if (!f.title.trim()) return err("اكتب عنوان العرض.");
+    if (!useTiers && !f.keepExpiry && f.durIdx === -1 && !(+f.customDays >= 1 && +f.customDays <= 90)) return err("اكتب عدد أيام العرض (من 1 إلى 90).");
     if (!f.percentMode && !(price > 0)) return err("اكتب سعر صحيح.");
     if (useTiers && (steps.length < 2 || steps.length !== f.days.length || steps.some((n) => n < 1 || n > 99))) return err("اكتب نسبة الخصم لكل يوم (من 1 إلى 99).");
     if (f.percentMode && !useTiers && !(pct >= 1 && pct <= 99)) return err("اكتب نسبة الخصم (من 1 إلى 99).");
@@ -367,6 +378,7 @@ export async function openOfferForm(editing) {
         discountPercent: f.percentMode ? discount : 0, dailyPercents: useTiers ? steps : [], itemsScope: f.percentMode ? f.scope.trim().slice(0, 40) : "",
         grandOpening: f.opening, tags: f.tags.split(/[,،\n#]/).map((t) => t.trim()).filter((t) => t && t.length <= 25).slice(0, 12),
         delivery: f.delivery, deliveryFee: f.delivery ? Number(f.fee) || 0 : 0, deliveryMinOrder: f.delivery ? Number(f.min) || 0 : 0,
+        deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0,
         logoUrl: p.logoUrl || "", branches: branches.slice(0, 50),
       };
       if (e) {
@@ -376,7 +388,7 @@ export async function openOfferForm(editing) {
         await setDoc(ref, { ...data, id: ref.id, merchantId: state.user.uid, isApproved: direct, isFeatured: false,
           viewsCount: 0, directionsCount: 0, whatsappCount: 0, reportsCount: 0, createdAt: serverTimestamp() });
       }
-      await setDoc(doc(db, "merchants", state.user.uid), { delivery: data.delivery, deliveryFee: data.deliveryFee, deliveryMinOrder: data.deliveryMinOrder }, { merge: true }).catch(() => {});
+      await setDoc(doc(db, "merchants", state.user.uid), { delivery: data.delivery, deliveryFee: data.deliveryFee, deliveryMinOrder: data.deliveryMinOrder, deliveryFreeOver: data.deliveryFreeOver }, { merge: true }).catch(() => {});
       saving = false; dirty = false; closePage(false);
       toast(!direct ? "وصل عرضك للمراجعة ⏳ بيظهر على الخريطة بعد الموافقة" : e ? "تم حفظ التعديلات ✅" : "تم نشر العرض ✅", true);
     } catch (ex) {

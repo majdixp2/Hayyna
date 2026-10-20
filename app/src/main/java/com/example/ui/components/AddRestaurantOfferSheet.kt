@@ -130,6 +130,7 @@ fun AddRestaurantOfferSheet(
     var delivery by remember { mutableStateOf(editingOffer?.delivery ?: profile?.delivery ?: false) }
     var deliveryFeeText by remember { mutableStateOf(moneyText(editingOffer?.deliveryFee ?: profile?.deliveryFee ?: 0.0)) }
     var deliveryMinText by remember { mutableStateOf(moneyText(editingOffer?.deliveryMinOrder ?: profile?.deliveryMinOrder ?: 0.0)) }
+    var deliveryFreeText by remember { mutableStateOf(moneyText(editingOffer?.deliveryFreeOver ?: profile?.deliveryFreeOver ?: 0.0)) }
     var landmark by remember {
         mutableStateOf(editingOffer?.branches?.firstOrNull()?.landmark ?: profile?.branches?.firstOrNull()?.landmark.orEmpty())
     }
@@ -161,6 +162,8 @@ fun AddRestaurantOfferSheet(
 
     // ---------- المدة ----------
     var expiryOptionIndex by remember { mutableStateOf(0) }
+    // مدة مخصصة بالأيام (expiryOptionIndex = -1)
+    var customDaysText by remember { mutableStateOf("") }
     var keepCurrentExpiry by remember { mutableStateOf(isEditing) }
 
     var errorMessage by remember { mutableStateOf("") }
@@ -204,6 +207,7 @@ fun AddRestaurantOfferSheet(
         val newExpiry: Long? = when {
             useTiers -> OfferPricing.midnight(base) + steps.size * dayMs
             keepCurrentExpiry -> editingOffer?.expiresAt?.toDate()?.time
+            expiryOptionIndex < 0 -> customDaysText.toIntOrNull()?.takeIf { it in 1..90 }?.let { base + it * dayMs }
             else -> EXPIRY_OPTIONS[expiryOptionIndex].days?.let { base + it * dayMs }
         }
         val chosenBranches: List<Branch> = if (hasBranches) {
@@ -229,6 +233,7 @@ fun AddRestaurantOfferSheet(
         errorMessage = when {
             restaurantName.isBlank() -> "يرجى كتابة اسم المتجر."
             offerTitle.isBlank() -> "يرجى كتابة عنوان العرض."
+            !useTiers && !keepCurrentExpiry && expiryOptionIndex < 0 && customDaysText.toIntOrNull()?.takeIf { it in 1..90 } == null -> "اكتب عدد أيام العرض (من 1 إلى 90)."
             !percentMode && (price == null || price <= 0) -> "يرجى إدخال سعر صحيح للعرض."
             useTiers && (steps.size < 2 || steps.size != dayPercents.size || steps.any { it !in 1..99 }) -> "اكتب نسبة الخصم لكل يوم (من 1 إلى 99)."
             percentMode && !useTiers && (pct == null || pct !in 1..99) -> "اكتب نسبة الخصم (من 1 إلى 99)."
@@ -285,7 +290,8 @@ fun AddRestaurantOfferSheet(
             tags = parseTags(tagsText),
             delivery = delivery,
             deliveryFee = if (delivery) deliveryFeeText.toDoubleOrNull() ?: 0.0 else 0.0,
-            deliveryMinOrder = if (delivery) deliveryMinText.toDoubleOrNull() ?: 0.0 else 0.0
+            deliveryMinOrder = if (delivery) deliveryMinText.toDoubleOrNull() ?: 0.0 else 0.0,
+            deliveryFreeOver = if (delivery) deliveryFreeText.toDoubleOrNull() ?: 0.0 else 0.0
         )
         onSaveOffer(offer)
     }
@@ -435,6 +441,7 @@ fun AddRestaurantOfferSheet(
                                         delivery = true
                                         d.deliveryFee?.let { deliveryFeeText = moneyText(it) }
                                         d.deliveryMinOrder?.let { deliveryMinText = moneyText(it) }
+                                        d.deliveryFreeOver?.let { deliveryFreeText = moneyText(it) }
                                     }
                                     if (!hasBranches && landmark.isBlank() && d.landmark.isNotBlank()) landmark = d.landmark
                                     if (!hasBranches) {
@@ -442,11 +449,10 @@ fun AddRestaurantOfferSheet(
                                         if (district.isBlank() && d.district.isNotBlank()) district = d.district
                                     }
                                     d.days?.let { days ->
-                                        val idx = EXPIRY_OPTIONS.indexOfFirst { it.label == com.example.ui.durationLabel(days) }
-                                        if (idx >= 0) {
-                                            expiryOptionIndex = idx
-                                            keepCurrentExpiry = false
-                                        }
+                                        val idx = EXPIRY_OPTIONS.indexOfFirst { it.days == days }
+                                        expiryOptionIndex = idx
+                                        if (idx < 0) customDaysText = days.coerceIn(1, 90).toString()
+                                        keepCurrentExpiry = false
                                     }
                                 }
                             },
@@ -575,7 +581,9 @@ fun AddRestaurantOfferSheet(
                         feeText = deliveryFeeText,
                         onFeeChange = { deliveryFeeText = it },
                         minText = deliveryMinText,
-                        onMinChange = { deliveryMinText = it }
+                        onMinChange = { deliveryMinText = it },
+                        freeText = deliveryFreeText,
+                        onFreeChange = { deliveryFreeText = it }
                     )
 
                     Text("تصنيف المتجر", fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -724,6 +732,28 @@ fun AddRestaurantOfferSheet(
                                 label = { Text(EXPIRY_OPTIONS[index].label, fontSize = 12.sp) }
                             )
                         }
+                        item {
+                            FilterChip(
+                                selected = !keepCurrentExpiry && expiryOptionIndex < 0,
+                                onClick = {
+                                    keepCurrentExpiry = false
+                                    expiryOptionIndex = -1
+                                },
+                                label = { Text("✎ عدد أيام", fontSize = 12.sp) }
+                            )
+                        }
+                    }
+                    if (!keepCurrentExpiry && expiryOptionIndex < 0) {
+                        OutlinedTextField(
+                            value = customDaysText,
+                            onValueChange = { v -> customDaysText = v.filter { it.isDigit() }.take(2) },
+                            label = { Text("كم يوم يستمر العرض؟") },
+                            placeholder = { Text("مثال: 2") },
+                            suffix = { Text("يوم") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                     }
                     Text("بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

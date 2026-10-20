@@ -100,6 +100,7 @@ fun BranchesPage(
     var delivery by remember { mutableStateOf(profile.delivery) }
     var deliveryFeeText by remember { mutableStateOf(moneyText(profile.deliveryFee)) }
     var deliveryMinText by remember { mutableStateOf(moneyText(profile.deliveryMinOrder)) }
+    var deliveryFreeText by remember { mutableStateOf(moneyText(profile.deliveryFreeOver)) }
     val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) coverLocal = uri.toString()
     }
@@ -276,7 +277,9 @@ fun BranchesPage(
                         feeText = deliveryFeeText,
                         onFeeChange = { deliveryFeeText = it },
                         minText = deliveryMinText,
-                        onMinChange = { deliveryMinText = it }
+                        onMinChange = { deliveryMinText = it },
+                        freeText = deliveryFreeText,
+                        onFreeChange = { deliveryFreeText = it }
                     )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -405,7 +408,8 @@ fun BranchesPage(
                                             menuImages = menuImages.toList(),
                                             delivery = delivery,
                                             deliveryFee = if (delivery) deliveryFeeText.toDoubleOrNull() ?: 0.0 else 0.0,
-                                            deliveryMinOrder = if (delivery) deliveryMinText.toDoubleOrNull() ?: 0.0 else 0.0
+                                            deliveryMinOrder = if (delivery) deliveryMinText.toDoubleOrNull() ?: 0.0 else 0.0,
+                                            deliveryFreeOver = if (delivery) deliveryFreeText.toDoubleOrNull() ?: 0.0 else 0.0
                                         ),
                                         StoreMediaEdits(newLogo = logoLocal, newCover = coverLocal)
                                     )

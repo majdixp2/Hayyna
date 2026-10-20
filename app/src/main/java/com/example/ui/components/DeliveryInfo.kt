@@ -24,12 +24,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** بيانات التوصيل كنص: "🛵 توصيل 10 ر.س • للطلبات فوق 40 ر.س" (null = ما يوصّل). */
-fun deliveryText(delivery: Boolean, fee: Double, minOrder: Double): String? {
+fun deliveryText(delivery: Boolean, fee: Double, minOrder: Double, freeOver: Double = 0.0): String? {
     if (!delivery) return null
     fun f(v: Double) = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
     val feePart = if (fee <= 0) "توصيل مجاني" else "توصيل ${f(fee)} ر.س"
     val minPart = if (minOrder > 0) " • للطلبات فوق ${f(minOrder)} ر.س" else ""
-    return "🛵 $feePart$minPart"
+    val freePart = if (fee > 0 && freeOver > 0) " • مجاني فوق ${f(freeOver)} ر.س" else ""
+    return "🛵 $feePart$minPart$freePart"
 }
 
 fun moneyText(v: Double): String = when {
@@ -46,7 +47,9 @@ fun DeliveryEditor(
     feeText: String,
     onFeeChange: (String) -> Unit,
     minText: String,
-    onMinChange: (String) -> Unit
+    onMinChange: (String) -> Unit,
+    freeText: String = "",
+    onFreeChange: (String) -> Unit = {}
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -68,7 +71,7 @@ fun DeliveryEditor(
                 OutlinedTextField(
                     value = minText,
                     onValueChange = { v -> onMinChange(v.filter { it.isDigit() || it == '.' }.take(6)) },
-                    label = { Text("للطلبات فوق") },
+                    label = { Text("أقل طلب للتوصيل") },
                     placeholder = { Text("اختياري") },
                     suffix = { Text("ر.س") },
                     singleLine = true,
@@ -76,6 +79,16 @@ fun DeliveryEditor(
                     modifier = Modifier.weight(1f)
                 )
             }
+            OutlinedTextField(
+                value = freeText,
+                onValueChange = { v -> onFreeChange(v.filter { it.isDigit() || it == '.' }.take(6)) },
+                label = { Text("توصيل مجاني للطلبات فوق (اختياري)") },
+                placeholder = { Text("مثال: 50") },
+                suffix = { Text("ر.س") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

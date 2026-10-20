@@ -24,7 +24,9 @@ data class MerchantProfile(
     // التوصيل
     val delivery: Boolean = false,
     val deliveryFee: Double = 0.0,
-    val deliveryMinOrder: Double = 0.0
+    val deliveryMinOrder: Double = 0.0,
+    // توصيل مجاني للطلبات فوق هذا المبلغ (0 = ما فيه)
+    val deliveryFreeOver: Double = 0.0
 ) {
     val hasLocation: Boolean get() = latitude != 0.0 || longitude != 0.0
 }

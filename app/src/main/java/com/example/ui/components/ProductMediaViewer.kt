@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Videocam
@@ -91,11 +93,31 @@ fun ProductMediaViewer(
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
-        if (mediaType == MediaType.VIDEO) {
+        if (mediaType == MediaType.VIDEO && !autoPlayVideo) {
+            // معاينة فقط (البطاقات والقوائم): صورة من الفيديو + زر تشغيل، بدون تشغيل فعلي
+            // عشان ما يشتغل فيديوهين مع بعض لما تنفتح صفحة العرض
+            val thumb = remember(mediaUri) { com.example.data.CloudinaryUrls.videoThumbnail(mediaUri, 480) }
+            Box(Modifier.fillMaxSize().background(Color(0xFF111111)), contentAlignment = Alignment.Center) {
+                if (thumb != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context).data(thumb).crossfade(true).build(),
+                        contentDescription = "فيديو العرض",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.55f), modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "فيديو", tint = Color.White, modifier = Modifier.padding(6.dp).fillMaxSize())
+                }
+            }
+        } else if (mediaType == MediaType.VIDEO) {
+            var showFullscreen by remember { mutableStateOf(false) }
+            var resumeAt by remember { mutableStateOf(0) }
             // Video playback container
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(Color.Black)
                     .clickable {
                         videoViewRef?.let { vv ->
                             if (vv.isPlaying) {
@@ -112,103 +134,90 @@ fun ProductMediaViewer(
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
-                            VideoView(ctx).apply {
-                                val uri = if (mediaUri.startsWith("http") || mediaUri.startsWith("content://") || mediaUri.startsWith("file://")) {
-                                    Uri.parse(mediaUri)
-                                } else {
-                                    Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4")
-                                }
-                                setVideoURI(uri)
-                                setOnPreparedListener { mp ->
+                            // الفيديو داخل FrameLayout بالوسط عشان يحافظ على مقاسه الطولي (ريلز) بدون تمطيط
+                            android.widget.FrameLayout(ctx).apply {
+                                val vv = VideoView(ctx)
+                                addView(vv, android.widget.FrameLayout.LayoutParams(
+                                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                                    android.view.Gravity.CENTER
+                                ))
+                                vv.setVideoURI(Uri.parse(mediaUri))
+                                vv.setOnPreparedListener { mp ->
                                     mp.isLooping = true
-                                    if (autoPlayVideo) {
-                                        start()
-                                        isVideoPlaying = true
-                                    }
+                                    vv.start()
+                                    isVideoPlaying = true
                                 }
-                                setOnErrorListener { _, _, _ ->
+                                vv.setOnErrorListener { _, _, _ ->
                                     hasVideoError = true
                                     false
                                 }
-                                videoViewRef = this
+                                videoViewRef = vv
                             }
-                        },
-                        update = { vv ->
-                            videoViewRef = vv
                         }
                     )
                 }
 
-                // Overlay Controls & Badges
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = 0.4f),
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.6f)
-                                )
-                            )
+                // Play / Pause central button (يظهر وقت الإيقاف فقط)
+                if (!isVideoPlaying) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.65f),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(56.dp)
+                            .testTag("video_play_toggle_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "تشغيل الفيديو",
+                            tint = Color.White,
+                            modifier = Modifier.padding(12.dp).fillMaxSize()
                         )
-                )
+                    }
+                }
 
-                // Play / Pause central button
+                // ملء الشاشة
                 Surface(
                     shape = CircleShape,
-                    color = Color.Black.copy(alpha = 0.65f),
+                    color = Color.Black.copy(alpha = 0.55f),
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(56.dp)
-                        .testTag("video_play_toggle_button")
+                        .align(Alignment.BottomStart)
+                        .padding(10.dp)
+                        .size(40.dp)
+                        .clickable {
+                            videoViewRef?.let { vv ->
+                                resumeAt = vv.currentPosition
+                                vv.pause()
+                                isVideoPlaying = false
+                            }
+                            showFullscreen = true
+                        }
                 ) {
                     Icon(
-                        imageVector = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isVideoPlaying) "إيقاف مؤقت" else "تشغيل الفيديو",
+                        imageVector = Icons.Default.Fullscreen,
+                        contentDescription = "ملء الشاشة",
                         tint = Color.White,
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .fillMaxSize()
+                        modifier = Modifier.padding(8.dp).fillMaxSize()
                     )
                 }
-
-                // Video indicator banner at top
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .background(
-                            Color(0xFFE11D48).copy(alpha = 0.9f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Videocam,
-                        contentDescription = "فيديو إعلاني",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "فيديو إعلاني",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
+                if (hasVideoError) {
+                    Text("تعذّر تشغيل الفيديو", color = Color.White, modifier = Modifier.align(Alignment.Center))
                 }
+            }
 
-                // Video status / hint at bottom
-                Text(
-                    text = if (isVideoPlaying) "انقر للإيقاف المؤقت" else "انقر لتشغيل الفيديو الإعلاني",
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 8.dp)
+            if (showFullscreen) {
+                FullscreenVideoDialog(
+                    url = mediaUri,
+                    startAt = resumeAt,
+                    onDismiss = { position ->
+                        showFullscreen = false
+                        videoViewRef?.let { vv ->
+                            vv.seekTo(position)
+                            vv.start()
+                            isVideoPlaying = true
+                        }
+                    }
                 )
             }
 
@@ -270,5 +279,52 @@ fun ProductMediaViewer(
                 )
             }
         }
+    }
+}
+
+/** فيديو بملء الشاشة (طولي أو عرضي) مع زر إغلاق. يرجّع مكان الوقوف عشان يكمّل الفيديو الصغير من نفس النقطة. */
+@Composable
+fun FullscreenVideoDialog(url: String, startAt: Int, onDismiss: (position: Int) -> Unit) {
+    var vvRef by remember { mutableStateOf<VideoView?>(null) }
+    val close = { onDismiss(vvRef?.currentPosition ?: startAt) }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = close,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    android.widget.FrameLayout(ctx).apply {
+                        val vv = VideoView(ctx)
+                        addView(vv, android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                            android.view.Gravity.CENTER
+                        ))
+                        vv.setMediaController(MediaController(ctx).also { it.setAnchorView(vv) })
+                        vv.setVideoURI(Uri.parse(url))
+                        vv.setOnPreparedListener { mp ->
+                            mp.isLooping = true
+                            if (startAt > 0) vv.seekTo(startAt)
+                            vv.start()
+                        }
+                        vvRef = vv
+                    }
+                }
+            )
+            Surface(
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.2f),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 40.dp, start = 16.dp)
+                    .size(44.dp)
+                    .clickable { close() }
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White, modifier = Modifier.padding(10.dp).fillMaxSize())
+            }
+        }
+        DisposableEffect(Unit) { onDispose { vvRef?.stopPlayback() } }
     }
 }

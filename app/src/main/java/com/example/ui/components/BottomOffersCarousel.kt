@@ -213,7 +213,8 @@ fun SelectedRestaurantOfferCard(
                 // Media Thumbnail with Video play overlay
                 Box(
                     modifier = Modifier
-                        .size(86.dp)
+                        // الفيديو طولي (مثل الريلز) بحجم صغير، والصورة مربعة
+                        .then(if (offer.mediaType == MediaType.VIDEO) Modifier.size(width = 64.dp, height = 104.dp) else Modifier.size(86.dp))
                         .clip(RoundedCornerShape(12.dp))
                 ) {
                     ProductMediaViewer(
@@ -225,22 +226,6 @@ fun SelectedRestaurantOfferCard(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    if (offer.mediaType == MediaType.VIDEO) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFE05A47).copy(alpha = 0.92f),
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .size(30.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayCircleFilled,
-                                contentDescription = "تشغيل الفيديو",
-                                tint = Color.White,
-                                modifier = Modifier.padding(4.dp)
-                            )
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.width(10.dp))

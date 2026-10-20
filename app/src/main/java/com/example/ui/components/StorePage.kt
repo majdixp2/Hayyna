@@ -188,7 +188,7 @@ fun StorePage(
                                 color = Color(0xFF8A5A00)
                             )
                         }
-                        deliveryText(store.delivery, store.deliveryFee, store.deliveryMinOrder)?.let { InfoPill(it) }
+                        deliveryText(store.delivery, store.deliveryFee, store.deliveryMinOrder, store.deliveryFreeOver)?.let { InfoPill(it) }
                         if (store.about.isNotBlank()) {
                             Text(store.about, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

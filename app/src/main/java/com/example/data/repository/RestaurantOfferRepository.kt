@@ -480,6 +480,7 @@ class RestaurantOfferRepository(
                 "delivery" to store.delivery,
                 "deliveryFee" to store.deliveryFee,
                 "deliveryMinOrder" to store.deliveryMinOrder,
+                "deliveryFreeOver" to store.deliveryFreeOver,
                 "updatedAt" to FieldValue.serverTimestamp()
             ),
             // دمج: عشان ما تنمسح علامة ✓ اللي يحطها الأدمن
@@ -624,6 +625,7 @@ class RestaurantOfferRepository(
             "delivery" to delivery,
             "deliveryFee" to deliveryFee,
             "deliveryMinOrder" to deliveryMinOrder,
+            "deliveryFreeOver" to deliveryFreeOver,
             "rating" to rating,
             "isApproved" to isApproved,
             "isFeatured" to isFeatured,
@@ -697,6 +699,7 @@ class RestaurantOfferRepository(
                 "delivery" to profile.delivery,
                 "deliveryFee" to profile.deliveryFee,
                 "deliveryMinOrder" to profile.deliveryMinOrder,
+                "deliveryFreeOver" to profile.deliveryFreeOver,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
@@ -722,6 +725,7 @@ class RestaurantOfferRepository(
                 delivery = profile.delivery,
                 deliveryFee = profile.deliveryFee,
                 deliveryMinOrder = profile.deliveryMinOrder,
+                deliveryFreeOver = profile.deliveryFreeOver,
                 latitude = primary?.latitude ?: offer.latitude,
                 longitude = primary?.longitude ?: offer.longitude,
                 region = primary?.region?.ifBlank { null } ?: offer.region,

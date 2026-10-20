@@ -20,7 +20,8 @@ data class StoreProfile(
     val verified: Boolean = false,
     val delivery: Boolean = false,
     val deliveryFee: Double = 0.0,
-    val deliveryMinOrder: Double = 0.0
+    val deliveryMinOrder: Double = 0.0,
+    val deliveryFreeOver: Double = 0.0
 ) {
     /** اسم قسم المنيو حسب نوع المتجر. */
     val menuLabel: String
@@ -47,7 +48,8 @@ data class StoreProfile(
             approved = approved,
             delivery = p.delivery,
             deliveryFee = p.deliveryFee,
-            deliveryMinOrder = p.deliveryMinOrder
+            deliveryMinOrder = p.deliveryMinOrder,
+            deliveryFreeOver = p.deliveryFreeOver
         )
     }
 }

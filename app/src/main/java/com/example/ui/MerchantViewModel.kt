@@ -898,6 +898,7 @@ class MerchantViewModel(
                     delivery = offer.delivery,
                     deliveryFee = offer.deliveryFee,
                     deliveryMinOrder = offer.deliveryMinOrder,
+                    deliveryFreeOver = offer.deliveryFreeOver,
                     // أول عرض بدون فروع: موقعه يصير "الفرع الرئيسي"
                     branches = old?.branches?.ifEmpty { null } ?: offer.branches
                 )

@@ -92,7 +92,7 @@ export const hoursText = (b) => (b && b.openMinute >= 0 && b.closeMinute >= 0)
 export function deliveryText(x) {
   if (!x || !x.delivery) return null;
   const fee = (x.deliveryFee || 0) <= 0 ? "توصيل مجاني" : `توصيل ${money(x.deliveryFee)} ر.س`;
-  return `🛵 ${fee}${(x.deliveryMinOrder || 0) > 0 ? ` • للطلبات فوق ${money(x.deliveryMinOrder)} ر.س` : ""}`;
+  return `🛵 ${fee}${(x.deliveryMinOrder || 0) > 0 ? ` • للطلبات فوق ${money(x.deliveryMinOrder)} ر.س` : ""}${(x.deliveryFee || 0) > 0 && (x.deliveryFreeOver || 0) > 0 ? ` • مجاني فوق ${money(x.deliveryFreeOver)} ر.س` : ""}`;
 }
 export function badge(o) {
   if (isUpcoming(o)) return { t: "قريباً", soon: true };

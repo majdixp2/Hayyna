@@ -40,6 +40,7 @@ object AiAutofill {
         val delivery: Boolean = false,
         val deliveryFee: Double? = null,
         val deliveryMinOrder: Double? = null,
+        val deliveryFreeOver: Double? = null,
         val landmark: String = ""
     )
 
@@ -65,7 +66,8 @@ object AiAutofill {
  "tags": ["الأصناف أو المنتجات المذكورة كلمة أو كلمتين لكل واحد، حتى 8"],
  "delivery": true إذا مذكور توصيل وإلا false,
  "deliveryFee": رسوم التوصيل كرقم (0 إذا مجاني) أو null,
- "deliveryMinOrder": الحد الأدنى للطلب للتوصيل كرقم أو null}
+ "deliveryMinOrder": الحد الأدنى للطلب عشان يقبلون التوصيل كرقم أو null,
+ "deliveryFreeOver": إذا مكتوب توصيل مجاني للطلبات فوق مبلغ معيّن، اكتب المبلغ كرقم أو null}
 لا تخترع أي معلومة غير موجودة في الصورة.
 """
 
@@ -130,6 +132,7 @@ object AiAutofill {
             delivery = json.optBoolean("delivery", false),
             deliveryFee = if (json.isNull("deliveryFee")) null else json.optDouble("deliveryFee").takeIf { !it.isNaN() && it >= 0 },
             deliveryMinOrder = num("deliveryMinOrder"),
+            deliveryFreeOver = num("deliveryFreeOver"),
             landmark = str("landmark").take(80)
         )
     }
