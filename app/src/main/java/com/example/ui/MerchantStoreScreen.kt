@@ -161,6 +161,7 @@ fun MerchantStoreScreen(
     val userRole by viewModel.userRole.collectAsStateWithLifecycle()
     val userName by viewModel.userName.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val scope by viewModel.scope.collectAsStateWithLifecycle()
     val userPhone by viewModel.userPhone.collectAsStateWithLifecycle()
     val isRoleLoading by viewModel.isRoleLoading.collectAsStateWithLifecycle()
     val approvedStores by viewModel.approvedStores.collectAsStateWithLifecycle()
@@ -233,7 +234,11 @@ fun MerchantStoreScreen(
                                 onStoreClick = { viewModel.openStorePage(it) },
                                 showGooglePoi = poiConfig.showGooglePoi,
                                 onPoiClick = { viewModel.onPoiClick(it) },
-                                onMyLocationClick = { viewModel.clearBrowse() }
+                                onMyLocationClick = { viewModel.clearBrowse() },
+                                scope = scope,
+                                scopeCount = filteredCustomerOffers.size,
+                                onScopeClick = { viewModel.cycleScope() },
+                                onUserDistrict = { viewModel.setUserDistrict(it) }
                             )
 
                             // TOP FLOATING CONTROLS OVER MAP

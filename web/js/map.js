@@ -72,6 +72,7 @@ export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 1
     if (last.me) impl.setMe(...last.me);
     if (last.pin) impl.setPin(...last.pin);
     if (last.fit) impl.fitBounds(last.fit);
+    if (last.circle) impl.setCircle(last.circle);
   };
   if (key) {
     try {
@@ -90,6 +91,7 @@ export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 1
     fitBounds: (pts, pad) => { last.fit = pts; impl.fitBounds(pts, pad); },
     setMe: (lat, lng) => { last.me = [lat, lng]; impl.setMe(lat, lng); },
     setPin: (lat, lng) => { last.pin = [lat, lng]; impl.setPin(lat, lng); },
+    setCircle: (c) => { last.circle = c; impl.setCircle(c); },
     center: () => impl.center(),
     resize: () => impl.resize(),
   };
@@ -117,7 +119,7 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick }) {
     setPos(pos) { this.pos = new g.LatLng(pos.lat, pos.lng); this.draw(); }
   }
   const layers = { markers: [], dots: [] };
-  let me = null, pin = null;
+  let me = null, pin = null, circle = null;
   const node = (html, cls, onClick) => {
     const d = document.createElement("div"); d.className = "ov " + (cls || ""); d.innerHTML = html;
     if (onClick) d.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
@@ -142,6 +144,10 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick }) {
     },
     setMe: (lat, lng) => { if (me) me.setPos({ lat, lng }); else { me = new Html({ lat, lng }, node('<div class="me"></div>', "ov-me"), 5); me.setMap(map); } },
     setPin: (lat, lng) => { if (pin) pin.setPos({ lat, lng }); else { pin = new Html({ lat, lng }, node('<div class="pin">📍</div>', "ov-pin"), 10); pin.setMap(map); } },
+    setCircle: (c) => {
+      if (circle) { circle.setMap(null); circle = null; }
+      if (c) circle = new g.Circle({ map, center: { lat: c.lat, lng: c.lng }, radius: c.radius, fillColor: "#2D6A4F", fillOpacity: 0.06, strokeColor: "#2D6A4F", strokeOpacity: 0.45, strokeWeight: 2, clickable: false });
+    },
     center: () => { const c = map.getCenter(); return { lat: c.lat(), lng: c.lng() }; },
     resize: () => g.event.trigger(map, "resize"),
   };
@@ -156,7 +162,7 @@ function leafletMap(L, el, { center, zoom, onMapClick }) {
   map.attributionControl.setPrefix(false);
   el.classList.add("osm");
   const layers = { markers: L.layerGroup().addTo(map), dots: L.layerGroup().addTo(map) };
-  let me = null, pin = null;
+  let me = null, pin = null, circle = null;
   const put = (layer, items, cls) => {
     layers[layer].clearLayers();
     items.forEach((it) => {
@@ -174,6 +180,10 @@ function leafletMap(L, el, { center, zoom, onMapClick }) {
     fitBounds: (pts) => { if (pts.length) map.fitBounds(pts, { paddingTopLeft: [40, 140], paddingBottomRight: [40, 260], maxZoom: 15 }); },
     setMe: (lat, lng) => { if (me) me.setLatLng([lat, lng]); else me = L.marker([lat, lng], { icon: L.divIcon({ html: '<div class="me"></div>', className: "ov ov-me", iconSize: null }), interactive: false }).addTo(map); },
     setPin: (lat, lng) => { if (pin) pin.setLatLng([lat, lng]); else pin = L.marker([lat, lng], { icon: L.divIcon({ html: '<div class="pin">📍</div>', className: "ov ov-pin", iconSize: null }), interactive: false }).addTo(map); },
+    setCircle: (c) => {
+      if (circle) { circle.remove(); circle = null; }
+      if (c) circle = L.circle([c.lat, c.lng], { radius: c.radius, color: "#2D6A4F", weight: 2, opacity: 0.45, fillOpacity: 0.06, interactive: false }).addTo(map);
+    },
     center: () => { const c = map.getCenter(); return { lat: c.lat, lng: c.lng }; },
     resize: () => map.invalidateSize(),
   };

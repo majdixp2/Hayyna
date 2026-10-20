@@ -573,7 +573,7 @@ class MerchantViewModel(
     /** العروض الظاهرة للعملاء: معتمدة، غير منتهية، ومطابقة للفلاتر. */
     private val favoritesAndBrowse = combine(favoritesOnly, favoriteIds, browsePlace) { a, b, c -> Triple(a, b, c) }
 
-    val filteredCustomerOffers: StateFlow<List<RestaurantOffer>> = combine(
+    private val baseCustomerOffers: StateFlow<List<RestaurantOffer>> = combine(
         approvedOffers, filterParams, nowMillis, favoritesAndBrowse
     ) { offers, baseParams, now, (favOnly, favIds, browse) ->
         val params = baseParams.copy(favoritesOnly = favOnly)
@@ -618,6 +618,57 @@ class MerchantViewModel(
         }
         sorted.sortedByDescending { it.isFeatured }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // ---------------- نطاق العروض: حيّك / حولك 5 كم / كل الأحياء ----------------
+    /** نطاق الخريطة: يتنقل بالضغط على شارة "أنت في". */
+    val scope = MutableStateFlow(SCOPE_ALL)
+    /** اسم حي المستخدم الحالي (من الخريطة). */
+    val userDistrict = MutableStateFlow("")
+    fun setUserDistrict(name: String) { userDistrict.value = name }
+
+    private fun inScope(offer: RestaurantOffer, sc: String, loc: Location?, district: String): Boolean = when (sc) {
+        SCOPE_DISTRICT -> district.isNotBlank() && offer.effectiveBranches.any { normalizeDistrict(it.district) == normalizeDistrict(district) }
+        SCOPE_NEAR -> loc != null && offer.effectiveBranches.any {
+            UserLocationManager.calculateDistanceKm(loc.latitude, loc.longitude, it.latitude, it.longitude) <= NEAR_KM
+        }
+        else -> true
+    }
+
+    val filteredCustomerOffers: StateFlow<List<RestaurantOffer>> = combine(
+        baseCustomerOffers, scope, userLocation, userDistrict
+    ) { offers, sc, loc, district ->
+        if (sc == SCOPE_ALL) offers else offers.filter { inScope(it, sc, loc, district) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** الضغط على الشارة: حيّك ← حولك 5 كم ← كل الأحياء. لو المستوى فاضي نوسّع تلقائياً. */
+    fun cycleScope() {
+        val loc = userLocation.value
+        if (loc == null) {
+            toast("فعّل الموقع عشان نعرض عروض حيّك 📍")
+            return
+        }
+        browsePlace.value = null
+        selectedDistrict.value = "الكل"
+        val base = baseCustomerOffers.value
+        val district = userDistrict.value
+        fun count(sc: String) = base.count { inScope(it, sc, loc, district) }
+        scope.value = when (scope.value) {
+            SCOPE_ALL -> when {
+                district.isNotBlank() && count(SCOPE_DISTRICT) > 0 -> SCOPE_DISTRICT
+                count(SCOPE_NEAR) > 0 -> {
+                    toast(if (district.isBlank()) "عروض حولك (5 كم) 🎯" else "ما فيه عروض في حيّك للحين، شوف اللي حولك 🎯")
+                    SCOPE_NEAR
+                }
+                else -> {
+                    toast("ما فيه عروض قريبة منك للحين، نعرض لك كل الأحياء")
+                    SCOPE_ALL
+                }
+            }
+            SCOPE_DISTRICT -> if (count(SCOPE_NEAR) > 0) SCOPE_NEAR else SCOPE_ALL
+            else -> SCOPE_ALL
+        }
+        selectedOfferOnMap.value = null
+    }
 
     /** الأحياء اللي فيها عروض فعلاً، مع عددها (للفلاتر). */
     val districtCounts: StateFlow<List<DistrictCount>> = combine(approvedOffers, nowMillis) { offers, now ->
@@ -789,6 +840,7 @@ class MerchantViewModel(
 
     /** ينقل الخريطة لحي/مكان ويرتّب العروض حسب القرب منه. */
     fun browseTo(place: BrowsePlace, filterDistrict: Boolean = false) {
+        scope.value = SCOPE_ALL
         browsePlace.value = place
         placeSearchJob?.cancel()
         placeSuggestions.value = emptyList()
@@ -1197,6 +1249,10 @@ class MerchantViewModel(
         /** عدد البلاغات اللي يختفي بعدها العرض تلقائياً لين يراجعه الأدمن. */
         const val AUTO_HIDE_REPORTS = 3
         const val ROLE_CUSTOMER = "customer"
+        const val SCOPE_ALL = "all"
+        const val SCOPE_DISTRICT = "district"
+        const val SCOPE_NEAR = "near"
+        const val NEAR_KM = 5.0
         const val ROLE_MERCHANT = "merchant"
         /** حد العروض اليومية للتاجر الجديد (غير الموثوق). */
         const val NEW_MERCHANT_DAILY_LIMIT = 3

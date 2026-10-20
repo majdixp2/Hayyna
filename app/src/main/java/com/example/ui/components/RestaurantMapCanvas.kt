@@ -106,7 +106,12 @@ fun FullScreenRestaurantMap(
     onStoreClick: (com.example.data.model.StoreProfile) -> Unit = {},
     // نقاط محلات Google الباهتة (يتحكم فيها الأدمن)
     showGooglePoi: Boolean = false,
-    onPoiClick: (com.google.android.gms.maps.model.PointOfInterest) -> Unit = {}
+    onPoiClick: (com.google.android.gms.maps.model.PointOfInterest) -> Unit = {},
+    // نطاق العروض: all / district / near — والضغط على الشارة يتنقل بينها
+    scope: String = "all",
+    scopeCount: Int = 0,
+    onScopeClick: () -> Unit = {},
+    onUserDistrict: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -256,6 +261,26 @@ fun FullScreenRestaurantMap(
         val loc = userLocation ?: return@LaunchedEffect
         val place = ReverseGeocoder.lookup(context, loc.latitude, loc.longitude)
         userPlaceName = place?.district?.ifBlank { place.region }.orEmpty()
+        onUserDistrict(place?.district.orEmpty())
+    }
+
+    // الكاميرا تتبع النطاق: الحي قريب، حولك 5 كم أبعد، والكل أبعد
+    var lastScope by remember { mutableStateOf(scope) }
+    LaunchedEffect(scope) {
+        if (scope == lastScope) return@LaunchedEffect // أول فتح: ما نحرّك الكاميرا
+        lastScope = scope
+        val loc = userLocation ?: return@LaunchedEffect
+        val zoom = when (scope) { "district" -> 15f; "near" -> 12.3f; else -> null }
+        if (zoom != null) cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), zoom))
+        else if (offers.isNotEmpty()) cameraPositionState.animate(CameraUpdateFactory.zoomTo(11.5f))
+    }
+    // وميض خفيف لما يتغيّر النطاق
+    val flash = remember { androidx.compose.animation.core.Animatable(0f) }
+    var flashReady by remember { mutableStateOf(false) }
+    LaunchedEffect(scope) {
+        if (!flashReady) { flashReady = true; return@LaunchedEffect }
+        flash.snapTo(1f)
+        flash.animateTo(0f, androidx.compose.animation.core.tween(900))
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -280,6 +305,16 @@ fun FullScreenRestaurantMap(
                 onBackgroundClick()
             }
         ) {
+            // دائرة "حولك 5 كم"
+            if (scope == "near" && userLocation != null) {
+                com.google.maps.android.compose.Circle(
+                    center = LatLng(userLocation.latitude, userLocation.longitude),
+                    radius = 5000.0,
+                    fillColor = CalmSagePrimary.copy(alpha = 0.06f),
+                    strokeColor = CalmSagePrimary.copy(alpha = 0.45f),
+                    strokeWidth = 3f
+                )
+            }
             // المتاجر بدون عروض: نقاط صغيرة هادية (بالشعار إن وجد)
             quietStores.forEach { store ->
                 store.branches.forEach { branch ->
@@ -424,34 +459,50 @@ fun FullScreenRestaurantMap(
             }
         }
 
-        // اسم حي المستخدم الحقيقي (من Google) — يظهر فقط إذا عرفناه
-        if (userPlaceName.isNotBlank()) {
+        // شارة النطاق: أنت في الحي ← اضغط: عروض حيّك ← حولك 5 كم ← كل الأحياء
+        if (userPlaceName.isNotBlank() || scope != "all") {
+            val label = when (scope) {
+                "district" -> "📍 ${userPlaceName.ifBlank { "حيّك" }} • $scopeCount ${if (scopeCount == 1) "عرض" else "عروض"}"
+                "near" -> "🎯 حولك 5 كم • $scopeCount ${if (scopeCount == 1) "عرض" else "عروض"}"
+                else -> "أنت في: $userPlaceName"
+            }
+            val active = scope != "all"
             Surface(
+                onClick = onScopeClick,
                 shape = RoundedCornerShape(20.dp),
-                color = Color.White.copy(alpha = 0.94f),
+                color = androidx.compose.ui.graphics.lerp(
+                    if (active) Color(0xFFE7F6EC) else Color.White.copy(alpha = 0.94f),
+                    CalmSagePrimary.copy(alpha = 0.55f),
+                    flash.value
+                ),
+                border = if (active) androidx.compose.foundation.BorderStroke(1.dp, CalmSagePrimary.copy(alpha = 0.5f)) else null,
                 shadowElevation = 4.dp,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(start = 14.dp, bottom = 80.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = CalmSagePrimary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    if (scope == "all") {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = CalmSagePrimary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
                     Text(
-                        text = "أنت في: $userPlaceName",
+                        text = label,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF262A33),
+                        color = if (active) CalmSagePrimary else Color(0xFF262A33),
                         maxLines = 1
                     )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("⇄", fontSize = 12.sp, color = CalmSagePrimary, fontWeight = FontWeight.Bold)
                 }
             }
         }

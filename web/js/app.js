@@ -23,7 +23,7 @@ export const $ = (id) => document.getElementById(id);
 export const state = {
   offers: [], stores: [], q: "", cat: "الكل", sort: "near", openOnly: false, browse: null,
   me: null, selected: null, branchId: null, view: null, tab: "map",
-  favs: new Set(), user: null, role: null, profile: null, roleLoading: false, pendingRole: null,
+  favs: new Set(), user: null, role: null, profile: null, scope: "all", roleLoading: false, pendingRole: null,
   config: {}, loaded: false, storesLoaded: false,
 };
 
@@ -112,7 +112,55 @@ function filtered({ ignoreQuery = false } = {}) {
   else if (state.sort === "discount") list.sort((a, b) => feat(a, b) || effectivePercent(b.o) - effectivePercent(a.o));
   else if (state.sort === "new") list.sort((a, b) => feat(a, b) || (X.ms(b.o.createdAt) || 0) - (X.ms(a.o.createdAt) || 0));
   else list.sort((a, b) => feat(a, b) || (a.dSort ?? 0) - (b.dSort ?? 0));
-  return list;
+  if (state.scope === "all") return list;
+  return list.filter(({ o }) => inScope(o, state.scope));
+}
+
+// ---------------- النطاق: حيّك / حولك 5 كم / كل الأحياء ----------------
+const NEAR_KM = 5;
+function userDistrict() {
+  // أقرب حي معروف لموقع المستخدم (من فروع العروض والمتاجر) في حدود 1.5 كم
+  if (!state.me) return "";
+  let best = "", bd = 1.5;
+  const check = (b) => { if (!b?.district || !(b.latitude || b.longitude)) return; const d = km(state.me, { lat: b.latitude, lng: b.longitude }); if (d < bd) { bd = d; best = b.district; } };
+  state.offers.forEach((o) => branchesOf(o).forEach(check));
+  state.stores.forEach((s) => (s.branches || []).forEach(check));
+  return best;
+}
+function inScope(o, sc) {
+  if (sc === "district") { const d = norm(userDistrict().replace(/^حي\s+/, "")); return !!d && branchesOf(o).some((b) => norm((b.district || "").replace(/^حي\s+/, "")) === d); }
+  if (sc === "near") return !!state.me && branchesOf(o).some((b) => km(state.me, { lat: b.latitude, lng: b.longitude }) <= NEAR_KM);
+  return true;
+}
+function cycleScope() {
+  if (!state.me) { locate(true); return toast("فعّل الموقع عشان نعرض عروض حيّك 📍"); }
+  state.browse = null;
+  const prev = state.scope; state.scope = "all";
+  const base = filtered(), count = (sc) => base.filter(({ o }) => inScope(o, sc)).length, dist = userDistrict();
+  if (prev === "all") {
+    if (dist && count("district") > 0) state.scope = "district";
+    else if (count("near") > 0) { state.scope = "near"; toast(dist ? "ما فيه عروض في حيّك للحين، شوف اللي حولك 🎯" : "عروض حولك (5 كم) 🎯"); }
+    else toast("ما فيه عروض قريبة منك للحين، نعرض لك كل الأحياء");
+  } else if (prev === "district") state.scope = count("near") > 0 ? "near" : "all";
+  else state.scope = "all";
+  if (map) {
+    if (state.scope === "district") map.setView(state.me.lat, state.me.lng, 15);
+    else if (state.scope === "near") map.setView(state.me.lat, state.me.lng, 12);
+    else { fitted = false; }
+    map.setCircle(state.scope === "near" ? { lat: state.me.lat, lng: state.me.lng, radius: NEAR_KM * 1000 } : null);
+  }
+  const btn = $("scopeBtn"); btn.classList.remove("flash"); void btn.offsetWidth; btn.classList.add("flash");
+  renderAll();
+}
+function renderScope(count) {
+  const btn = $("scopeBtn"); if (!btn) return;
+  const dist = userDistrict();
+  const n = `${count} ${count === 1 ? "عرض" : "عروض"}`;
+  btn.classList.remove("hidden");
+  btn.classList.toggle("active", state.scope !== "all");
+  btn.innerHTML = state.scope === "district" ? `📍 ${esc(districtLabel(dist) || "حيّك")} • ${n} <b>⇄</b>`
+    : state.scope === "near" ? `🎯 حولك 5 كم • ${n} <b>⇄</b>`
+    : dist ? `📍 أنت في: ${esc(districtLabel(dist))} <b>⇄</b>` : `📍 عروض حولك <b>⇄</b>`;
 }
 
 // ---------------- الخريطة ----------------
@@ -207,6 +255,7 @@ export function renderAll() {
   } else empty.classList.add("hidden");
   $("filterDot").classList.toggle("hidden", !(state.openOnly || state.sort !== "near"));
   $("placeLabel").textContent = state.browse ? state.browse.name : "حولي";
+  renderScope(list.length);
   // قائمة العروض
   $("sortbar").innerHTML = [["near", "📍 الأقرب"], ["discount", "🔥 أكبر خصم"], ["cheap", "💰 الأرخص"], ["new", "🆕 الأحدث"]]
     .map(([k, l]) => `<button class="chip${state.sort === k ? " on" : ""}" data-sort="${k}">${l}</button>`).join("")
@@ -374,7 +423,7 @@ function openPlaces() {
   const body = $("sheetBody");
   body.querySelector("[data-here]").onclick = () => { state.browse = null; hideSheet(); if (state.me) map?.setView(state.me.lat, state.me.lng, 14); else locate(true); renderAll(); };
   body.querySelectorAll("[data-i]").forEach((el) => el.onclick = () => {
-    const c = arr[+el.dataset.i]; state.browse = { name: c.name, lat: c.lat, lng: c.lng }; hideSheet();
+    const c = arr[+el.dataset.i]; state.browse = { name: c.name, lat: c.lat, lng: c.lng }; state.scope = "all"; map?.setCircle(null); hideSheet();
     map?.setView(c.lat, c.lng, 14); renderAll();
   });
   $("placeQ").oninput = (e) => { const q = norm(e.target.value); body.querySelectorAll("[data-i]").forEach((el) => el.classList.toggle("hidden", q && !norm(el.textContent).includes(q))); };
@@ -642,6 +691,7 @@ export const getMyLocation = () => new Promise((resolve, reject) => {
   navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }), reject, { enableHighAccuracy: true, timeout: 12000 });
 });
 $("locate").onclick = () => locate(true);
+$("scopeBtn").onclick = cycleScope;
 navigator.permissions?.query({ name: "geolocation" }).then((r) => { if (r.state === "granted") locate(!location.pathname.startsWith("/o/")); }).catch(() => {});
 
 // تلميح التثبيت للآيفون
