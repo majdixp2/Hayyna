@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** بريد التواصل الظاهر في سياسة الخصوصية — غيّره لبريد الدعم الرسمي عند توفره. */
-const val SUPPORT_EMAIL = "majdixp2@gmail.com"
+const val SUPPORT_EMAIL = "hayyna.sa@gmail.com"
 
 val PRIVACY_POLICY_TEXT = """
 سياسة الخصوصية لتطبيق حيّنا
