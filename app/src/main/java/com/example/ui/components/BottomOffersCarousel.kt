@@ -303,7 +303,7 @@ fun SelectedRestaurantOfferCard(
 
                         if (offer.originalPrice != null && offer.originalPrice > offer.price) {
                             Text(
-                                text = "${offer.originalPrice} ${offer.currency}",
+                                text = "${moneyText(offer.originalPrice)} ${offer.currency}",
                                 fontSize = 11.sp,
                                 color = Color.Gray,
                                 textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough

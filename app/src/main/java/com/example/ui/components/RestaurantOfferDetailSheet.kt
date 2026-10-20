@@ -80,6 +80,8 @@ fun RestaurantOfferDetailSheet(
     val context = LocalContext.current
     val orderScope = androidx.compose.runtime.rememberCoroutineScope()
     // الفرع المعروض حالياً (افتراضياً الأقرب أو اللي ضغط عليه في الخريطة)
+    // صورة العرض بملء الشاشة (رقم الصورة المفتوحة)
+    var zoomIndex by androidx.compose.runtime.remember(offer.id) { androidx.compose.runtime.mutableStateOf<Int?>(null) }
     var shown by androidx.compose.runtime.remember(offer.id, offer.selectedBranchId) {
         androidx.compose.runtime.mutableStateOf(offer)
     }
@@ -160,9 +162,17 @@ fun RestaurantOfferDetailSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     // الفيديو طولي مثل الريلز، فنعطيه مساحة أطول
-                    .height(if (offer.mediaType == MediaType.VIDEO) 420.dp else 240.dp)
+                    .height(if (offer.mediaType == MediaType.VIDEO) 420.dp else 320.dp)
             ) {
                 val gallery = offer.gallery
+                if (zoomIndex != null) {
+                    androidx.compose.ui.window.Dialog(
+                        onDismissRequest = { zoomIndex = null },
+                        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+                    ) {
+                        FullScreenImageViewer(images = gallery, startIndex = zoomIndex ?: 0, onClose = { zoomIndex = null })
+                    }
+                }
                 if (offer.mediaType == MediaType.IMAGE && gallery.size > 1) {
                     val pagerState = androidx.compose.foundation.pager.rememberPagerState { gallery.size }
                     androidx.compose.foundation.pager.HorizontalPager(
@@ -174,7 +184,9 @@ fun RestaurantOfferDetailSheet(
                             mediaUri = gallery[page],
                             mediaType = MediaType.IMAGE,
                             promotionalBadge = if (page == 0) offer.displayBadge else "",
-                            modifier = Modifier.fillMaxSize()
+                            // الصورة كاملة بدون قص، والضغط يفتحها بملء الشاشة مع تكبير
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize().clickable { zoomIndex = page }
                         )
                     }
                     // نقاط الصور
@@ -202,7 +214,10 @@ fun RestaurantOfferDetailSheet(
                         isPromotionalVideo = offer.isPromotionalVideo,
                         promotionalBadge = offer.displayBadge,
                         autoPlayVideo = offer.mediaType == MediaType.VIDEO,
-                        modifier = Modifier.fillMaxSize()
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().then(
+                            if (offer.mediaType == MediaType.IMAGE) Modifier.clickable { zoomIndex = 0 } else Modifier
+                        )
                     )
                 }
             }
@@ -292,7 +307,7 @@ fun RestaurantOfferDetailSheet(
                 if (offer.originalPrice != null && offer.originalPrice > offer.price) {
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "${offer.originalPrice} ${offer.currency}",
+                        text = "${moneyText(offer.originalPrice)} ${offer.currency}",
                         fontSize = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textDecoration = TextDecoration.LineThrough

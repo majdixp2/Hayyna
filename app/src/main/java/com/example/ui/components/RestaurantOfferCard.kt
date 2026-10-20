@@ -223,7 +223,7 @@ fun RestaurantOfferCard(
                     if (offer.originalPrice != null && offer.originalPrice > offer.price) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "${offer.originalPrice} ${offer.currency}",
+                            text = "${moneyText(offer.originalPrice)} ${offer.currency}",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textDecoration = TextDecoration.LineThrough
