@@ -18,4 +18,4 @@ export const ADMIN_EMAILS = ["majdixp2@gmail.com"];
 export const AUTO_HIDE_REPORTS = 3;
 
 // مفتاح خرائط قوقل للويب (Maps JavaScript API، مقيّد على دومين الموقع). فاضي = خريطة OpenStreetMap مؤقتاً.
-export const MAPS_WEB_KEY = "";
+export const MAPS_WEB_KEY = "AIzaSyC-fvihsfnXVq5Y9ZVCmNga3ztKNsIClHo";
