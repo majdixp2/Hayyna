@@ -607,7 +607,14 @@ document.addEventListener("click", (e) => {
   const c = e.target.closest(".card[data-id], .lcard[data-id]"); if (c) { openOffer(c.dataset.id, true); }
 });
 
-$("chips").innerHTML = X.CATEGORIES.map((c) => `<button class="chip${c === "الكل" ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+// التصنيفات من إعدادات الأدمن (وإلا الافتراضية)
+export const categories = () => (state.config.categories && state.config.categories.length) ? state.config.categories : X.CATEGORIES.slice(1);
+function renderChips() {
+  const list = ["الكل", ...categories()];
+  if (!list.includes(state.cat)) state.cat = "الكل";
+  $("chips").innerHTML = list.map((c) => `<button class="chip${c === state.cat ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+}
+renderChips();
 $("chips").onclick = (e) => {
   const b = e.target.closest("[data-cat]"); if (!b) return;
   state.cat = b.dataset.cat; fitted = false;
@@ -685,7 +692,7 @@ onAuthStateChanged(auth, async (u) => {
 });
 
 // ---------------- البيانات ----------------
-onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; }, () => {});
+onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; renderChips(); }, () => {});
 onSnapshot(query(collection(db, "offers"), where("isApproved", "==", true)), (snap) => {
   state.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
   const first = !state.loaded; state.loaded = true;

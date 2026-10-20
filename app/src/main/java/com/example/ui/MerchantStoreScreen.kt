@@ -160,6 +160,7 @@ fun MerchantStoreScreen(
     val isSendingFeedback by viewModel.isSendingFeedback.collectAsStateWithLifecycle()
     val userRole by viewModel.userRole.collectAsStateWithLifecycle()
     val userName by viewModel.userName.collectAsStateWithLifecycle()
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
     val userPhone by viewModel.userPhone.collectAsStateWithLifecycle()
     val isRoleLoading by viewModel.isRoleLoading.collectAsStateWithLifecycle()
     val approvedStores by viewModel.approvedStores.collectAsStateWithLifecycle()
@@ -667,7 +668,8 @@ fun MerchantStoreScreen(
                             MerchantPortalView(
                                 isLoggedIn = isMerchantLoggedIn,
                                 merchantEmail = merchantEmail,
-                                merchantRestaurantName = merchantRestaurantName,
+                                // العنوان في لوحة التاجر: اسم المتجر، وإلا اسم صاحبه
+                                merchantRestaurantName = merchantProfile?.restaurantName?.takeIf { it.isNotBlank() } ?: userName.ifBlank { merchantRestaurantName },
                                 merchantOffers = merchantOffers,
                                 isSigningIn = isSigningIn,
                                 nowMillis = nowMillis,
@@ -770,6 +772,9 @@ fun MerchantStoreScreen(
                                 onDecideVerification = { r, ok, reason -> viewModel.decideVerification(r, ok, reason) },
                                 verifyConfig = verifyConfig,
                                 onSaveVerifyConfig = { viewModel.saveVerifyConfig(it) },
+                                categories = categories,
+                                onSaveCategories = { viewModel.saveCategories(it) },
+                                onRenameCategory = { o, n -> viewModel.renameCategory(o, n) },
                                 onOfferClick = { viewModel.openOfferDetail(it) },
                                 onApproveStore = { viewModel.approveStore(it) },
                                 modifier = Modifier
@@ -866,7 +871,8 @@ fun MerchantStoreScreen(
                 onManageBranches = { viewModel.openBranchesPage() },
                 aiEnabled = aiConfig.first,
                 isAutofilling = isAutofilling,
-                onAutofill = { uri, onResult -> viewModel.autofillFromImage(uri, onResult) }
+                onAutofill = { uri, onResult -> viewModel.autofillFromImage(uri, onResult) },
+                categories = categories
             )
           }
         }
@@ -892,7 +898,8 @@ fun MerchantStoreScreen(
                 isSaving = isSavingBranches,
                 onSave = { p, logo -> viewModel.saveBranches(p, logo) },
                 onClose = { viewModel.closeBranchesPage() },
-                claimMode = pendingClaim != null && verifyConfig.enabled && myStatus?.verified != true
+                claimMode = pendingClaim != null && verifyConfig.enabled && myStatus?.verified != true,
+                categories = categories
             )
         }
 

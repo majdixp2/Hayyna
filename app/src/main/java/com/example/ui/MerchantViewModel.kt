@@ -369,6 +369,27 @@ class MerchantViewModel(
         }
     }
 
+    /** تصنيفات المتاجر (من إعدادات الأدمن). */
+    val categories: StateFlow<List<String>> = repository.categories
+        .stateIn(viewModelScope, SharingStarted.Eagerly, RestaurantOfferRepository.DEFAULT_CATEGORIES)
+
+    fun saveCategories(list: List<String>) {
+        launchSafely("تعذّر حفظ التصنيفات.") {
+            repository.setCategories(list)
+            toast("تم حفظ التصنيفات ✅")
+        }
+    }
+
+    fun renameCategory(old: String, new: String) {
+        val name = new.trim()
+        if (name.isBlank() || name == old) return
+        launchSafely("تعذّر تغيير الاسم.") {
+            repository.setCategories(categories.value.map { if (it == old) name else it })
+            val n = repository.renameCategory(old, name)
+            toast("تم تغيير الاسم ✅ وتحدّث $n عرض")
+        }
+    }
+
     fun saveVerifyConfig(c: com.example.data.model.VerifyConfig) {
         launchSafely("تعذّر الحفظ.") {
             repository.setVerifyConfig(c)

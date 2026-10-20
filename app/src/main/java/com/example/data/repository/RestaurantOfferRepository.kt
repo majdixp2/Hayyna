@@ -20,6 +20,7 @@ class RestaurantOfferRepository(
 ) {
     companion object {
         private const val TAG = "OfferRepo"
+        val DEFAULT_CATEGORIES: List<String> = com.example.data.model.LocationPresets.cuisines.filter { it != "الكل" }
         const val DEFAULT_AI_MODEL = "gemini-3.8-flash"
         /** نماذج احتياط لو النموذج المحدد ما اشتغل (Google قصرت 2.5 على المستخدمين القدامى). */
         val FALLBACK_AI_MODELS = listOf("gemini-3.8-flash", "gemini-3.5-flash-lite")
@@ -348,6 +349,35 @@ class RestaurantOfferRepository(
                 ?: com.example.data.model.Feedback.DEFAULT_SUPPORT_WHATSAPP)
         }
         awaitClose { listener.remove() }
+    }
+
+    /** تصنيفات المتاجر (يتحكم فيها الأدمن). فاضية = القائمة الافتراضية. */
+    val categories: Flow<List<String>> = callbackFlow {
+        val listener = configDoc.addSnapshotListener { snap, _ ->
+            val list = (snap?.get("categories") as? List<*>)?.filterIsInstance<String>()
+                ?.map { it.trim() }?.filter { it.isNotBlank() }?.distinct()
+            trySend(list?.takeIf { it.isNotEmpty() } ?: DEFAULT_CATEGORIES)
+        }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun setCategories(list: List<String>) {
+        configDoc.set(
+            hashMapOf("categories" to list.map { it.trim().take(40) }.filter { it.isNotBlank() }.distinct().take(40)),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
+    /** تغيير اسم تصنيف: يحدّث العروض وصفحات المتاجر اللي عليه (الأدمن). */
+    suspend fun renameCategory(old: String, new: String): Int {
+        var n = 0
+        for (d in offersCollection.whereEqualTo("cuisineType", old).get().await().documents) {
+            runCatching { d.reference.update("cuisineType", new).await(); n++ }
+        }
+        for (d in storesCollection.whereEqualTo("category", old).get().await().documents) {
+            runCatching { d.reference.update("category", new).await() }
+        }
+        return n
     }
 
     /** إعدادات الذكاء الاصطناعي: (مفعّل؟، اسم النموذج). */

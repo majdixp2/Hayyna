@@ -88,6 +88,9 @@ fun AdminDashboardView(
     onDecideVerification: (com.example.data.model.VerificationRequest, Boolean, String) -> Unit = { _, _, _ -> },
     verifyConfig: com.example.data.model.VerifyConfig = com.example.data.model.VerifyConfig(),
     onSaveVerifyConfig: (com.example.data.model.VerifyConfig) -> Unit = {},
+    categories: List<String> = emptyList(),
+    onSaveCategories: (List<String>) -> Unit = {},
+    onRenameCategory: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var inboxType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("الكل") }
@@ -457,6 +460,7 @@ fun AdminDashboardView(
                 // ---------------- ⚙️ الإعدادات ----------------
                 else -> {
                     item { SupportNumberEditor(current = supportNumber, onSave = onSaveSupportNumber) }
+                    item { CategoriesSettingsCard(categories = categories, onSave = onSaveCategories, onRename = onRenameCategory) }
                     item { AiSettingsCard(enabled = aiEnabled, model = aiModel, onSave = onSaveAi) }
                     item { PoiSettingsCard(config = poiConfig, onSave = onSavePoiConfig) }
                     item { VerifySettingsCard(config = verifyConfig, onSave = onSaveVerifyConfig) }
@@ -822,6 +826,79 @@ private fun SupportNumberEditor(current: String, onSave: (String) -> Unit) {
                 ) { Text("حفظ") }
             }
         }
+    }
+}
+
+/** تصنيفات المتاجر: إضافة / تعديل الاسم / حذف / ترتيب. */
+@Composable
+private fun CategoriesSettingsCard(categories: List<String>, onSave: (List<String>) -> Unit, onRename: (String, String) -> Unit) {
+    var expanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var newName by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    var renaming by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var renameText by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    var deleting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("🏷️ تصنيفات المتاجر (${categories.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("تظهر للتجار عند إعداد المتجر ونشر العروض، وللزبائن في الفلاتر", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "إخفاء" else "إدارة") }
+            }
+            if (expanded) {
+                categories.forEachIndexed { i, c ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        Text(c, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        androidx.compose.material3.IconButton(
+                            onClick = { if (i > 0) onSave(categories.toMutableList().apply { add(i - 1, removeAt(i)) }) },
+                            enabled = i > 0
+                        ) { Text("↑", fontSize = 18.sp) }
+                        androidx.compose.material3.IconButton(onClick = { renaming = c; renameText = c }) { Text("✎", fontSize = 16.sp) }
+                        androidx.compose.material3.IconButton(onClick = { deleting = c }, enabled = categories.size > 1) { Text("🗑", fontSize = 16.sp) }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it.take(40) },
+                        label = { Text("تصنيف جديد (مع إيموجي)") },
+                        placeholder = { Text("مثال: ورود وهدايا 💐") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                            val n = newName.trim()
+                            if (n.isNotBlank() && n !in categories) { onSave(categories + n); newName = "" }
+                        }
+                    ) { Text("إضافة", fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+    }
+    renaming?.let { old ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("تعديل اسم التصنيف") },
+            text = {
+                Column {
+                    androidx.compose.material3.OutlinedTextField(value = renameText, onValueChange = { renameText = it.take(40) }, singleLine = true)
+                    Text("العروض وصفحات المتاجر اللي على هذا التصنيف بتتحدّث للاسم الجديد.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { onRename(old, renameText); renaming = null }) { Text("حفظ") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { renaming = null }) { Text("إلغاء") } }
+        )
+    }
+    deleting?.let { c ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("حذف \"$c\"؟") },
+            text = { Text("ما بيظهر للتجار الجدد. العروض والمتاجر الحالية تبقى عليه لين يغيّرونه.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { onSave(categories - c); deleting = null }) { Text("حذف", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { deleting = null }) { Text("إلغاء") } }
+        )
     }
 }
 

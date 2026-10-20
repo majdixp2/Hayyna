@@ -84,14 +84,15 @@ fun BranchesPage(
     onSave: (MerchantProfile, StoreMediaEdits) -> Unit,
     onClose: () -> Unit,
     // جاي من "أنا صاحب المحل" والتوثيق مفعّل
-    claimMode: Boolean = false
+    claimMode: Boolean = false,
+    categories: List<String> = com.example.data.repository.RestaurantOfferRepository.DEFAULT_CATEGORIES
 ) {
     var restaurantName by remember { mutableStateOf(profile.restaurantName) }
     var logoLocal by remember { mutableStateOf<String?>(null) }
     var coverLocal by remember { mutableStateOf<String?>(null) }
     var about by remember { mutableStateOf(profile.about) }
     var category by remember {
-        mutableStateOf(profile.cuisineType.takeIf { it in com.example.data.model.LocationPresets.cuisines } ?: "")
+        mutableStateOf(profile.cuisineType.takeIf { it in categories } ?: "")
     }
     var priceFromText by remember {
         mutableStateOf(if (profile.priceFrom > 0) profile.priceFrom.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() } else "")
@@ -223,8 +224,8 @@ fun BranchesPage(
                     // ---------- صفحة المتجر الدائمة ----------
                     Text("تصنيف المتجر *", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(com.example.data.model.LocationPresets.cuisines.filter { it != "الكل" }.size) { i ->
-                            val c = com.example.data.model.LocationPresets.cuisines.filter { it != "الكل" }[i]
+                        items(categories.size) { i ->
+                            val c = categories[i]
                             androidx.compose.material3.FilterChip(
                                 selected = category == c,
                                 onClick = { category = c },

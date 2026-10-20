@@ -94,7 +94,8 @@ fun AddRestaurantOfferSheet(
     onManageBranches: () -> Unit = {},
     aiEnabled: Boolean = false,
     isAutofilling: Boolean = false,
-    onAutofill: (imageUri: String, onResult: (com.example.data.AiAutofill.Draft) -> Unit) -> Unit = { _, _ -> }
+    onAutofill: (imageUri: String, onResult: (com.example.data.AiAutofill.Draft) -> Unit) -> Unit = { _, _ -> },
+    categories: List<String> = com.example.data.repository.RestaurantOfferRepository.DEFAULT_CATEGORIES
 ) {
     val isEditing = editingOffer != null
     val profileBranches = profile?.branches.orEmpty()
@@ -105,7 +106,7 @@ fun AddRestaurantOfferSheet(
     var offerTitle by remember { mutableStateOf(editingOffer?.offerTitle.orEmpty()) }
     var description by remember { mutableStateOf(editingOffer?.description.orEmpty()) }
     var cuisineType by remember {
-        mutableStateOf(editingOffer?.cuisineType ?: profile?.cuisineType?.takeIf { it.isNotBlank() } ?: LocationPresets.cuisines[1])
+        mutableStateOf(editingOffer?.cuisineType ?: profile?.cuisineType?.takeIf { it.isNotBlank() } ?: categories.firstOrNull().orEmpty())
     }
     var priceText by remember { mutableStateOf(editingOffer?.price?.let { formatPrice(it) }.orEmpty()) }
     var originalPriceText by remember { mutableStateOf(editingOffer?.originalPrice?.let { formatPrice(it) }.orEmpty()) }
@@ -588,7 +589,7 @@ fun AddRestaurantOfferSheet(
 
                     Text("تصنيف المتجر", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(LocationPresets.cuisines.filter { it != "الكل" }) { cui ->
+                        items((categories + listOf(cuisineType)).filter { it.isNotBlank() }.distinct()) { cui ->
                             FilterChip(selected = cuisineType == cui, onClick = { cuisineType = cui }, label = { Text(cui, fontSize = 12.sp) })
                         }
                     }

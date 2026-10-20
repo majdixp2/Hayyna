@@ -3,7 +3,7 @@ import {
   collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDocs, getDoc, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { MAPS_WEB_KEY } from "../config.js";
-import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation } from "./app.js";
+import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
 
@@ -109,7 +109,7 @@ export function openStoreForm() {
     $("pageBody").innerHTML = `<div class="form">
       <label class="label">اسم المتجر *</label><input id="sName" class="input" value="${esc(f.name)}" maxlength="100">
       <label class="label">التصنيف *</label>
-      <div class="chips wrap">${X.CATEGORIES.filter((c) => c !== "الكل").map((c) => `<button class="chip${f.category === c ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+      <div class="chips wrap">${[...new Set([...categories(), f.category].filter(Boolean))].map((c) => `<button class="chip${f.category === c ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
       <div class="row2 media-row">
         <div><label class="label">الشعار</label><label class="upload round">${f.logoFile || f.logo ? `<img src="${esc(f.logoFile ? URL.createObjectURL(f.logoFile) : cld(f.logo, 200))}" alt="">` : "＋"}<input type="file" accept="image/*" id="sLogo" hidden></label></div>
         <div><label class="label">صورة الواجهة (غلاف)</label><label class="upload wide">${f.coverFile || f.cover ? `<img src="${esc(f.coverFile ? URL.createObjectURL(f.coverFile) : cld(f.cover, 600))}" alt="">` : "📷 اختر صورة"}<input type="file" accept="image/*" id="sCover" hidden></label></div>
@@ -264,7 +264,7 @@ export async function openOfferForm(editing) {
   if (!(p.branches || []).length) { toast("جهّز صفحة متجرك أول 📍"); openStoreForm(); return; }
   const e = editing || null;
   const f = {
-    title: e?.offerTitle || "", desc: e?.description || "", category: e?.cuisineType || p.cuisineType || X.CATEGORIES[1],
+    title: e?.offerTitle || "", desc: e?.description || "", category: e?.cuisineType || p.cuisineType || categories()[0],
     percentMode: e ? X.isPercentOnly(e) : false, price: e && e.price > 0 ? X.money(e.price) : "", original: e?.originalPrice ? X.money(e.originalPrice) : "",
     pct: e?.discountPercent > 0 && !(e.dailyPercents || []).length ? String(e.discountPercent) : "", tiered: (e?.dailyPercents || []).length > 0,
     days: (e?.dailyPercents || []).length ? e.dailyPercents.map(String) : ["", ""], scope: e?.itemsScope || "",
@@ -298,7 +298,7 @@ export async function openOfferForm(editing) {
       <label class="label">الأصناف (للبحث)</label><input id="oTags" class="input" value="${esc(f.tags)}" placeholder="شاورما، برجر، بروست">
       ${deliveryFields(f)}
       <label class="label">التصنيف</label>
-      <div class="chips wrap">${X.CATEGORIES.filter((c) => c !== "الكل").map((c) => `<button class="chip${f.category === c ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+      <div class="chips wrap">${[...new Set([...categories(), f.category].filter(Boolean))].map((c) => `<button class="chip${f.category === c ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
       <div class="section-title">🏪 وين يظهر العرض؟</div>
       <label class="switch-row"><span>كل الفروع (${p.branches.length})</span><input type="checkbox" id="oAll" ${f.all ? "checked" : ""}></label>
       ${!f.all ? p.branches.map((b) => `<label class="switch-row sub"><span>${esc(b.name || districtLabel(b.district))}</span><input type="checkbox" data-br="${esc(b.id)}" ${f.sel.has(b.id) ? "checked" : ""}></label>`).join("") : ""}

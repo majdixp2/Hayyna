@@ -302,9 +302,27 @@ function offers() {
        <button class="btn danger" data-act="deleteOffer" data-id="${o.id}">حذف</button>`)).join("")}</div>`;
 }
 
+const DEFAULT_CATS = ["مطاعم 🍔", "مقاهي وحلويات ☕", "سوبرماركت وبقالة 🛒", "ملابس وأزياء 👕", "خياطة ومشاغل 🧵",
+  "نظارات وبصريات 👓", "عطور وتجميل 💄", "جوالات وإلكترونيات 📱", "حلاقة وصالونات 💈", "خدمات أخرى 🧰"];
+function catDraft() {
+  if (!state.catDraft) state.catDraft = ((state.config.categories && state.config.categories.length) ? state.config.categories : DEFAULT_CATS).map((c) => ({ orig: c, name: c }));
+  return state.catDraft;
+}
 function settings() {
   const cfg = state.config;
-  return `<h2>⚙️ رقم واتساب الدعم</h2>
+  const cats = catDraft();
+  return `<h2>🏷️ تصنيفات المتاجر</h2>
+    <div class="card">
+      <p class="muted">تظهر للتجار عند إعداد المتجر ونشر العروض، وللزبائن في الفلاتر. تعديل الاسم يحدّث العروض والمتاجر اللي عليه.</p>
+      ${cats.map((c, i) => `<div class="row" style="align-items:center;margin:4px 0">
+        <input type="text" data-catname="${i}" value="${esc(c.name)}" maxlength="40" style="flex:1">
+        <button class="btn" data-catup="${i}" ${i === 0 ? "disabled" : ""}>↑</button>
+        <button class="btn danger" data-catdel="${i}" ${cats.length < 2 ? "disabled" : ""}>حذف</button></div>`).join("")}
+      <div class="row" style="align-items:center;margin-top:8px"><input type="text" id="catNew" placeholder="تصنيف جديد مع إيموجي، مثال: ورود وهدايا 💐" maxlength="40" style="flex:1">
+        <button class="btn" data-act="catAdd">إضافة</button></div>
+      <div class="actions"><button class="btn primary" data-act="saveCats">حفظ التصنيفات</button></div>
+    </div>
+    <h2>⚙️ رقم واتساب الدعم</h2>
     <div class="card"><div class="row" style="align-items:center"><input type="text" id="supportNum" value="${esc(cfg.supportWhatsapp || "0552793379")}" style="max-width:240px">
       <button class="btn primary" data-act="saveSupport">حفظ</button></div></div>
     <h2>✨ التعبئة الذكية</h2>
@@ -345,6 +363,9 @@ function bind() {
   c.querySelectorAll("[data-cfg]").forEach((x) => (x.onchange = () => run(() => actions.saveConfig({ [x.dataset.cfg]: x.checked }), "تم ✅")));
   const poiOn = $("poiOn"); if (poiOn) poiOn.onchange = () => run(() => actions.saveConfig({ showGooglePoi: poiOn.checked }), "تم ✅");
   const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => run(() => actions.saveConfig({ poiInviteEnabled: invOn.checked }), "تم ✅");
+  c.querySelectorAll("[data-catname]").forEach((x) => (x.oninput = () => { catDraft()[+x.dataset.catname].name = x.value; }));
+  c.querySelectorAll("[data-catup]").forEach((b) => (b.onclick = () => { const d = catDraft(), i = +b.dataset.catup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
+  c.querySelectorAll("[data-catdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف التصنيف؟ العروض الحالية تبقى عليه.")) { catDraft().splice(+b.dataset.catdel, 1); render(); } }));
   const ai = $("aiOn"); if (ai) ai.onchange = () => run(() => actions.saveConfig({ aiAutofillEnabled: ai.checked }), ai.checked ? "التعبئة الذكية مفعّلة ✨" : "التعبئة الذكية موقفة");
   c.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => {
     const id = b.dataset.id, o = byId(id);
@@ -370,6 +391,18 @@ function bind() {
       saveModel: () => actions.saveConfig({ aiModel: $("aiModel").value.trim() }),
       verifyOk: () => actions.verify(id, true, ""),
       verifyNo: () => actions.verify(id, false, $("reason_" + id).value.trim()),
+      catAdd: () => { const v = $("catNew").value.trim(); if (v && !catDraft().some((x) => x.name.trim() === v)) catDraft().push({ orig: null, name: v }); render(); },
+      saveCats: async () => {
+        const d = catDraft().map((x) => ({ ...x, name: x.name.trim() })).filter((x) => x.name);
+        const names = [...new Set(d.map((x) => x.name))];
+        await actions.saveConfig({ categories: names });
+        let moved = 0;
+        for (const x of d) if (x.orig && x.orig !== x.name) {
+          for (const od of (await getDocs(query(collection(db, "offers"), where("cuisineType", "==", x.orig)))).docs) { await updateDoc(od.ref, { cuisineType: x.name }); moved++; }
+          for (const sd of (await getDocs(query(collection(db, "stores"), where("category", "==", x.orig)))).docs) await updateDoc(sd.ref, { category: x.name });
+        }
+        state.catDraft = null; if (moved) toast(`تحدّث ${moved} عرض للاسم الجديد`);
+      },
       savePoi: () => actions.saveConfig({ inviteMessage: $("inviteMsg").value.trim(), appLink: $("appLink").value.trim() }),
     };
     if (map[b.dataset.act]) run(map[b.dataset.act], ["approve", "trust", "suspendOffer", "suspendUid", "verifyOk", "verifyNo"].includes(b.dataset.act) ? null : "تم ✅");
