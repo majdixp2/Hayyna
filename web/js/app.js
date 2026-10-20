@@ -1,10 +1,11 @@
 // حيّنا على الويب — نفس تجربة التطبيق: خريطة، عروض، مفضلة، حسابي (زبون / تاجر).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut
+  getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut,
+  sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, deleteUser
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
-  getFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, addDoc, increment, serverTimestamp
+  getFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, addDoc, deleteDoc, increment, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
 import * as X from "./logic.js";
@@ -21,7 +22,7 @@ export const $ = (id) => document.getElementById(id);
 export const state = {
   offers: [], stores: [], q: "", cat: "الكل", sort: "near", openOnly: false, browse: null,
   me: null, selected: null, branchId: null, view: null, tab: "map",
-  favs: new Set(), user: null, role: null, roleLoading: false, pendingRole: null,
+  favs: new Set(), user: null, role: null, profile: null, roleLoading: false, pendingRole: null,
   config: {}, loaded: false, storesLoaded: false,
 };
 
@@ -379,6 +380,8 @@ function openPlaces() {
 }
 
 // ---------------- حسابي ----------------
+const APPLE_ENABLED = false; // يتفعّل بعد إعداد Sign in with Apple في Firebase (يحتاج حساب Apple Developer)
+const roleName = (r) => r === "merchant" ? "صاحب محل 🏪" : "زبون 🛍️";
 export function renderAccount() {
   const el = $("account");
   const u = state.user;
@@ -388,47 +391,157 @@ export function renderAccount() {
       <div class="pad">
         <button class="role-card" data-login="customer"><div class="rc-ico">🛍️</div><div><b>أنا زبون</b><br><small>احفظ العروض اللي تعجبك وتابعها من أي جهاز</small></div></button>
         <button class="role-card" data-login="merchant"><div class="rc-ico">🏪</div><div><b>أنا صاحب محل</b><br><small>انشر عروضك مجاناً وخلّ أهل الحي يوصلون لك</small></div></button>
-        <p class="hint">الدخول بحساب Google</p>
         <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
+        <div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div>
       </div>`;
-    el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => login(b.dataset.login));
+    el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => openLogin(b.dataset.login));
     $("contactBtn").onclick = openContact;
     return;
   }
   const isAdmin = ADMIN_EMAILS.includes(u.email);
-  const head = `<div class="acc-user">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="">` : `<div class="avatar">${esc((u.displayName || "؟")[0])}</div>`}
-    <div><b>${esc(u.displayName || "")}</b><br><small>${esc(u.email || "")}</small></div></div>`;
-  if (state.roleLoading) { el.innerHTML = head + `<div class="pad"><div class="spinner"></div></div>`; return; }
+  const pr = state.profile || {};
+  if (state.roleLoading) { el.innerHTML = `<div class="pad"><div class="spinner"></div></div>`; return; }
+  // أول دخول: نكمّل البيانات (الاسم + الجوال + نوع الحساب)
+  if (!pr.name || !pr.phone) { renderOnboarding(el); return; }
+  const name = pr.name || u.displayName || "";
+  const head = `<div class="acc-user">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="">` : `<div class="avatar">${esc((name || "؟")[0])}</div>`}
+    <div class="au-main"><b>${esc(name)}</b><br><small dir="ltr">${esc(X.toLocalPhone(pr.phone))}</small> <span class="pill role">${roleName(state.role)}</span></div>
+    <button class="icon-btn" id="editProfile" aria-label="تعديل البيانات">✎</button></div>`;
+  const foot = `<div class="pad acc-foot"><button class="btn ghost" id="logoutBtn">تسجيل الخروج</button>
+    <button class="btn ghost danger-text" id="deleteAcc">حذف الحساب</button><div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div></div>`;
   if (state.role === "merchant" || isAdmin) {
-    el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>`;
+    el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
     import("./merchant.js").then((m) => m.renderMerchant($("merchantRoot"), { isAdmin, support, logout: doLogout, contact: openContact }));
-    return;
+  } else {
+    el.innerHTML = head + `<div class="pad">
+      <div class="stat-row"><div class="stat"><b>${state.favs.size}</b><small>في المفضلة</small></div></div>
+      <button class="role-card" id="becomeMerchant"><div class="rc-ico">🏪</div><div><b>عندك محل؟</b><br><small>حوّل حسابك لحساب تاجر وانشر عروضك مجاناً</small></div></button>
+      <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
+      <a class="btn call" href="https://wa.me/${waDigits(support)}" target="_blank" rel="noopener">واتساب الدعم ${esc(support)}</a></div>` + foot;
+    $("becomeMerchant").onclick = () => setRole("merchant");
+    $("contactBtn").onclick = openContact;
   }
-  el.innerHTML = head + `<div class="pad">
-    <div class="stat-row"><div class="stat"><b>${state.favs.size}</b><small>في المفضلة</small></div></div>
-    <button class="role-card" id="becomeMerchant"><div class="rc-ico">🏪</div><div><b>عندك محل؟</b><br><small>حوّل حسابك لحساب تاجر وانشر عروضك مجاناً</small></div></button>
-    <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
-    <a class="btn call" href="https://wa.me/${waDigits(support)}" target="_blank" rel="noopener">واتساب الدعم ${esc(support)}</a>
-    <button class="btn ghost" id="logoutBtn">تسجيل الخروج</button></div>`;
-  $("becomeMerchant").onclick = async () => {
-    state.role = "merchant";
-    await setDoc(doc(db, "users", u.uid), { role: "merchant", updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
-    toast("صار حسابك حساب تاجر 🏪"); renderAccount();
-  };
-  $("contactBtn").onclick = openContact;
+  $("editProfile").onclick = () => openProfileEdit();
   $("logoutBtn").onclick = doLogout;
+  $("deleteAcc").onclick = confirmDeleteAccount;
 }
-async function login(role) {
+
+function renderOnboarding(el) {
+  const u = state.user, pr = state.profile || {};
+  let role = state.role || "customer";
+  el.innerHTML = `<div class="acc-hero small"><h1>كمّل بياناتك 👋</h1><p>خطوة وحدة وتبدأ</p></div>
+    <div class="pad form">
+      <label class="label">اسمك *</label><input id="obName" class="input" maxlength="60" value="${esc(pr.name || u.displayName || "")}" placeholder="الاسم">
+      <label class="label">رقم جوالك *</label><input id="obPhone" class="input" inputmode="tel" dir="ltr" value="${esc(X.toLocalPhone(pr.phone || ""))}" placeholder="05xxxxxxxx">
+      <label class="label">نوع الحساب</label>
+      <div class="row2"><button class="role-mini${role === "customer" ? " on" : ""}" data-r="customer">🛍️ زبون</button><button class="role-mini${role === "merchant" ? " on" : ""}" data-r="merchant">🏪 صاحب محل</button></div>
+      <div id="obErr" class="err"></div>
+      <button class="btn dir big" id="obSave">متابعة</button>
+      <button class="btn ghost" id="obOut">تسجيل الخروج</button>
+    </div>`;
+  el.querySelectorAll("[data-r]").forEach((b) => b.onclick = () => { role = b.dataset.r; el.querySelectorAll("[data-r]").forEach((x) => x.classList.toggle("on", x === b)); });
+  $("obOut").onclick = doLogout;
+  $("obSave").onclick = async () => {
+    const name = $("obName").value.trim(), phone = X.normalizeSaudiPhone($("obPhone").value);
+    if (name.length < 2) return $("obErr").textContent = "اكتب اسمك.";
+    if (!phone) return $("obErr").textContent = "اكتب رقم جوال صحيح مثل 05xxxxxxxx.";
+    $("obSave").disabled = true;
+    try {
+      await setDoc(doc(db, "users", u.uid), { role, name, phone, updatedAt: serverTimestamp() }, { merge: true });
+      state.profile = { name, phone }; state.role = role;
+      toast(role === "merchant" ? "أهلاً بك 🏪 ابدأ بتجهيز صفحة متجرك" : `أهلاً ${name} 👋`);
+      renderAll();
+    } catch (e) { console.error(e); $("obSave").disabled = false; $("obErr").textContent = "تعذّر الحفظ، حاول مرة ثانية."; }
+  };
+}
+
+function openProfileEdit() {
+  const u = state.user, pr = state.profile || {};
+  let role = state.role || "customer";
+  showSheet(`<div class="pad form"><div class="section-title">بياناتي</div>
+    <label class="label">الاسم</label><input id="peName" class="input" maxlength="60" value="${esc(pr.name || "")}">
+    <label class="label">رقم الجوال</label><input id="pePhone" class="input" inputmode="tel" dir="ltr" value="${esc(X.toLocalPhone(pr.phone || ""))}">
+    <label class="label">نوع الحساب</label>
+    <div class="row2"><button class="role-mini${role === "customer" ? " on" : ""}" data-r="customer">🛍️ زبون</button><button class="role-mini${role === "merchant" ? " on" : ""}" data-r="merchant">🏪 صاحب محل</button></div>
+    <small class="hint">${esc(u.email || "")}</small>
+    <div id="peErr" class="err"></div><button class="btn dir" id="peSave">حفظ</button></div>`);
+  $("sheetBody").querySelectorAll("[data-r]").forEach((b) => b.onclick = () => { role = b.dataset.r; $("sheetBody").querySelectorAll("[data-r]").forEach((x) => x.classList.toggle("on", x === b)); });
+  $("peSave").onclick = async () => {
+    const name = $("peName").value.trim(), phone = X.normalizeSaudiPhone($("pePhone").value);
+    if (name.length < 2) return $("peErr").textContent = "اكتب اسمك.";
+    if (!phone) return $("peErr").textContent = "اكتب رقم جوال صحيح.";
+    try {
+      await setDoc(doc(db, "users", u.uid), { role, name, phone, updatedAt: serverTimestamp() }, { merge: true });
+      state.profile = { name, phone }; state.role = role; hideSheet(); toast("انحفظت بياناتك ✅"); renderAll();
+    } catch (e) { $("peErr").textContent = "تعذّر الحفظ."; }
+  };
+}
+
+async function setRole(role) {
+  try {
+    await setDoc(doc(db, "users", state.user.uid), { role, updatedAt: serverTimestamp() }, { merge: true });
+    state.role = role; toast(role === "merchant" ? "صار حسابك حساب تاجر 🏪" : "صار حسابك حساب زبون"); renderAll();
+  } catch { toast("تعذّر التغيير"); }
+}
+
+function confirmDeleteAccount() {
+  showSheet(`<div class="pad"><div class="section-title">حذف الحساب؟</div>
+    <p class="desc">بننحذف بياناتك (الاسم، الجوال، المفضلة) وتسجيل دخولك. ${state.role === "merchant" ? "عروضك وصفحة متجرك تنحذف بعد من خلال فريق حيّنا خلال أيام." : ""}</p>
+    <div class="row2"><button class="btn call" id="daNo">إلغاء</button><button class="btn danger" id="daYes">احذف حسابي</button></div></div>`);
+  $("daNo").onclick = hideSheet;
+  $("daYes").onclick = async () => {
+    const u = auth.currentUser; if (!u) return;
+    try {
+      await deleteDoc(doc(db, "users", u.uid)).catch(() => {});
+      if (state.role === "merchant") await addDoc(collection(db, "feedback"), { uid: u.uid, userName: (state.profile?.name || "").slice(0, 100), role: "merchant", type: "أخرى",
+        message: "طلب حذف حساب التاجر وبياناته (عروض + صفحة المتجر)", screenshotUrl: "", contact: (u.email || "").slice(0, 100), appVersion: "web", device: "", status: "new", reply: "", replySeen: false, createdAt: serverTimestamp() }).catch(() => {});
+      await deleteUser(u);
+      state.favs = new Set(); saveFavsLocal(); hideSheet(); toast("انحذف حسابك. نتمنى نشوفك مرة ثانية 🌿", true);
+    } catch (e) {
+      if (e.code === "auth/requires-recent-login") { toast("لأمانك: سجّل دخول مرة ثانية وبعدها احذف الحساب", true); await signOut(auth); }
+      else toast("تعذّر الحذف: " + (e.code || e.message));
+    }
+  };
+}
+
+// خيارات الدخول: قوقل / الإيميل / أبل
+function openLogin(role) {
   state.pendingRole = role;
   try { sessionStorage.setItem("hayyna_pending_role", role); } catch {}
-  const provider = new GoogleAuthProvider(); provider.setCustomParameters({ prompt: "select_account" });
-  try { await signInWithPopup(auth, provider); }
+  showSheet(`<div class="pad"><div class="section-title">${role === "merchant" ? "🏪 دخول صاحب المحل" : "🛍️ دخول الزبون"}</div>
+    <button class="btn login google" id="lgGoogle"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt=""> المتابعة بحساب Google</button>
+    ${APPLE_ENABLED ? `<button class="btn login apple" id="lgApple"> المتابعة بحساب Apple</button>` : ""}
+    <div class="or"><span>أو بالإيميل</span></div>
+    <input id="lgEmail" class="input" type="email" dir="ltr" placeholder="name@email.com" autocomplete="email">
+    <button class="btn call" id="lgEmailBtn">✉️ أرسل لي رابط الدخول</button>
+    <small class="hint">بنرسل لك رابط على إيميلك، تضغطه وتدخل مباشرة بدون كلمة سر.</small></div>`);
+  $("lgGoogle").onclick = () => loginWith(new GoogleAuthProvider());
+  if (APPLE_ENABLED) $("lgApple").onclick = () => {
+    const p = new OAuthProvider("apple.com"); p.addScope("email"); p.addScope("name"); p.setCustomParameters({ locale: "ar" }); loginWith(p);
+  };
+  $("lgEmailBtn").onclick = async () => {
+    const email = $("lgEmail").value.trim();
+    if (!/^\S+@\S+\.\S+$/.test(email)) return toast("اكتب إيميل صحيح");
+    try {
+      await sendSignInLinkToEmail(auth, email, { url: location.origin + "/?login=email", handleCodeInApp: true });
+      try { localStorage.setItem("hayyna_login_email", email); } catch {}
+      showSheet(`<div class="pad" style="text-align:center"><div style="font-size:48px">📬</div><div class="section-title">افتح إيميلك</div>
+        <p class="desc">أرسلنا رابط الدخول إلى <b dir="ltr">${esc(email)}</b>. اضغط الرابط من نفس الجوال وبتدخل على طول. (شيك على مجلد الرسائل غير المرغوبة لو ما لقيته)</p></div>`);
+    } catch (e) {
+      toast(e.code === "auth/operation-not-allowed" ? "الدخول بالإيميل مو مفعّل للحين" : "تعذّر الإرسال: " + (e.code || e.message), true);
+    }
+  };
+}
+async function loginWith(provider) {
+  if (provider instanceof GoogleAuthProvider) provider.setCustomParameters({ prompt: "select_account" });
+  try { await signInWithPopup(auth, provider); hideSheet(); }
   catch (e) {
     if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") { await signInWithRedirect(auth, provider); return; }
-    if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") toast("تعذّر الدخول: " + (e.message || e.code));
+    if (e.code === "auth/account-exists-with-different-credential") return toast("هذا الإيميل مسجّل بطريقة دخول ثانية، جرّب قوقل أو الإيميل", true);
+    if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") toast("تعذّر الدخول: " + (e.code || e.message));
   }
 }
-async function doLogout() { await signOut(auth); state.role = null; toast("سجّلت خروج"); }
+async function doLogout() { await signOut(auth); state.role = null; state.profile = null; toast("سجّلت خروج"); }
 
 function openContact() {
   const support = X.toLocalPhone(state.config.supportWhatsapp || "0552793379");
@@ -534,29 +647,39 @@ navigator.permissions?.query({ name: "geolocation" }).then((r) => { if (r.state 
 
 // ---------------- الدخول ----------------
 getRedirectResult(auth).catch(() => {});
+// رجع من رابط الدخول بالإيميل
+if (isSignInWithEmailLink(auth, location.href)) {
+  let email = null; try { email = localStorage.getItem("hayyna_login_email"); } catch {}
+  if (!email) email = prompt("اكتب إيميلك لتأكيد الدخول:");
+  if (email) signInWithEmailLink(auth, email, location.href)
+    .then(() => { try { localStorage.removeItem("hayyna_login_email"); } catch {} setTab("account"); })
+    .catch((e) => toast("الرابط منتهي أو مستخدم، اطلب رابط جديد (" + (e.code || "") + ")", true))
+    .finally(() => history.replaceState({}, "", "/"));
+}
 onAuthStateChanged(auth, async (u) => {
   state.user = u;
-  if (!u) { state.role = null; renderAll(); return; }
+  if (!u) { state.role = null; state.profile = null; renderAll(); return; }
   state.roleLoading = true; renderAccount();
   let pending = state.pendingRole; try { pending = pending || sessionStorage.getItem("hayyna_pending_role"); sessionStorage.removeItem("hayyna_pending_role"); } catch {}
   try {
     const ref = doc(db, "users", u.uid), snap = await getDoc(ref);
-    let role = snap.exists() ? snap.data().role : null;
+    const data = snap.exists() ? snap.data() : {};
+    let role = data.role || null;
     if (!role) {
-      const merchant = await getDoc(doc(db, "merchants", u.uid)).catch(() => null);
-      role = merchant?.exists() ? "merchant" : (pending || "customer");
+      // حساب جديد: نوع الحساب حسب الزر اللي اختاره (والحسابات القديمة اللي عندها متجر = تاجر)
+      const merchant = pending ? null : await getDoc(doc(db, "merchants", u.uid)).catch(() => null);
+      role = pending || (merchant?.exists() ? "merchant" : "customer");
       await setDoc(ref, { role, updatedAt: serverTimestamp() }, { merge: true });
-    } else if (pending === "merchant" && role !== "merchant") {
-      role = "merchant"; await setDoc(ref, { role }, { merge: true });
     }
     state.role = role;
-    const remote = new Set(snap.exists() ? (snap.data().favorites || []) : []);
+    state.profile = { name: data.name || "", phone: data.phone || "" };
+    const remote = new Set(data.favorites || []);
     const merged = new Set([...remote, ...state.favs]);
     state.favs = merged; saveFavsLocal();
     if (merged.size !== remote.size) setDoc(ref, { role, favorites: [...merged].slice(0, 500) }, { merge: true }).catch(() => {});
-  } catch (e) { console.error(e); state.role = state.role || "customer"; }
+  } catch (e) { console.error(e); state.role = state.role || pending || "customer"; state.profile = state.profile || {}; }
   state.roleLoading = false; state.pendingRole = null;
-  if (pending) { setTab("account"); toast(state.role === "merchant" ? "أهلاً بك 🏪 من هنا تدير محلك وعروضك" : "أهلاً بك 👋"); }
+  if (pending) setTab("account");
   renderAll();
 });
 

@@ -56,11 +56,10 @@ function draw() {
     <button class="btn dir big" id="newOffer" ${st.suspended ? "disabled" : ""}>＋ عرض جديد</button>
     <div class="section-title">عروضي (${m.offers.length})</div>
     <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
-    <button class="btn call" id="mContact">💬 تواصل معنا</button>
-    <button class="btn ghost" id="mLogout">تسجيل الخروج</button>`;
+    <button class="btn call" id="mContact">💬 تواصل معنا</button>`;
   $("editStore").onclick = () => openStoreForm();
   $("newOffer").onclick = () => hasStore ? openOfferForm(null) : (toast("جهّز صفحة متجرك وموقعك أول 📍"), openStoreForm());
-  $("mContact").onclick = m.ctx.contact; $("mLogout").onclick = m.ctx.logout;
+  $("mContact").onclick = m.ctx.contact;
   root.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => openOfferForm(m.offers.find((o) => o.id === b.dataset.edit)));
   root.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => confirmDelete(m.offers.find((o) => o.id === b.dataset.del)));
   root.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { if (state.offers.some((o) => o.id === b.dataset.view)) openOffer(b.dataset.view, true); else toast("العرض بيظهر للناس بعد ما ينعتمد"); });

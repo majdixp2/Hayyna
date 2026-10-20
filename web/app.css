@@ -288,3 +288,19 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .tier { display: grid; grid-template-columns: 96px 1fr auto; gap: 8px; align-items: center; font-weight: 700; font-size: 14px; }
 .mini-map { height: 240px; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); position: relative; }
 .logo-ph { color: var(--green); }
+
+/* الدخول والملف الشخصي */
+.au-main { flex: 1; min-width: 0; }
+.pill.role { background: var(--green-soft); color: var(--green); margin-inline-start: 4px; }
+.role-mini { border: 1.5px solid var(--line); background: #fff; border-radius: 14px; padding: 14px 8px; font: inherit; font-weight: 700; font-size: 15px; color: var(--ink); }
+.role-mini.on { border-color: var(--green); background: #F2FAF5; color: var(--green); }
+.btn.login { border: 1px solid #D9D4CA; background: #fff; color: var(--ink); font-weight: 700; gap: 10px; }
+.btn.login img { width: 20px; height: 20px; }
+.btn.login.apple { background: #000; color: #fff; border-color: #000; font-size: 16px; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 16px 0 8px; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.legal { text-align: center; margin-top: 14px; font-size: 13px; }
+.legal a { color: var(--muted); }
+.danger-text { color: #B42318 !important; }
+.acc-hero.small { padding-top: calc(30px + var(--safe-t)); }
+.acc-foot { padding-top: 0; }
