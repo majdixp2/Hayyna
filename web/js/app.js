@@ -16,6 +16,7 @@ const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf
 
 export const fbApp = initializeApp(firebaseConfig);
 export const auth = getAuth(fbApp);
+auth.languageCode = "ar"; // رسائل الدخول بالإيميل تطلع بالعربي
 export const db = getFirestore(fbApp, FIRESTORE_DB_ID);
 export const $ = (id) => document.getElementById(id);
 
