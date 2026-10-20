@@ -24,11 +24,12 @@ const SHOPS_STYLE = [...CLEAN_STYLE,
 
 let gmapsPromise = null;
 function loadGoogle(key) {
+  if (googleFailed) return Promise.reject(new Error("maps auth failed"));
   if (window.google?.maps) return Promise.resolve(window.google.maps);
   if (gmapsPromise) return gmapsPromise;
   gmapsPromise = new Promise((resolve, reject) => {
     window.__hayynaMapsReady = () => resolve(window.google.maps);
-    window.gm_authFailure = () => reject(new Error("maps auth failed"));
+    if (googleFailed) return reject(new Error("maps auth failed"));
     const s = document.createElement("script");
     s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=ar&region=SA&callback=__hayynaMapsReady&loading=async`;
     s.async = true; s.onerror = () => reject(new Error("maps load failed"));
@@ -55,13 +56,49 @@ function loadLeaflet() {
  * يرجّع null لو فشل كل شي.
  */
 export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 12, showShops = false, onMapClick } = {}) {
+  const opts = { center, zoom, showShops, onMapClick };
+  // واجهة ثابتة تحوّل لـ OpenStreetMap لو رفضت قوقل المفتاح (حتى بعد ما تنرسم الخريطة)
+  const last = {};
+  let impl = null, switching = false;
+  const toOsm = async () => {
+    if (switching || impl?.kind === "osm") return; switching = true;
+    console.warn("Google Maps failed — switching to OpenStreetMap");
+    const c = impl?.center?.() || { lat: center[0], lng: center[1] };
+    el.innerHTML = ""; el.className = el.className.replace(/\bgm-err\b/, "");
+    const L = await loadLeaflet();
+    impl = leafletMap(L, el, { ...opts, center: [c.lat, c.lng] });
+    if (last.markers) impl.setMarkers(last.markers);
+    if (last.dots) impl.setDots(last.dots);
+    if (last.me) impl.setMe(...last.me);
+    if (last.pin) impl.setPin(...last.pin);
+    if (last.fit) impl.fitBounds(last.fit);
+  };
   if (key) {
-    try { const g = await loadGoogle(key); return googleMap(g, el, { center, zoom, showShops, onMapClick }); }
-    catch (e) { console.warn("Google Maps unavailable, using OpenStreetMap", e); el.innerHTML = ""; }
+    try {
+      const g = await loadGoogle(key);
+      impl = googleMap(g, el, opts);
+      googleFailHandlers.add(toOsm);
+    } catch (e) { console.warn("Google Maps unavailable, using OpenStreetMap", e); el.innerHTML = ""; }
   }
-  const L = await loadLeaflet();
-  return leafletMap(L, el, { center, zoom, onMapClick });
+  if (!impl) { const L = await loadLeaflet(); impl = leafletMap(L, el, opts); }
+  return {
+    get kind() { return impl.kind; },
+    setMarkers: (items) => { last.markers = items; impl.setMarkers(items); },
+    setDots: (items) => { last.dots = items; impl.setDots(items); },
+    panTo: (...a) => impl.panTo(...a),
+    setView: (...a) => impl.setView(...a),
+    fitBounds: (pts, pad) => { last.fit = pts; impl.fitBounds(pts, pad); },
+    setMe: (lat, lng) => { last.me = [lat, lng]; impl.setMe(lat, lng); },
+    setPin: (lat, lng) => { last.pin = [lat, lng]; impl.setPin(lat, lng); },
+    center: () => impl.center(),
+    resize: () => impl.resize(),
+  };
 }
+
+// قوقل تنادي gm_authFailure لو المفتاح مرفوض (فوترة / دومين) — نحوّل كل الخرائط المفتوحة
+const googleFailHandlers = new Set();
+let googleFailed = false;
+window.gm_authFailure = () => { googleFailed = true; googleFailHandlers.forEach((f) => f()); };
 
 function googleMap(g, el, { center, zoom, showShops, onMapClick }) {
   const map = new g.Map(el, {
