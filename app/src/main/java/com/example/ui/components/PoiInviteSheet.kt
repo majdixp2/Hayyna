@@ -37,12 +37,22 @@ fun PoiInviteSheet(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    // رقم المحل من خرائط Google (لو متاح): جوال = نفتح واتساب المحل مباشرة
+    var info by androidx.compose.runtime.remember(poi.placeId) { androidx.compose.runtime.mutableStateOf<com.example.data.PlacesLookup.Info?>(null) }
+    var loading by androidx.compose.runtime.remember(poi.placeId) { androidx.compose.runtime.mutableStateOf(true) }
+    androidx.compose.runtime.LaunchedEffect(poi.placeId) {
+        info = com.example.data.PlacesLookup.lookup(context, poi.placeId)
+        loading = false
+    }
+    val mobile = info?.phone?.let { com.example.data.PlacesLookup.saudiMobile(it) }
+    val name = info?.name?.takeIf { it.isNotBlank() }
+    val text = if (name != null && !inviteText.contains(name)) inviteText.replace(poi.name.trim(), name) else inviteText
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(poi.name.replace("\n", " "), fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
+            Text((name ?: poi.name).replace("\n", " "), fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
             Text(
                 "هذا المحل مو مسجّل في حيّنا للحين. ادعه ينضم وينشر عروضه لأهل الحي 👇",
                 fontSize = 14.sp,
@@ -52,16 +62,40 @@ fun PoiInviteSheet(
             Button(
                 onClick = {
                     onInvited()
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, inviteText)
+                    if (mobile != null) {
+                        // واتساب المحل مباشرة والرسالة جاهزة
+                        val wa = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://wa.me/$mobile?text=" + android.net.Uri.encode(text)))
+                        runCatching { context.startActivity(wa) }
+                    } else {
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, text)
+                        }
+                        context.startActivity(Intent.createChooser(send, "ادعُ المحل لحيّنا"))
                     }
-                    context.startActivity(Intent.createChooser(send, "ادعُ المحل لحيّنا"))
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                enabled = !loading,
+                colors = ButtonDefaults.buttonColors(containerColor = if (mobile != null) androidx.compose.ui.graphics.Color(0xFF25D366) else CalmSagePrimary),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
-            ) { Text("📣 ادعه لحيّنا", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+            ) {
+                Text(
+                    when {
+                        loading -> "…"
+                        mobile != null -> "💬 ادعه على واتساب المحل"
+                        else -> "📣 ادعه لحيّنا"
+                    },
+                    fontWeight = FontWeight.Bold, fontSize = 15.sp
+                )
+            }
+            val phone = info?.phone.orEmpty()
+            if (phone.isNotBlank() && mobile == null) {
+                OutlinedButton(
+                    onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + phone.filter { it.isDigit() || it == '+' }))) } },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) { Text("📞 اتصل بالمحل ($phone)") }
+            }
             OutlinedButton(
                 onClick = onClaim,
                 shape = RoundedCornerShape(12.dp),

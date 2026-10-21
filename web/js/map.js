@@ -31,7 +31,7 @@ function loadGoogle(key) {
     window.__hayynaMapsReady = () => resolve(window.google.maps);
     if (googleFailed) return reject(new Error("maps auth failed"));
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=ar&region=SA&libraries=places&callback=__hayynaMapsReady&loading=async`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=ar&region=SA&callback=__hayynaMapsReady&loading=async`;
     s.async = true; s.onerror = () => reject(new Error("maps load failed"));
     document.head.appendChild(s);
     setTimeout(() => reject(new Error("maps timeout")), 15000);
@@ -93,7 +93,7 @@ export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 1
     setPin: (lat, lng) => { last.pin = [lat, lng]; impl.setPin(lat, lng); },
     setCircle: (c) => { last.circle = c; impl.setCircle(c); },
     setShowShops: (on) => impl.setShowShops?.(on),
-    placeName: (id) => impl.placeName ? impl.placeName(id) : Promise.resolve(""),
+    placeInfo: (id) => impl.placeInfo ? impl.placeInfo(id) : Promise.resolve({ name: "", phone: "" }),
     center: () => impl.center(),
     resize: () => impl.resize(),
   };
@@ -136,34 +136,17 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
     if (e.placeId && onPoiClick) { e.stop(); onPoiClick({ placeId: e.placeId, lat: e.latLng.lat(), lng: e.latLng.lng() }); return; }
     if (onMapClick) onMapClick({ lat: e.latLng.lat(), lng: e.latLng.lng() });
   });
-  let places = null;
   return {
     kind: "google",
     setShowShops: (on) => map.setOptions({ styles: on ? SHOPS_STYLE : CLEAN_STYLE, clickableIcons: !!(on && onPoiClick) }),
-    // اسم المحل (يحتاج Places API على المفتاح، وإلا يرجع فاضي)
-    placeName: (placeId) => new Promise((resolve) => {
+    // اسم المحل ورقمه من خرائط Google (Places API New) — لحظة الضغط بس، وما نخزّنه
+    placeInfo: async (placeId) => {
       try {
-        if (!g.places) return resolve("");
-        places = places || new g.places.PlacesService(map);
-        places.getDetails({ placeId, fields: ["name"] }, (r, status) => resolve(status === "OK" && r ? r.name || "" : ""));
-        setTimeout(() => resolve(""), 4000);
-      } catch { resolve(""); }
-    }),
-    setMarkers: (items) => put("markers", items, "ov-mk"),
-    setDots: (items) => put("dots", items, "ov-dot"),
-    panTo: (lat, lng, z) => { map.panTo({ lat, lng }); if (z) map.setZoom(z); },
-    setView: (lat, lng, z) => { map.setCenter({ lat, lng }); if (z) map.setZoom(z); },
-    fitBounds: (pts, pad) => {
-      if (!pts.length) return;
-      const b = new g.LatLngBounds(); pts.forEach(([a, c]) => b.extend({ lat: a, lng: c }));
-      map.fitBounds(b, pad || { top: 140, bottom: 260, left: 40, right: 40 });
-      g.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 15) map.setZoom(15); });
-    },
-    setMe: (lat, lng) => { if (me) me.setPos({ lat, lng }); else { me = new Html({ lat, lng }, node('<div class="me"></div>', "ov-me"), 5); me.setMap(map); } },
-    setPin: (lat, lng) => { if (pin) pin.setPos({ lat, lng }); else { pin = new Html({ lat, lng }, node('<div class="pin">📍</div>', "ov-pin"), 10); pin.setMap(map); } },
-    setCircle: (c) => {
-      if (circle) { circle.setMap(null); circle = null; }
-      if (c) circle = new g.Circle({ map, center: { lat: c.lat, lng: c.lng }, radius: c.radius, fillColor: "#2D6A4F", fillOpacity: 0.06, strokeColor: "#2D6A4F", strokeOpacity: 0.45, strokeWeight: 2, clickable: false });
+        const { Place } = await g.importLibrary("places");
+        const p = new Place({ id: placeId, requestedLanguage: "ar" });
+        await Promise.race([p.fetchFields({ fields: ["displayName", "nationalPhoneNumber", "internationalPhoneNumber"] }), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000))]);
+        return { name: p.displayName || "", phone: p.internationalPhoneNumber || p.nationalPhoneNumber || "" };
+      } catch (e) { console.warn("places", e); return { name: "", phone: "" }; }
     },
     center: () => { const c = map.getCenter(); return { lat: c.lat(), lng: c.lng() }; },
     resize: () => g.event.trigger(map, "resize"),

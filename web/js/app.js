@@ -398,7 +398,9 @@ const poiLog = (placeId, field) => setDoc(doc(db, "poiInterest", placeId), { [fi
 async function openPoi({ placeId, lat, lng }) {
   poiLog(placeId, "taps");
   showSheet(`<div class="pad"><div class="spinner"></div></div>`);
-  const name = (await map?.placeName(placeId)) || "";
+  const info = (await map?.placeInfo(placeId)) || { name: "", phone: "" };
+  const name = info.name || "";
+  const mobile = (() => { const d = String(info.phone || "").replace(/\D/g, ""); return d.startsWith("9665") && d.length === 12 ? d : d.startsWith("05") && d.length === 10 ? "966" + d.slice(1) : null; })();
   const cfg = state.config;
   const shown = name || "هذا المحل";
   const appLink = cfg.appLink || location.origin;
@@ -408,11 +410,14 @@ async function openPoi({ placeId, lat, lng }) {
     <div class="poi-ico">🏪</div>
     <div class="section-title" style="text-align:center">${esc(shown)}</div>
     <p class="desc" style="text-align:center">هذا المحل مو مسجّل في حيّنا للحين</p>
-    ${cfg.poiInviteEnabled !== false ? `<button class="btn wa" id="poiInvite">📨 ادعه لحيّنا</button>` : ""}
+    ${cfg.poiInviteEnabled !== false ? (mobile
+      ? `<a class="btn wa" id="poiInvite" href="https://wa.me/${mobile}?text=${encodeURIComponent(invite)}" target="_blank" rel="noopener">💬 ادعه على واتساب المحل</a>`
+      : `<button class="btn wa" id="poiInvite">📨 ادعه لحيّنا</button>`) : ""}
+    ${info.phone && !mobile ? `<a class="btn call" href="tel:${esc(info.phone.replace(/[^\d+]/g, ""))}">📞 اتصل بالمحل (${esc(info.phone)})</a>` : ""}
     <button class="btn dir" id="poiClaim">🏪 أنا صاحب المحل — سجّله</button>
     <a class="btn call" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${encodeURIComponent(placeId)}" target="_blank" rel="noopener">فتح في Google Maps</a>
   </div>`);
-  $("poiInvite")?.addEventListener("click", () => { poiLog(placeId, "invites"); share(invite, "", "حيّنا"); });
+  $("poiInvite")?.addEventListener("click", () => { poiLog(placeId, "invites"); if (!mobile) share(invite, "", "حيّنا"); });
   $("poiClaim").onclick = () => {
     poiLog(placeId, "claims");
     try { sessionStorage.setItem("hayyna_claim", JSON.stringify({ name, lat, lng })); } catch {}
