@@ -258,7 +258,8 @@ class MerchantViewModel(
     fun inviteText(poi: com.google.android.gms.maps.model.PointOfInterest): String {
         val c = poiConfig.value
         val msg = c.inviteMessage.replace("{name}", poi.name.trim())
-        return if (c.appLink.isNotBlank()) "$msg\n${c.appLink}" else msg
+        val link = c.appLink.ifBlank { com.example.data.OfferSharer.WEB_BASE }
+        return "$msg\n$link"
     }
 
     fun logInvite(poi: com.google.android.gms.maps.model.PointOfInterest) {
