@@ -454,11 +454,15 @@ function openPlaces() {
     if (!b.district) return; const k = norm(b.district.replace(/^حي\s+/, ""));
     if (!counts.has(k)) counts.set(k, { name: districtLabel(b.district), n: 0, lat: b.latitude, lng: b.longitude });
   }));
-  const arr = [...counts.values()].sort((a, b) => b.n - a.n);
+  // الأقرب لك أولاً (أو لوسط الخريطة لو موقعك مو معروف)
+  const ref = state.me || map?.center?.();
+  const arr = [...counts.values()];
+  arr.forEach((c) => { c.d = ref && c.lat != null ? X.km(ref, { lat: c.lat, lng: c.lng }) : null; });
+  arr.sort((a, b) => (a.d ?? 1e9) - (b.d ?? 1e9) || b.n - a.n);
   showSheet(`<div class="pad"><div class="section-title">📍 تصفّح حي</div>
     <input id="placeQ" class="input" placeholder="ابحث عن حي…">
     <button class="place-row ${!state.browse ? "on" : ""}" data-here="1"><span>📍 حولي (موقعي)</span></button>
-    <div id="placeList">${arr.map((c, i) => `<button class="place-row${state.browse?.name === c.name ? " on" : ""}" data-i="${i}"><span>${esc(c.name)}</span><small>${c.n ? c.n + " عرض" : "متاجر"}</small></button>`).join("")}</div></div>`);
+    <div id="placeList">${arr.map((c, i) => `<button class="place-row${state.browse?.name === c.name ? " on" : ""}" data-i="${i}"><span>${esc(c.name)}</span><small>${c.n ? c.n + " عرض" : "متاجر"}${state.me && c.d != null ? " • " + X.distText(c.d) : ""}</small></button>`).join("")}</div></div>`);
   const body = $("sheetBody");
   body.querySelector("[data-here]").onclick = () => { state.browse = null; hideSheet(); if (state.me) map?.setView(state.me.lat, state.me.lng, 14); else locate(true); renderAll(); };
   body.querySelectorAll("[data-i]").forEach((el) => el.onclick = () => {

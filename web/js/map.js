@@ -148,6 +148,22 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
         return { name: p.displayName || "", phone: p.internationalPhoneNumber || p.nationalPhoneNumber || "" };
       } catch (e) { console.warn("places", e); return { name: "", phone: "" }; }
     },
+    setMarkers: (items) => put("markers", items, "ov-mk"),
+    setDots: (items) => put("dots", items, "ov-dot"),
+    panTo: (lat, lng, z) => { map.panTo({ lat, lng }); if (z) map.setZoom(z); },
+    setView: (lat, lng, z) => { map.setCenter({ lat, lng }); if (z) map.setZoom(z); },
+    fitBounds: (pts, pad) => {
+      if (!pts.length) return;
+      const b = new g.LatLngBounds(); pts.forEach(([a, c]) => b.extend({ lat: a, lng: c }));
+      map.fitBounds(b, pad || { top: 140, bottom: 260, left: 40, right: 40 });
+      g.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 15) map.setZoom(15); });
+    },
+    setMe: (lat, lng) => { if (me) me.setPos({ lat, lng }); else { me = new Html({ lat, lng }, node('<div class="me"></div>', "ov-me"), 5); me.setMap(map); } },
+    setPin: (lat, lng) => { if (pin) pin.setPos({ lat, lng }); else { pin = new Html({ lat, lng }, node('<div class="pin">📍</div>', "ov-pin"), 10); pin.setMap(map); } },
+    setCircle: (c) => {
+      if (circle) { circle.setMap(null); circle = null; }
+      if (c) circle = new g.Circle({ map, center: { lat: c.lat, lng: c.lng }, radius: c.radius, fillColor: "#2D6A4F", fillOpacity: 0.06, strokeColor: "#2D6A4F", strokeOpacity: 0.45, strokeWeight: 2, clickable: false });
+    },
     center: () => { const c = map.getCenter(); return { lat: c.lat(), lng: c.lng() }; },
     resize: () => g.event.trigger(map, "resize"),
   };
