@@ -327,3 +327,45 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .install-sheet h2 { margin: 10px 0 4px; font-size: 19px; }
 .install-sheet .muted { color: #6b7280; font-size: 13px; margin: 4px 0; }
 .install-sheet ol { text-align: right; margin: 14px 0; padding-inline-start: 22px; line-height: 2.1; font-size: 15px; }
+
+/* ===== حسابي — أهل الحي ===== */
+.cust-hero { background: linear-gradient(160deg, var(--green) 0%, var(--green-dark) 100%); color: #fff; padding: calc(22px + var(--safe-t)) 18px 26px; border-radius: 0 0 26px 26px; }
+.ch-top { display: flex; align-items: center; gap: 12px; max-width: 720px; margin: 0 auto; }
+.ch-top img, .ch-top .avatar { width: 58px; height: 58px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,.6); }
+.ch-top .avatar { background: rgba(255,255,255,.18); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; }
+.ch-main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ch-main b { font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-main small { opacity: .85; font-size: 13px; text-align: right; }
+.ch-edit { width: 38px; height: 38px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 17px; }
+.ch-badge { max-width: 720px; margin: 12px auto 0; display: block; width: fit-content; background: rgba(255,255,255,.16); border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 700; }
+.cust { max-width: 720px; margin: 0 auto; }
+.qstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: -30px 0 6px; position: relative; }
+.qs { background: #fff; border: 0; border-radius: 16px; padding: 12px 4px; text-align: center; font: inherit; color: var(--ink); box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+.qs b { display: block; font-size: 22px; color: var(--green); line-height: 1.3; }
+.qs small { color: var(--muted); font-size: 12px; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; margin: 20px 2px 8px; font-size: 16px; }
+.sec-head .link { border: 0; background: none; color: var(--green); font: inherit; font-weight: 700; font-size: 13px; }
+.hint.warn { background: var(--amber-bg); color: var(--amber); border-radius: 12px; padding: 9px 12px; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.favrow { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.favrow::-webkit-scrollbar { display: none; }
+.mcard { flex: 0 0 132px; scroll-snap-align: start; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 3px 12px rgba(0,0,0,.07); cursor: pointer; }
+.mthumb { position: relative; height: 96px; background: #f1efe9; }
+.mthumb img { width: 100%; height: 100%; object-fit: cover; }
+.mthumb .badge { position: absolute; top: 6px; right: 6px; background: var(--red); color: #fff; font-size: 11px; font-weight: 800; border-radius: 999px; padding: 2px 7px; }
+.mname { padding: 7px 9px 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mprice { padding: 1px 9px 9px; font-size: 14px; font-weight: 800; color: var(--green); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fav-empty { display: flex; gap: 12px; align-items: center; background: #fff; border: 1.5px dashed var(--line); border-radius: 16px; padding: 14px; }
+.fav-empty span { font-size: 30px; }
+.fav-empty small { color: var(--muted); }
+.invite-card { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 16px; border-radius: 18px; background: linear-gradient(135deg, #FFF4E0, #FDE7C8); }
+.invite-card div { flex: 1; }
+.invite-card small { color: var(--amber); }
+.invite-btn { border: 0; background: var(--ink); color: #fff; font: inherit; font-weight: 800; font-size: 14px; border-radius: 12px; padding: 10px 14px; white-space: nowrap; }
+.menu { margin-top: 18px; background: #fff; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); }
+.menu-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 14px; border: 0; border-bottom: 1px solid var(--line); background: none; font: inherit; color: var(--ink); text-align: right; text-decoration: none; }
+.menu-row:last-child { border-bottom: 0; }
+.menu-row .mi { width: 36px; height: 36px; border-radius: 10px; background: var(--green-soft); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+.menu-row .ml { flex: 1; display: flex; flex-direction: column; }
+.menu-row .ml b { font-size: 15px; }
+.menu-row .ml small { color: var(--muted); font-size: 12px; }
+.menu-row .chev { color: var(--muted); font-size: 20px; }

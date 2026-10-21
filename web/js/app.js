@@ -472,9 +472,70 @@ function openPlaces() {
   $("placeQ").oninput = (e) => { const q = norm(e.target.value); body.querySelectorAll("[data-i]").forEach((el) => el.classList.toggle("hidden", q && !norm(el.textContent).includes(q))); };
 }
 
+// ---------------- حسابي (أهل الحي) ----------------
+function renderCustomer(el, { name, pr, u, support, foot }) {
+  const now = Date.now();
+  const live = state.offers.filter((o) => !X.isExpired(o, now));
+  const favList = live.filter((o) => state.favs.has(o.id));
+  const dist = userDistrict();
+  const near = state.me ? live.filter((o) => branchesOf(o).some((b) => km(state.me, { lat: b.latitude, lng: b.longitude }) <= NEAR_KM)).length : null;
+  const fresh = live.filter((o) => { const t = X.ms(o.startsAt) || X.ms(o.createdAt); return t && t <= now && now - t < 864e5; }).length;
+  const endingFav = favList.filter((o) => { const e = X.ms(o.expiresAt); return e && e - now < 864e5; }).length;
+  const mini = (o) => `<div class="mcard" data-id="${esc(o.id)}" role="button"><div class="mthumb"><img src="${esc(thumb(o, 300))}" alt="" loading="lazy">
+      ${badge(o) ? `<span class="badge">${esc(badge(o).t)}</span>` : ""}</div>
+      <div class="mname">${esc(o.restaurantName)}</div><div class="mprice">${esc(priceLabel(o))}</div></div>`;
+  const row = (id, ico, label, sub = "", href = "") => href
+    ? `<a class="menu-row" href="${href}" target="_blank" rel="noopener"><span class="mi">${ico}</span><span class="ml"><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</span><span class="chev">‹</span></a>`
+    : `<button class="menu-row" id="${id}"><span class="mi">${ico}</span><span class="ml"><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</span><span class="chev">‹</span></button>`;
+  el.innerHTML = `<div class="cust-hero">
+      <div class="ch-top">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="">` : `<div class="avatar">${esc((name || "؟")[0])}</div>`}
+        <div class="ch-main"><b>${esc(name)}</b><small dir="ltr">${esc(X.toLocalPhone(pr.phone))}</small></div>
+        <button class="ch-edit" id="editProfile" aria-label="تعديل البيانات">✎</button></div>
+      <div class="ch-badge">🏡 ${dist ? `من أهل ${esc(districtLabel(dist))}` : "من أهل الحي"}</div>
+    </div>
+    <div class="pad cust">
+      <div class="qstats">
+        <button class="qs" data-go="favs"><b>${favList.length}</b><small>❤️ مفضلتي</small></button>
+        <button class="qs" data-go="${near == null ? "locate" : "map"}"><b>${near == null ? "📍" : near}</b><small>${near == null ? "حدّد موقعك" : "📍 عروض حولك"}</small></button>
+        <button class="qs" data-go="list"><b>${fresh}</b><small>🆕 جديد اليوم</small></button>
+      </div>
+
+      <div class="sec-head"><b>مفضلتي ❤️</b>${favList.length ? `<button class="link" data-go="favs">عرض الكل ‹</button>` : ""}</div>
+      ${endingFav ? `<div class="hint warn">⏰ ${endingFav === 1 ? "عرض من مفضلتك ينتهي" : endingFav + " عروض من مفضلتك تنتهي"} خلال 24 ساعة — لا يفوتك</div>` : ""}
+      ${favList.length ? `<div class="favrow">${favList.slice(0, 10).map(mini).join("")}</div>`
+        : `<div class="fav-empty"><span>🤍</span><div><b>مفضلتك فاضية</b><br><small>اضغط القلب على أي عرض يعجبك، ويظهر هنا عشان ترجع له بسرعة</small></div></div>`}
+
+      <div class="invite-card">
+        <div><b>ادع جيرانك وأصحابك 🎁</b><br><small>كل ما زاد أهل الحي في حيّنا، نزّلت المحلات عروض أكثر</small></div>
+        <button class="invite-btn" id="inviteFriend">شارك حيّنا</button>
+      </div>
+
+      <button class="role-card" id="becomeMerchant"><div class="rc-ico">🏪</div><div><b>عندك محل؟</b><br><small>حوّل حسابك لحساب تاجر وانشر عروضك مجاناً</small></div></button>
+
+      <div class="menu">
+        ${canOfferInstall() ? row("installAcc", "📲", "ثبّت حيّنا على جوالك", "يفتح بشاشة كاملة مثل التطبيق") : ""}
+        ${row("contactBtn", "💬", "تواصل معنا", "اقتراح، مشكلة، أو محل تبيه ينضم")}
+        ${row("", "🟢", "واتساب الدعم", esc(support), `https://wa.me/${waDigits(support)}`)}
+        ${row("", "🔒", "سياسة الخصوصية", "", "/privacy.html")}
+      </div>
+    </div>` + foot;
+  el.querySelector(".acc-foot .install-row")?.remove(); // موجود في القائمة فوق
+  el.querySelector(".acc-foot .legal")?.remove();
+  el.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => { const g = b.dataset.go; if (g === "locate") { setTab("map"); locate(true); } else setTab(g); });
+  $("becomeMerchant").onclick = () => setRole("merchant");
+  $("contactBtn").onclick = openContact;
+  $("inviteFriend").onclick = inviteFriend;
+}
+async function inviteFriend() {
+  const link = state.config.appLink || location.origin;
+  const text = `شف حيّنا 📍 تطبيق يعرض لك عروض وخصومات المحلات اللي حولك على الخريطة — مطاعم، مقاهي، ملابس وأكثر. جرّبه:`;
+  if (navigator.share) { try { await navigator.share({ title: "حيّنا", text, url: link }); return; } catch (e) { if (e?.name === "AbortError") return; } }
+  window.open(`https://wa.me/?text=${encodeURIComponent(text + "\n" + link)}`, "_blank");
+}
+
 // ---------------- حسابي ----------------
 const APPLE_ENABLED = false; // يتفعّل بعد إعداد Sign in with Apple في Firebase (يحتاج حساب Apple Developer)
-const roleName = (r) => r === "merchant" ? "صاحب محل 🏪" : "زبون 🛍️";
+const roleName = (r) => r === "merchant" ? "صاحب محل 🏪" : "من أهل الحي 🏡";
 export function renderAccount() {
   const el = $("account");
   const u = state.user;
@@ -482,7 +543,7 @@ export function renderAccount() {
   if (!u) {
     el.innerHTML = `<div class="acc-hero"><img src="/img/icon-192.png" alt=""><h1>أهلاً بك في حيّنا</h1><p>سجّل دخولك عشان تحفظ مفضلتك، أو تنشر عروض محلك</p></div>
       <div class="pad">
-        <button class="role-card" data-login="customer"><div class="rc-ico">🛍️</div><div><b>أنا زبون</b><br><small>احفظ العروض اللي تعجبك وتابعها من أي جهاز</small></div></button>
+        <button class="role-card" data-login="customer"><div class="rc-ico">🏡</div><div><b>أنا من أهل الحي</b><br><small>أدوّر عروض المحلات حولي، وأحفظ اللي يعجبني</small></div></button>
         <button class="role-card" data-login="merchant"><div class="rc-ico">🏪</div><div><b>أنا صاحب محل</b><br><small>انشر عروضك مجاناً وخلّ أهل الحي يوصلون لك</small></div></button>
         <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
         ${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت حيّنا على جوالك</button>` : ""}
@@ -508,13 +569,7 @@ export function renderAccount() {
     el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
     import("./merchant.js").then((m) => m.renderMerchant($("merchantRoot"), { isAdmin, support, logout: doLogout, contact: openContact }));
   } else {
-    el.innerHTML = head + `<div class="pad">
-      <div class="stat-row"><div class="stat"><b>${state.favs.size}</b><small>في المفضلة</small></div></div>
-      <button class="role-card" id="becomeMerchant"><div class="rc-ico">🏪</div><div><b>عندك محل؟</b><br><small>حوّل حسابك لحساب تاجر وانشر عروضك مجاناً</small></div></button>
-      <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
-      <a class="btn call" href="https://wa.me/${waDigits(support)}" target="_blank" rel="noopener">واتساب الدعم ${esc(support)}</a></div>` + foot;
-    $("becomeMerchant").onclick = () => setRole("merchant");
-    $("contactBtn").onclick = openContact;
+    renderCustomer(el, { name, pr, u, support, foot });
   }
   $("editProfile").onclick = () => openProfileEdit();
   $("logoutBtn").onclick = doLogout;
@@ -530,7 +585,7 @@ function renderOnboarding(el) {
       <label class="label">اسمك *</label><input id="obName" class="input" maxlength="60" value="${esc(pr.name || u.displayName || "")}" placeholder="الاسم">
       <label class="label">رقم جوالك *</label><input id="obPhone" class="input" inputmode="tel" dir="ltr" value="${esc(X.toLocalPhone(pr.phone || ""))}" placeholder="05xxxxxxxx">
       <label class="label">نوع الحساب</label>
-      <div class="row2"><button class="role-mini${role === "customer" ? " on" : ""}" data-r="customer">🛍️ زبون</button><button class="role-mini${role === "merchant" ? " on" : ""}" data-r="merchant">🏪 صاحب محل</button></div>
+      <div class="row2"><button class="role-mini${role === "customer" ? " on" : ""}" data-r="customer">🏡 من أهل الحي</button><button class="role-mini${role === "merchant" ? " on" : ""}" data-r="merchant">🏪 صاحب محل</button></div>
       <div id="obErr" class="err"></div>
       <button class="btn dir big" id="obSave">متابعة</button>
       <button class="btn ghost" id="obOut">تسجيل الخروج</button>
@@ -558,7 +613,7 @@ function openProfileEdit() {
     <label class="label">الاسم</label><input id="peName" class="input" maxlength="60" value="${esc(pr.name || "")}">
     <label class="label">رقم الجوال</label><input id="pePhone" class="input" inputmode="tel" dir="ltr" value="${esc(X.toLocalPhone(pr.phone || ""))}">
     <label class="label">نوع الحساب</label>
-    <div class="row2"><button class="role-mini${role === "customer" ? " on" : ""}" data-r="customer">🛍️ زبون</button><button class="role-mini${role === "merchant" ? " on" : ""}" data-r="merchant">🏪 صاحب محل</button></div>
+    <div class="row2"><button class="role-mini${role === "customer" ? " on" : ""}" data-r="customer">🏡 من أهل الحي</button><button class="role-mini${role === "merchant" ? " on" : ""}" data-r="merchant">🏪 صاحب محل</button></div>
     <small class="hint">${esc(u.email || "")}</small>
     <div id="peErr" class="err"></div><button class="btn dir" id="peSave">حفظ</button></div>`);
   $("sheetBody").querySelectorAll("[data-r]").forEach((b) => b.onclick = () => { role = b.dataset.r; $("sheetBody").querySelectorAll("[data-r]").forEach((x) => x.classList.toggle("on", x === b)); });
@@ -576,7 +631,7 @@ function openProfileEdit() {
 async function setRole(role) {
   try {
     await setDoc(doc(db, "users", state.user.uid), { role, updatedAt: serverTimestamp() }, { merge: true });
-    state.role = role; toast(role === "merchant" ? "صار حسابك حساب تاجر 🏪" : "صار حسابك حساب زبون"); renderAll();
+    state.role = role; toast(role === "merchant" ? "صار حسابك حساب تاجر 🏪" : "رجعنا حسابك لحساب أهل الحي 🏡"); renderAll();
   } catch { toast("تعذّر التغيير"); }
 }
 
@@ -604,7 +659,7 @@ function confirmDeleteAccount() {
 function openLogin(role) {
   state.pendingRole = role;
   try { sessionStorage.setItem("hayyna_pending_role", role); } catch {}
-  showSheet(`<div class="pad"><div class="section-title">${role === "merchant" ? "🏪 دخول صاحب المحل" : "🛍️ دخول الزبون"}</div>
+  showSheet(`<div class="pad"><div class="section-title">${role === "merchant" ? "🏪 دخول صاحب المحل" : "🏡 دخول أهل الحي"}</div>
     <button class="btn login google" id="lgGoogle"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt=""> المتابعة بحساب Google</button>
     ${APPLE_ENABLED ? `<button class="btn login apple" id="lgApple"> المتابعة بحساب Apple</button>` : ""}
     <div class="or"><span>أو بالإيميل</span></div>
@@ -699,7 +754,7 @@ document.addEventListener("click", (e) => {
   const h = e.target.closest("[data-fav]"); if (h) { e.stopPropagation(); toggleFav(h.dataset.fav); return; }
   const s = e.target.closest("#sortbar [data-sort]"); if (s) { state.sort = s.dataset.sort; renderAll(); return; }
   const op = e.target.closest("#sortbar [data-open]"); if (op) { state.openOnly = !state.openOnly; renderAll(); return; }
-  const c = e.target.closest(".card[data-id], .lcard[data-id]"); if (c) { openOffer(c.dataset.id, true); }
+  const c = e.target.closest(".card[data-id], .lcard[data-id], .mcard[data-id]"); if (c) { openOffer(c.dataset.id, true); }
 });
 
 // التصنيفات من إعدادات الأدمن (وإلا الافتراضية)
