@@ -139,7 +139,7 @@ h1.title { margin: 0; font-size: 21px; line-height: 1.4; font-weight: 800; }
 .viewer img { max-width: 100%; max-height: 100%; }
 .viewer-close { position: absolute; top: calc(14px + var(--safe-t)); left: 14px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.15); color: #fff; font-size: 18px; }
 
-.install { position: fixed; z-index: 1100; left: 12px; right: 12px; bottom: calc(150px + var(--nav)); display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 16px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.2); font-size: 13px; line-height: 1.6; max-width: 480px; margin: 0 auto; }
+.install { position: fixed; z-index: 1100; left: 12px; right: 12px; bottom: calc(244px + var(--nav)); display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 16px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.2); font-size: 13px; line-height: 1.6; max-width: 480px; margin: 0 auto; }
 .install img { width: 42px; height: 42px; border-radius: 10px; }
 .install div { flex: 1; }
 .share-ico { display: inline-block; color: var(--blue); font-weight: 800; }
@@ -316,3 +316,14 @@ textarea.input { resize: vertical; line-height: 1.6; }
 /* بطاقة محل Google غير المسجّل */
 .poi-card { text-align: center; }
 .poi-ico { font-size: 44px; width: 76px; height: 76px; border-radius: 22px; background: var(--green-soft); display: flex; align-items: center; justify-content: center; margin: 4px auto 6px; }
+
+/* ثبّت حيّنا */
+.install small { color: var(--muted, #6b7280); }
+.install-go { border: 0; background: var(--green); color: #fff; font: inherit; font-weight: 800; font-size: 14px; border-radius: 12px; padding: 9px 14px; white-space: nowrap; }
+.btn.install-row { background: var(--green-soft); color: var(--green); margin-bottom: 10px; }
+.btn.primary { background: var(--green); color: #fff; }
+.install-sheet { text-align: center; }
+.install-sheet img { width: 64px; height: 64px; border-radius: 16px; }
+.install-sheet h2 { margin: 10px 0 4px; font-size: 19px; }
+.install-sheet .muted { color: #6b7280; font-size: 13px; margin: 4px 0; }
+.install-sheet ol { text-align: right; margin: 14px 0; padding-inline-start: 22px; line-height: 2.1; font-size: 15px; }

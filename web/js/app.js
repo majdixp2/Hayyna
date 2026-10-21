@@ -481,10 +481,12 @@ export function renderAccount() {
         <button class="role-card" data-login="customer"><div class="rc-ico">🛍️</div><div><b>أنا زبون</b><br><small>احفظ العروض اللي تعجبك وتابعها من أي جهاز</small></div></button>
         <button class="role-card" data-login="merchant"><div class="rc-ico">🏪</div><div><b>أنا صاحب محل</b><br><small>انشر عروضك مجاناً وخلّ أهل الحي يوصلون لك</small></div></button>
         <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
+        ${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت حيّنا على جوالك</button>` : ""}
         <div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div>
       </div>`;
     el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => openLogin(b.dataset.login));
     $("contactBtn").onclick = openContact;
+    if ($("installAcc")) $("installAcc").onclick = doInstall;
     return;
   }
   const isAdmin = ADMIN_EMAILS.includes(u.email);
@@ -496,7 +498,7 @@ export function renderAccount() {
   const head = `<div class="acc-user">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="">` : `<div class="avatar">${esc((name || "؟")[0])}</div>`}
     <div class="au-main"><b>${esc(name)}</b><br><small dir="ltr">${esc(X.toLocalPhone(pr.phone))}</small> <span class="pill role">${roleName(state.role)}</span></div>
     <button class="icon-btn" id="editProfile" aria-label="تعديل البيانات">✎</button></div>`;
-  const foot = `<div class="pad acc-foot"><button class="btn ghost" id="logoutBtn">تسجيل الخروج</button>
+  const foot = `<div class="pad acc-foot">${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت حيّنا على جوالك</button>` : ""}<button class="btn ghost" id="logoutBtn">تسجيل الخروج</button>
     <button class="btn ghost danger-text" id="deleteAcc">حذف الحساب</button><div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div></div>`;
   if (state.role === "merchant" || isAdmin) {
     el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
@@ -512,6 +514,7 @@ export function renderAccount() {
   }
   $("editProfile").onclick = () => openProfileEdit();
   $("logoutBtn").onclick = doLogout;
+  if ($("installAcc")) $("installAcc").onclick = doInstall;
   $("deleteAcc").onclick = confirmDeleteAccount;
 }
 
@@ -733,14 +736,51 @@ $("locate").onclick = () => locate(true);
 $("scopeBtn").onclick = cycleScope;
 navigator.permissions?.query({ name: "geolocation" }).then((r) => { if (r.state === "granted") locate(!location.pathname.startsWith("/o/")); }).catch(() => {});
 
-// تلميح التثبيت للآيفون
-(() => {
-  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const standalone = window.navigator.standalone || matchMedia("(display-mode: standalone)").matches;
-  let seen = false; try { seen = localStorage.getItem("hayyna_install_tip") === "1"; } catch {}
-  if (ios && !standalone && !seen) setTimeout(() => $("installTip").classList.remove("hidden"), 5000);
-  $("installClose").onclick = () => { $("installTip").classList.add("hidden"); try { localStorage.setItem("hayyna_install_tip", "1"); } catch {} };
-})();
+// ---------------- ثبّت حيّنا (أندرويد + آيفون) ----------------
+const IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const IS_MOBILE = IS_IOS || /android/i.test(navigator.userAgent);
+const isStandalone = () => window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+let installEvt = null;
+export const canOfferInstall = () => !isStandalone() && (IS_MOBILE || !!installEvt);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+function hideInstallTip(remember) {
+  $("installTip").classList.add("hidden");
+  if (remember) try { localStorage.setItem("hayyna_install_tip", String(Date.now())); } catch {}
+}
+function installSteps() {
+  const inSafari = !/CriOS|FxiOS|EdgiOS/i.test(navigator.userAgent);
+  const steps = IS_IOS
+    ? [`اضغط زر المشاركة <span class="share-ico">⬆︎</span> ${inSafari ? "تحت في الشريط" : "جنب الرابط فوق"}`, "انزل واختر <b>«إضافة إلى الشاشة الرئيسية»</b>", "اضغط <b>«إضافة»</b>، وافتح حيّنا من أيقونته"]
+    : ["اضغط قائمة المتصفح <b>⋮</b> فوق", "اختر <b>«تثبيت التطبيق»</b> أو <b>«إضافة إلى الشاشة الرئيسية»</b>", "افتح حيّنا من أيقونته"];
+  showSheet(`<div class="pad install-sheet"><img src="/img/icon-192.png" alt=""><h2>ثبّت حيّنا على جوالك 📲</h2>
+    <p class="muted">يفتح بشاشة كاملة بدون شريط المتصفح، مثل التطبيق تماماً</p>
+    <ol>${steps.map((s) => `<li>${s}</li>`).join("")}</ol>
+    ${IS_IOS && !inSafari ? `<p class="muted small">ما لقيت الخيار؟ افتح الموقع من سفاري وجرّب.</p>` : ""}
+    <button class="btn primary" id="installOk">تمام</button></div>`);
+  $("installOk").onclick = hideSheet;
+}
+export async function doInstall() {
+  hideInstallTip(true);
+  if (installEvt) {
+    const e = installEvt; installEvt = null;
+    e.prompt();
+    const r = await e.userChoice.catch(() => null);
+    if (r?.outcome === "accepted") toast("تم التثبيت 🎉 افتح حيّنا من أيقونته");
+    return;
+  }
+  installSteps();
+}
+function maybeShowInstallTip() {
+  if (!canOfferInstall()) return;
+  let last = 0; try { last = Number(localStorage.getItem("hayyna_install_tip")) || 0; } catch {}
+  if (last === 1 || Date.now() - last < 7 * 864e5) return; // انقفل قبل أقل من أسبوع
+  $("installTip").classList.remove("hidden");
+}
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; if (state.tab === "account") renderAccount(); });
+window.addEventListener("appinstalled", () => { installEvt = null; hideInstallTip(true); });
+$("installBtn").onclick = doInstall;
+$("installClose").onclick = () => hideInstallTip(true);
+setTimeout(maybeShowInstallTip, 6000);
 
 // ---------------- الدخول ----------------
 getRedirectResult(auth).catch(() => {});
