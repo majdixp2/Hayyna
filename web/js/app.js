@@ -725,12 +725,35 @@ $("placeBtn").onclick = openPlaces;
 // ---------------- موقعي ----------------
 function locate(center) {
   if (!navigator.geolocation) return toast("المتصفح ما يدعم تحديد الموقع");
-  navigator.geolocation.getCurrentPosition((p) => {
+  const ok = (p) => {
     state.me = { lat: p.coords.latitude, lng: p.coords.longitude };
     map?.setMe(state.me.lat, state.me.lng);
     if (center) { state.browse = null; map?.setView(state.me.lat, state.me.lng, 14); }
     renderAll();
-  }, () => { if (center) toast("فعّل الموقع عشان نرتّب العروض حسب الأقرب لك"); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  };
+  const fail = (err) => {
+    if (!center) return;
+    if (err?.code === 1) return locationHelp(); // الإذن مرفوض
+    toast("ما قدرنا نحدد موقعك — تأكد إن الموقع (GPS) شغّال في الجوال", true);
+  };
+  // نحاول بدقة عالية، ولو تأخر GPS نرجع لموقع تقريبي (شبكة/واي فاي) بدل ما نفشل
+  navigator.geolocation.getCurrentPosition(ok, (err) => {
+    if (err?.code === 1) return fail(err);
+    navigator.geolocation.getCurrentPosition(ok, fail, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+  }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+}
+function locationHelp() {
+  const standalone = window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+  const steps = IS_IOS
+    ? ["افتح <b>الإعدادات</b> في الآيفون ← <b>الخصوصية والأمان</b> ← <b>خدمات الموقع</b> وتأكد إنها شغّالة", `انزل لـ <b>${standalone ? "سفاري / مواقع سفاري" : "سفاري"}</b> واختر <b>«أثناء الاستخدام»</b> أو «اسأل»`, "ارجع لحيّنا واضغط زر موقعي مرة ثانية"]
+    : standalone
+      ? ["اضغط مطوّلاً على أيقونة <b>حيّنا</b> ← <b>معلومات التطبيق</b>", "<b>الأذونات</b> ← <b>الموقع</b> ← <b>السماح أثناء الاستخدام</b>", "إذا ما لقيتها: افتح كروم ← ⋮ ← الإعدادات ← إعدادات المواقع ← الموقع، وشيل حيّنا من «محظور»"]
+      : ["اضغط أيقونة <b>القفل / الإعدادات</b> جنب الرابط فوق", "اختر <b>الأذونات</b> ← <b>الموقع</b> ← <b>سماح</b>", "حدّث الصفحة واضغط زر موقعي"];
+  showSheet(`<div class="pad install-sheet"><div style="font-size:44px">📍</div><h2>الموقع مقفول لحيّنا</h2>
+    <p class="muted">عشان نعرض لك عروض حيّك والأقرب لك، فعّل إذن الموقع:</p>
+    <ol>${steps.map((s) => `<li>${s}</li>`).join("")}</ol>
+    <button class="btn primary" id="locRetry">جرّبت، حدّد موقعي</button></div>`);
+  $("locRetry").onclick = () => { hideSheet(); locate(true); };
 }
 export const getMyLocation = () => new Promise((resolve, reject) => {
   if (!navigator.geolocation) return reject(new Error("no geo"));
