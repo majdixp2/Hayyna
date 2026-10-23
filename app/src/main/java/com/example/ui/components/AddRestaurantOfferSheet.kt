@@ -38,7 +38,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -84,6 +86,7 @@ private const val MAX_IMAGES = 3
  * - إذا التاجر عنده فروع: يختار "كل الفروع" أو فروع معيّنة.
  * - إذا ما عنده فروع: يحدد موقع المحل هنا، ويصير أول فرع له تلقائياً.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun AddRestaurantOfferSheet(
     onDismiss: () -> Unit,
@@ -123,6 +126,8 @@ fun AddRestaurantOfferSheet(
     }
     var itemsScope by remember { mutableStateOf(editingOffer?.itemsScope.orEmpty()) }
     var grandOpening by remember { mutableStateOf(editingOffer?.grandOpening ?: false) }
+    // ✨ جديدنا: صنف/منتج جديد (السعر والخصم اختياري)
+    var isNewProduct by remember { mutableStateOf(editingOffer?.postType == "new") }
     var startMillis by remember { mutableStateOf(editingOffer?.startsAt?.toDate()?.time) }
     var showDatePicker by remember { mutableStateOf(false) }
 
@@ -197,7 +202,7 @@ fun AddRestaurantOfferSheet(
     }
 
     fun submit() {
-        val price = if (percentMode) 0.0 else priceText.toDoubleOrNull()
+        val price = if (percentMode) 0.0 else if (isNewProduct && priceText.isBlank()) 0.0 else priceText.toDoubleOrNull()
         val original = if (percentMode) null else originalPriceText.toDoubleOrNull()
         val pct = percentText.trim().toIntOrNull()
         val steps = dayPercents.mapNotNull { it.trim().toIntOrNull() }
@@ -233,9 +238,11 @@ fun AddRestaurantOfferSheet(
         }
         errorMessage = when {
             restaurantName.isBlank() -> "يرجى كتابة اسم المتجر."
-            offerTitle.isBlank() -> "يرجى كتابة عنوان العرض."
+            offerTitle.isBlank() -> if (isNewProduct) "اكتب اسم المنتج." else "يرجى كتابة عنوان العرض."
+            isNewProduct && price == null -> "اكتب سعر صحيح أو اتركه فاضي."
+            isNewProduct && original != null && (price ?: 0.0) <= 0.0 -> "اكتب السعر بعد الخصم."
             !useTiers && !keepCurrentExpiry && expiryOptionIndex < 0 && customDaysText.toIntOrNull()?.takeIf { it in 1..90 } == null -> "اكتب عدد أيام العرض (من 1 إلى 90)."
-            !percentMode && (price == null || price <= 0) -> "يرجى إدخال سعر صحيح للعرض."
+            !percentMode && !isNewProduct && (price == null || price <= 0) -> "يرجى إدخال سعر صحيح للعرض."
             useTiers && (steps.size < 2 || steps.size != dayPercents.size || steps.any { it !in 1..99 }) -> "اكتب نسبة الخصم لكل يوم (من 1 إلى 99)."
             percentMode && !useTiers && (pct == null || pct !in 1..99) -> "اكتب نسبة الخصم (من 1 إلى 99)."
             startMillis != null && startMillis!! > now + 60 * dayMs -> "تاريخ البداية بعيد، اختر تاريخ خلال شهرين."
@@ -256,6 +263,7 @@ fun AddRestaurantOfferSheet(
             else -> 0
         }
         val badge = when {
+            isNewProduct && discountPct < 1 -> "جديد ✨"
             discountPct >= 1 -> "خصم $discountPct% 🔥"
             mediaType == MediaType.VIDEO -> "فيديو إعلاني 🎬"
             else -> ""
@@ -263,7 +271,8 @@ fun AddRestaurantOfferSheet(
         val offer = (editingOffer ?: RestaurantOffer()).copy(
             restaurantName = restaurantName.trim(),
             offerTitle = offerTitle.trim(),
-            description = description.trim().ifBlank { "عرض متاح لجميع العملاء." },
+            description = description.trim().ifBlank { if (isNewProduct) "منتج جديد متوفر الحين." else "عرض متاح لجميع العملاء." },
+            postType = if (isNewProduct) "new" else "offer",
             cuisineType = cuisineType,
             price = price,
             originalPrice = original,
@@ -287,7 +296,7 @@ fun AddRestaurantOfferSheet(
             discountPercent = if (percentMode) (if (useTiers) steps.first() else pct ?: 0) else 0,
             dailyPercents = if (useTiers) steps.map { it.toLong() } else emptyList(),
             itemsScope = if (percentMode) itemsScope.trim().take(40) else "",
-            grandOpening = grandOpening,
+            grandOpening = grandOpening && !isNewProduct,
             tags = parseTags(tagsText),
             delivery = delivery,
             deliveryFee = if (delivery) deliveryFeeText.toDoubleOrNull() ?: 0.0 else 0.0,
@@ -471,17 +480,47 @@ fun AddRestaurantOfferSheet(
                         }
                     }
 
+                    // نوع المنشور: عرض أو جديدنا
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf(false to ("🔥 عرض" to "خصم أو سعر خاص"), true to ("✨ جديدنا" to "صنف أو منتج جديد")).forEach { (newKind, t) ->
+                            val selected = isNewProduct == newKind
+                            val accent = if (newKind) Color(0xFF7C3AED) else CalmSagePrimary
+                            OutlinedCard(
+                                onClick = {
+                                    if (isNewProduct != newKind) {
+                                        isNewProduct = newKind
+                                        if (newKind) { percentMode = false; grandOpening = false }
+                                        if (!isEditing) {
+                                            keepCurrentExpiry = false
+                                            val two = EXPIRY_OPTIONS.indexOfFirst { it.days == 14 }
+                                            if (newKind) { if (two >= 0) expiryOptionIndex = two else { expiryOptionIndex = -1; customDaysText = "14" } }
+                                            else expiryOptionIndex = 0
+                                        }
+                                    }
+                                },
+                                border = BorderStroke(2.dp, if (selected) accent else MaterialTheme.colorScheme.outlineVariant),
+                                colors = CardDefaults.outlinedCardColors(containerColor = if (selected) accent.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(t.first, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(t.second, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+
                     OutlinedTextField(
                         value = offerTitle,
                         onValueChange = { offerTitle = it },
-                        label = { Text("عنوان العرض *") },
-                        placeholder = { Text("مثال: خصم 30% على كل المنتجات") },
+                        label = { Text(if (isNewProduct) "اسم المنتج الجديد *" else "عنوان العرض *") },
+                        placeholder = { Text(if (isNewProduct) "مثال: برجر الترافل الجديد" else "مثال: خصم 30% على كل المنتجات") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("input_offer_title")
                     )
 
                     // نوع الخصم: سعر محدد أو نسبة (على جميع الأصناف)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (!isNewProduct) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = !percentMode, onClick = { percentMode = false }, label = { Text("💰 سعر محدد", fontSize = 12.sp) })
                         FilterChip(selected = percentMode, onClick = { percentMode = true }, label = { Text("٪ خصم بالنسبة", fontSize = 12.sp) })
                     }
@@ -490,7 +529,7 @@ fun AddRestaurantOfferSheet(
                             OutlinedTextField(
                                 value = priceText,
                                 onValueChange = { priceText = it },
-                                label = { Text("السعر (ر.س) *") },
+                                label = { Text(if (isNewProduct) "السعر (اختياري)" else "السعر (ر.س) *") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
                                 modifier = Modifier.weight(1f).testTag("input_offer_price")
@@ -704,14 +743,14 @@ fun AddRestaurantOfferSheet(
                     if (startMillis != null && startMillis!! > System.currentTimeMillis()) {
                         Text("قبل البداية يطلع على الخريطة بعلامة \"قريباً\" عشان يتشوّق له الناس.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!isNewProduct) Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = grandOpening, onCheckedChange = { grandOpening = it })
                         Text("🎉 عرض افتتاح (محل جديد)", fontSize = 13.sp)
                     }
 
                     // ---------- المدة ----------
                     if (!(percentMode && tiered)) {
-                    Text("مدة العرض ⏰", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(if (isNewProduct) "كم يظهر كـ «جديد»؟ ⏰" else "مدة العرض ⏰", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (isEditing) {
                             item {

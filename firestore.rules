@@ -48,6 +48,7 @@ service cloud.firestore {
         && (!('dailyPercents' in data) || (data.dailyPercents is list && data.dailyPercents.size() <= 14))
         && (!('itemsScope' in data) || (data.itemsScope is string && data.itemsScope.size() <= 60))
         && (!('grandOpening' in data) || data.grandOpening is bool)
+        && (!('postType' in data) || data.postType in ['offer', 'new'])
         && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12))
         && (!('delivery' in data) || data.delivery is bool)
         && (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5))

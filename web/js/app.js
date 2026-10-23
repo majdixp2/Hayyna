@@ -24,7 +24,7 @@ export const state = {
   offers: [], stores: [], q: "", cat: "الكل", sort: "near", openOnly: false, browse: null,
   me: null, selected: null, branchId: null, view: null, tab: "map",
   favs: new Set(), user: null, role: null, profile: null, scope: "all", roleLoading: false, pendingRole: null,
-  config: {}, loaded: false, storesLoaded: false, referrals: [],
+  config: {}, loaded: false, storesLoaded: false, referrals: [], fresh: false, kind: "all",
 };
 
 // ---------------- الإحالات: مين دعا المحل ----------------
@@ -45,7 +45,7 @@ export const clearRef = () => { try { localStorage.removeItem("hayyna_ref"); } c
 export const withRef = (link) => state.user ? link + (link.includes("?") ? "&" : "?") + "ref=" + state.user.uid : link;
 export const POINTS = { verified: 50, offer: 50 };
 export const TIERS = [
-  { min: 0, name: "سفير الحي", ico: "🏅" }, { min: 1000, name: "سفير فضي", ico: "🥈" },
+  { min: 0, name: "سفير الحي", ico: "🥉" }, { min: 1000, name: "سفير فضي", ico: "🥈" },
   { min: 5000, name: "سفير ذهبي", ico: "🥇" }, { min: 10000, name: "سفير ماسي", ico: "💎" },
 ];
 export const pointsOf = (list) => list.reduce((a, r) => a + (r.verifiedPts || 0) + (r.offerPts || 0), 0);
@@ -57,11 +57,19 @@ export function tierOf(pts) {
 
 // ---------------- أدوات الواجهة (مشتركة مع لوحة التاجر) ----------------
 export const toast = (m, long) => { const t = $("toast"); t.textContent = m; t.classList.remove("hidden"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add("hidden"), long ? 4500 : 2600); };
+// زر الرجوع: كل نافذة/تبويب تنحفظ في سجل المتصفح عشان الرجوع يقفلها بدل ما يطلع من الموقع
+let ignorePop = 0;
+export function popSilently() { ignorePop++; history.back(); }
 export function showSheet(html) {
+  if ($("sheet").classList.contains("hidden") && !/^\/(o|s)\//.test(location.pathname)) history.pushState({ sheet: 1 }, "", location.pathname);
   $("sheetBody").innerHTML = html; $("sheetBody").scrollTop = 0;
   $("sheet").classList.remove("hidden"); $("sheetBackdrop").classList.remove("hidden");
 }
-export function hideSheet() { $("sheet").classList.add("hidden"); $("sheetBackdrop").classList.add("hidden"); state.view = null; }
+export function hideSheet(fromPop) {
+  const wasOpen = !$("sheet").classList.contains("hidden");
+  $("sheet").classList.add("hidden"); $("sheetBackdrop").classList.add("hidden"); state.view = null;
+  if (wasOpen && !fromPop && history.state?.sheet) popSilently();
+}
 let pageOnClose = null;
 export function openPage(title, body, foot = "", onClose = null) {
   $("pageTitle").textContent = title; $("pageBody").innerHTML = body; $("pageFoot").innerHTML = foot;
@@ -73,7 +81,7 @@ export function closePage(fromPop) {
   if ($("page").classList.contains("hidden")) return;
   if (pageOnClose && pageOnClose() === false) { if (fromPop) history.pushState({ page: 1 }, "", location.pathname); return; }
   $("page").classList.add("hidden"); $("pageBody").innerHTML = "";
-  if (!fromPop && history.state?.page) history.back();
+  if (!fromPop && history.state?.page) popSilently();
 }
 $("pageClose").onclick = () => closePage(false);
 
@@ -124,12 +132,16 @@ export function toggleFav(id) {
 }
 
 // ---------------- الفلترة ----------------
+// نزل اليوم (آخر 24 ساعة)
+const isFresh = (o, now = Date.now()) => { const t = X.ms(o.startsAt) || X.ms(o.createdAt); return !!t && t <= now && now - t < 864e5; };
 function filtered({ ignoreQuery = false } = {}) {
   const now = Date.now(), q = ignoreQuery ? "" : norm(state.q), catKey = state.cat.replace(/[^\p{L}\s]/gu, "").trim();
   const list = state.offers.filter((o) => {
     if (X.isExpired(o, now) || (o.reportsCount || 0) >= AUTO_HIDE_REPORTS) return false;
     if (state.cat !== "الكل" && !String(o.cuisineType || "").includes(catKey)) return false;
     if (state.openOnly && !branchesOf(o).some((b) => openNow(b) === true)) return false;
+    if (state.fresh && !isFresh(o, now)) return false;
+    if (state.kind === "new" && o.postType !== "new") return false;
     if (!q) return true;
     const hay = [o.restaurantName, o.offerTitle, o.description, o.district, o.cuisineType, o.itemsScope, ...(o.tags || []),
       ...branchesOf(o).flatMap((b) => [b.district, b.landmark, b.name])];
@@ -196,9 +208,9 @@ let map = null, fitted = false;
 function markerHtml(o, extra, on) {
   const bd = badge(o);
   const logo = o.logoUrl ? `<img class="lg" src="${esc(cld(o.logoUrl, 80))}" alt="">` : "";
-  return `<div class="mk${on ? " on" : ""}"><div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
+  return `<div class="mk${on ? " on" : ""}${o.isFeatured ? " feat" : ""}${o.postType === "new" ? " isnew" : ""}"><div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
     + (extra > 0 ? `<span class="more">+${extra}</span>` : "")
-    + (bd ? `<span class="pct${bd.soon ? " soon" : ""}">${esc(bd.t)}</span>` : "") + `</div>`;
+    + (bd ? `<span class="pct${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : "") + `</div>`;
 }
 function renderMap(list) {
   if (!map) return;
@@ -240,7 +252,7 @@ function carouselCard({ o, b, d }) {
   const bd = badge(o), rem = remainingText(o), op = openNow(b), fav = state.favs.has(o.id);
   const meta = [districtLabel(b.district || o.district), distText(d), o.delivery ? "🛵" : ""].filter(Boolean).join(" • ");
   return `<div class="card${state.selected === o.id ? " on" : ""}" data-id="${esc(o.id)}" role="button">
-    <div class="thumb"><img src="${esc(thumb(o))}" alt="" loading="lazy">${bd ? `<span class="badge${bd.soon ? " soon" : ""}">${esc(bd.t)}</span>` : ""}</div>
+    <div class="thumb"><img src="${esc(thumb(o))}" alt="" loading="lazy">${bd ? `<span class="badge${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : ""}</div>
     <div class="info">
       <div class="store-row">${o.logoUrl ? `<img class="logo" src="${esc(cld(o.logoUrl, 60))}" alt="">` : ""}<span>${esc(o.restaurantName)}</span>
         <button class="heart" data-fav="${esc(o.id)}" aria-label="مفضلة">${heartSvg(fav)}</button></div>
@@ -253,7 +265,7 @@ function carouselCard({ o, b, d }) {
 function listCard(o) {
   const { b, d } = nearestBranch(o), bd = badge(o), rem = remainingText(o), op = openNow(b), fav = state.favs.has(o.id);
   return `<div class="lcard" data-id="${esc(o.id)}" role="button">
-    <div class="lthumb"><img src="${esc(thumb(o, 500))}" alt="" loading="lazy">${bd ? `<span class="badge${bd.soon ? " soon" : ""}">${esc(bd.t)}</span>` : ""}
+    <div class="lthumb"><img src="${esc(thumb(o, 500))}" alt="" loading="lazy">${bd ? `<span class="badge${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : ""}
       <button class="heart float" data-fav="${esc(o.id)}" aria-label="مفضلة">${heartSvg(fav)}</button></div>
     <div class="linfo">
       <div class="store-row">${o.logoUrl ? `<img class="logo" src="${esc(cld(o.logoUrl, 60))}" alt="">` : ""}<span>${esc(o.restaurantName)}</span></div>
@@ -281,13 +293,15 @@ export function renderAll() {
     empty.innerHTML = state.offers.length ? `<b>ما لقينا عروض مطابقة</b>جرّب كلمة ثانية أو شيل الفلاتر` : `<b>لا توجد عروض حالياً</b>المحلات تنزّل عروضها أول بأول 🔥`;
     empty.classList.remove("hidden");
   } else empty.classList.add("hidden");
-  $("filterDot").classList.toggle("hidden", !(state.openOnly || state.sort !== "near"));
+  $("filterDot").classList.toggle("hidden", !(state.openOnly || state.sort !== "near" || state.fresh || state.kind !== "all"));
   $("placeLabel").textContent = state.browse ? state.browse.name : "حولي";
   renderScope(list.length);
   // قائمة العروض
   $("sortbar").innerHTML = [["near", "📍 الأقرب"], ["discount", "🔥 أكبر خصم"], ["cheap", "💰 الأرخص"], ["new", "🆕 الأحدث"]]
     .map(([k, l]) => `<button class="chip${state.sort === k ? " on" : ""}" data-sort="${k}">${l}</button>`).join("")
-    + `<button class="chip${state.openOnly ? " on" : ""}" data-open="1">● مفتوح الآن</button>`;
+    + `<button class="chip${state.openOnly ? " on" : ""}" data-open="1">● مفتوح الآن</button>`
+    + `<button class="chip${state.kind === "new" ? " on" : ""}" data-kind="1">✨ جديدنا</button>`
+    + `<button class="chip${state.fresh ? " on" : ""}" data-fresh="1">🆕 نزل اليوم${state.fresh ? " ✕" : ""}</button>`;
   $("list").innerHTML = list.length ? list.map(({ o }) => listCard(o)).join("") : `<div class="empty-inline">ما فيه عروض مطابقة</div>`;
   // المفضلة
   const favList = state.offers.filter((o) => state.favs.has(o.id) && !X.isExpired(o));
@@ -531,10 +545,10 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
   const favList = live.filter((o) => state.favs.has(o.id));
   const dist = userDistrict();
   const near = state.me ? live.filter((o) => branchesOf(o).some((b) => km(state.me, { lat: b.latitude, lng: b.longitude }) <= NEAR_KM)).length : null;
-  const fresh = live.filter((o) => { const t = X.ms(o.startsAt) || X.ms(o.createdAt); return t && t <= now && now - t < 864e5; }).length;
+  const fresh = live.filter((o) => isFresh(o, now)).length;
   const endingFav = favList.filter((o) => { const e = X.ms(o.expiresAt); return e && e - now < 864e5; }).length;
   const mini = (o) => `<div class="mcard" data-id="${esc(o.id)}" role="button"><div class="mthumb"><img src="${esc(thumb(o, 300))}" alt="" loading="lazy">
-      ${badge(o) ? `<span class="badge">${esc(badge(o).t)}</span>` : ""}</div>
+      ${badge(o) ? `<span class="badge${badge(o).isNew ? " new" : ""}">${esc(badge(o).t)}</span>` : ""}</div>
       <div class="mname">${esc(o.restaurantName)}</div><div class="mprice">${esc(priceLabel(o))}</div></div>`;
   const row = (id, ico, label, sub = "", href = "") => href
     ? `<a class="menu-row" href="${href}" target="_blank" rel="noopener"><span class="mi">${ico}</span><span class="ml"><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</span><span class="chev">‹</span></a>`
@@ -549,7 +563,7 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
       <div class="qstats">
         <button class="qs" data-go="favs"><b>${favList.length}</b><small>❤️ مفضلتي</small></button>
         <button class="qs" data-go="${near == null ? "locate" : "map"}"><b>${near == null ? "📍" : near}</b><small>${near == null ? "حدّد موقعك" : "📍 عروض حولك"}</small></button>
-        <button class="qs" data-go="list"><b>${fresh}</b><small>🆕 جديد اليوم</small></button>
+        <button class="qs" data-go="fresh"><b>${fresh}</b><small>🆕 نزل اليوم</small></button>
       </div>
 
       <div class="sec-head"><b>مفضلتي ❤️</b>${favList.length ? `<button class="link" data-go="favs">عرض الكل ‹</button>` : ""}</div>
@@ -569,7 +583,7 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
     </div>` + foot;
   el.querySelector(".acc-foot .install-row")?.remove(); // موجود في القائمة فوق
   el.querySelector(".acc-foot .legal")?.remove();
-  el.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => { const g = b.dataset.go; if (g === "locate") { setTab("map"); locate(true); } else setTab(g); });
+  el.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => { const g = b.dataset.go; if (g === "locate") { setTab("map"); locate(true); } else if (g === "fresh") { state.fresh = true; state.scope = "all"; renderAll(); setTab("list"); } else setTab(g); });
   $("contactBtn").onclick = openContact;
   $("inviteFriend").onclick = inviteFriend;
   $("howPts")?.addEventListener("click", howPoints);
@@ -789,7 +803,12 @@ function openContact() {
 }
 
 // ---------------- التبويبات والتنقل ----------------
-export function setTab(t) {
+export function setTab(t, fromPop) {
+  if (!fromPop && t !== state.tab) {
+    if (state.tab === "map") history.pushState({ tab: t }, "", "/");
+    else if (t === "map" && history.state?.tab) popSilently();
+    else if (history.state?.tab) history.replaceState({ tab: t }, "", "/");
+  }
   state.tab = t;
   document.querySelectorAll(".tab").forEach((s) => s.classList.toggle("on", s.id === "tab-" + t));
   document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
@@ -797,7 +816,7 @@ export function setTab(t) {
   if (t === "account") renderAccount();
   try { sessionStorage.setItem("hayyna_tab", t); } catch {}
 }
-$("nav").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { hideSheet(); if (location.pathname !== "/") history.replaceState({}, "", "/"); setTab(b.dataset.tab); } };
+$("nav").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { hideSheet(); if (location.pathname !== "/") history.replaceState({ tab: b.dataset.tab }, "", "/"); setTab(b.dataset.tab); } };
 
 function route() {
   const m = location.pathname.match(/^\/(o|s)\/([^/]+)/);
@@ -810,9 +829,19 @@ function route() {
   } else openStore(id, false);
 }
 export function go(path, replace) { (replace ? history.replaceState : history.pushState).call(history, {}, "", path); route(); }
+let exitArmed = false;
 window.addEventListener("popstate", () => {
+  if (ignorePop) { ignorePop--; return; }
+  $("viewer").classList.add("hidden");
   if (!$("page").classList.contains("hidden")) { closePage(true); return; }
-  route();
+  if (/^\/(o|s)\//.test(location.pathname)) { route(); return; }
+  if (!$("sheet").classList.contains("hidden")) { hideSheet(true); document.title = "حيّنا — عروض المحلات حولك على الخريطة"; return; }
+  if (state.tab !== "map") { setTab("map", true); return; }
+  // على الخريطة وما فيه شي مفتوح: رجوع مرة ثانية يطلع
+  if (exitArmed) return;
+  exitArmed = true;
+  toast("اضغط رجوع مرة ثانية للخروج من حيّنا");
+  setTimeout(() => { exitArmed = false; history.pushState({ guard: 1 }, "", location.pathname); }, 2500);
 });
 const closeSheet = () => { if (location.pathname !== "/") { history.state?.v ? history.back() : go("/", true); } else hideSheet(); };
 $("sheetClose").onclick = closeSheet;
@@ -825,6 +854,8 @@ document.addEventListener("click", (e) => {
   const h = e.target.closest("[data-fav]"); if (h) { e.stopPropagation(); toggleFav(h.dataset.fav); return; }
   const s = e.target.closest("#sortbar [data-sort]"); if (s) { state.sort = s.dataset.sort; renderAll(); return; }
   const op = e.target.closest("#sortbar [data-open]"); if (op) { state.openOnly = !state.openOnly; renderAll(); return; }
+  const fr = e.target.closest("#sortbar [data-fresh]"); if (fr) { state.fresh = !state.fresh; renderAll(); return; }
+  const kd = e.target.closest("#sortbar [data-kind]"); if (kd) { state.kind = state.kind === "new" ? "all" : "new"; renderAll(); return; }
   const c = e.target.closest(".card[data-id], .lcard[data-id], .mcard[data-id]"); if (c) { openOffer(c.dataset.id, true); }
 });
 
@@ -1006,4 +1037,11 @@ createMap($("map"), { key: MAPS_WEB_KEY, showShops: state.config.showGooglePoi !
   if (state.view?.type === "o") { const o = state.offers.find((x) => x.id === state.view.id); if (o) { const { b } = nearestBranch(o); map.setView(b.latitude, b.longitude, 15); } }
 }).catch((e) => { console.error(e); toast("تعذّر تحميل الخريطة"); });
 
+// سجل الرجوع: نقطة بداية + حارس، عشان أول رجوع ما يطلّعك من الموقع
+(() => {
+  const here = location.pathname + location.search + location.hash;
+  history.replaceState({ root: 1 }, "", "/");
+  history.pushState({ guard: 1 }, "", "/");
+  if (here !== "/" && /^\/(o|s)\//.test(location.pathname)) history.pushState({ v: 1 }, "", here);
+})();
 try { const t = sessionStorage.getItem("hayyna_tab"); if (t && !location.pathname.match(/^\/(o|s)\//)) setTab(t); } catch {}

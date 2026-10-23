@@ -54,7 +54,8 @@ export function effectivePercent(o) {
   if (o.originalPrice > 0 && o.price > 0 && o.price < o.originalPrice) return Math.floor((o.originalPrice - o.price) / o.originalPrice * 100);
   return currentPercent(o);
 }
-export const priceLabel = (o, scope = false) => isPercentOnly(o)
+export const priceLabel = (o, scope = false) => o.postType === "new" && !(o.price > 0) && !isPercentOnly(o) ? "✨ منتج جديد"
+  : isPercentOnly(o)
   ? `خصم ${currentPercent(o)}%${scope && o.itemsScope ? " " + o.itemsScope : ""}`
   : `${money(o.price)} ${o.currency || "ر.س"}`;
 export function tiersText(o) {
@@ -96,7 +97,9 @@ export function deliveryText(x) {
 }
 export function badge(o) {
   if (isUpcoming(o)) return { t: "قريباً", soon: true };
-  const p = effectivePercent(o); return p >= 1 ? { t: `-${p}%` } : null;
+  const p = effectivePercent(o);
+  if (o.postType === "new") return { t: p >= 1 ? `جديد -${p}%` : "✨ جديد", isNew: true };
+  return p >= 1 ? { t: `-${p}%` } : null;
 }
 export const waDigits = (p) => {
   let d = String(p || "").replace(/\D/g, "");

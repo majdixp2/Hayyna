@@ -669,6 +669,7 @@ class RestaurantOfferRepository(
             "dailyPercents" to dailyPercents.take(14),
             "itemsScope" to itemsScope.take(60),
             "grandOpening" to grandOpening,
+            "postType" to (if (postType == "new") "new" else "offer"),
             "tags" to tags.take(12),
             "delivery" to delivery,
             "deliveryFee" to deliveryFee,

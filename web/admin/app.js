@@ -192,7 +192,7 @@ function offerCard(o, extra = "", buttons = "") {
       <div style="flex:1;min-width:0">
         <div class="name">${esc(o.restaurantName)}</div>
         <div><b>${esc(o.offerTitle)}</b></div>
-        <div class="muted">${o.price > 0 ? `${esc(o.price)} ر.س ${o.originalPrice ? `<s>${esc(o.originalPrice)}</s>` : ""}` : `خصم ${(o.dailyPercents && o.dailyPercents.length) ? esc(o.dailyPercents.join("/")) : esc(o.discountPercent || 0)}% ${esc(o.itemsScope || "")}`}${o.startsAt && o.startsAt.toMillis && o.startsAt.toMillis() > Date.now() ? " • 🔜 قريباً" : ""}${o.grandOpening ? " • 🎉 افتتاح" : ""} • ${esc(o.district)} • 👁 ${o.viewsCount || 0}</div>
+        <div class="muted">${o.postType === "new" ? "✨ جديدنا • " : ""}${o.postType === "new" && !(o.price > 0) && !(o.discountPercent > 0) ? "بدون سعر" : o.price > 0 ? `${esc(o.price)} ر.س ${o.originalPrice ? `<s>${esc(o.originalPrice)}</s>` : ""}` : `خصم ${(o.dailyPercents && o.dailyPercents.length) ? esc(o.dailyPercents.join("/")) : esc(o.discountPercent || 0)}% ${esc(o.itemsScope || "")}`}${o.startsAt && o.startsAt.toMillis && o.startsAt.toMillis() > Date.now() ? " • 🔜 قريباً" : ""}${o.grandOpening ? " • 🎉 افتتاح" : ""} • ${esc(o.district)} • 👁 ${o.viewsCount || 0}</div>
         ${o.description ? `<div class="muted">${esc(o.description).slice(0, 200)}</div>` : ""}
         ${(o.mediaUris || []).length > 1 ? `<div class="actions">${o.mediaUris.slice(1).map((u) => `<img class="thumb small" src="${esc(img(u, 150))}" data-view="${esc(u)}">`).join("")}</div>` : ""}
         ${extra}
@@ -301,7 +301,7 @@ function refs() {
         <button class="btn danger" data-act="removeRef" data-id="${r.storeUid}">حذف</button>
       </div></div>`; }).join("")}</div>` : `<p class="muted">ما فيه إحالات للحين</p>`}
     <h2>🏅 أكثر السفراء نقاط</h2>
-    ${board.length ? `<div class="grid">${board.map(([u, p], k) => `<div class="card row" style="justify-content:space-between"><b>${k + 1}. ${esc(state.names[u] || u.slice(0, 8))}</b><span>${p} نقطة ${p >= 10000 ? "💎" : p >= 5000 ? "🥇" : p >= 1000 ? "🥈" : "🏅"}</span></div>`).join("")}</div>` : `<p class="muted">—</p>`}`;
+    ${board.length ? `<div class="grid">${board.map(([u, p], k) => `<div class="card row" style="justify-content:space-between"><b>${k + 1}. ${esc(state.names[u] || u.slice(0, 8))}</b><span>${p} نقطة ${p >= 10000 ? "💎" : p >= 5000 ? "🥇" : p >= 1000 ? "🥈" : "🥉"}</span></div>`).join("")}</div>` : `<p class="muted">—</p>`}`;
 }
 
 const FB_TYPES = ["🐞 مشكلة", "💡 اقتراح", "✨ فكرة إضافية", "🚩 شكوى على متجر", "أخرى"];

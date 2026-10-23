@@ -306,26 +306,35 @@ export async function openOfferForm(editing) {
     all: !e || !(e.branches || []).length || p.branches.every((b) => (e.branches || []).some((x) => x.id === b.id)),
     sel: new Set((e?.branches || []).map((b) => b.id)),
     media: e ? X.gallery(e).map((u) => ({ url: u })) : [], isVideo: e?.mediaType === "VIDEO",
+    kind: e?.postType === "new" ? "new" : "offer",
   };
+  const NEW_DUR = X.DURATIONS.findIndex((d) => d.days === 14); // جديدنا: أسبوعين افتراضياً
+  if (!e && f.kind === "new") f.durIdx = NEW_DUR;
   let dirty = false, saving = false;
   const startStr = () => { if (!f.start) return ""; const d = new Date(f.start); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const render = () => {
+    const isNew = f.kind === "new";
+    if (isNew) f.percentMode = false;
     $("pageBody").innerHTML = `<div class="form">
-      <label class="label">صور العرض (حتى 3) أو فيديو *</label>
+      <div class="kind-row">
+        <button class="kind-btn${!isNew ? " on" : ""}" data-kind="offer"><b>🔥 عرض</b><small>خصم أو سعر خاص</small></button>
+        <button class="kind-btn new${isNew ? " on" : ""}" data-kind="new"><b>✨ جديدنا</b><small>صنف أو منتج جديد</small></button>
+      </div>
+      <label class="label">${isNew ? "صور المنتج (حتى 3) أو فيديو *" : "صور العرض (حتى 3) أو فيديو *"}</label>
       <div class="tiles">${f.media.map((it, i) => f.isVideo ? `<div class="tile"><div class="vid">🎬 فيديو</div><button class="tile-x" data-rm="${i}">✕</button></div>`
         : mediaTile(it.file ? URL.createObjectURL(it.file) : cld(it.url, 300), String(i), i === 0 ? "الغلاف" : "")).join("")}
         ${!f.isVideo && f.media.length < 3 ? `<label class="tile add">＋ صور<input type="file" accept="image/*" multiple id="oImgs" hidden></label>` : ""}
         ${!f.media.length ? `<label class="tile add">🎬 فيديو<input type="file" accept="video/*" id="oVid" hidden></label>` : ""}</div>
-      <label class="label">عنوان العرض *</label><input id="oTitle" class="input" value="${esc(f.title)}" maxlength="150" placeholder="مثال: خصم 30% على كل المنتجات">
-      <div class="chips"><button class="chip${!f.percentMode ? " on" : ""}" data-mode="price">💰 سعر محدد</button><button class="chip${f.percentMode ? " on" : ""}" data-mode="pct">٪ خصم بالنسبة</button></div>
-      ${!f.percentMode ? `<div class="row2"><div><label class="label">السعر (ر.س) *</label><input id="oPrice" class="input" inputmode="decimal" value="${esc(f.price)}"></div>
-        <div><label class="label">قبل الخصم</label><input id="oOrig" class="input" inputmode="decimal" value="${esc(f.original)}"></div></div>`
+      <label class="label">${isNew ? "اسم المنتج الجديد *" : "عنوان العرض *"}</label><input id="oTitle" class="input" value="${esc(f.title)}" maxlength="150" placeholder="${isNew ? "مثال: برجر الترافل الجديد" : "مثال: خصم 30% على كل المنتجات"}">
+      ${isNew ? "" : `<div class="chips"><button class="chip${!f.percentMode ? " on" : ""}" data-mode="price">💰 سعر محدد</button><button class="chip${f.percentMode ? " on" : ""}" data-mode="pct">٪ خصم بالنسبة</button></div>`}
+      ${!f.percentMode ? `<div class="row2"><div><label class="label">${isNew ? "السعر (اختياري)" : "السعر (ر.س) *"}</label><input id="oPrice" class="input" inputmode="decimal" value="${esc(f.price)}"></div>
+        <div><label class="label">${isNew ? "قبل الخصم (لو عليه خصم)" : "قبل الخصم"}</label><input id="oOrig" class="input" inputmode="decimal" value="${esc(f.original)}"></div></div>`
       : `<label class="switch-row"><span>الخصم يتغيّر حسب اليوم (مثل: أول يوم 50% وبعدها 30%)</span><input type="checkbox" id="oTier" ${f.tiered ? "checked" : ""}></label>
         ${!f.tiered ? `<label class="label">نسبة الخصم % *</label><input id="oPct" class="input" inputmode="numeric" value="${esc(f.pct)}" maxlength="2">`
         : `${f.days.map((v, i) => `<div class="tier"><span>اليوم ${X.ordinal(i)}</span><input class="input" inputmode="numeric" data-day="${i}" value="${esc(v)}" maxlength="2" placeholder="%">${f.days.length > 2 ? `<button class="icon-btn" data-dayrm="${i}">✕</button>` : ""}</div>`).join("")}
           ${f.days.length < 14 ? `<button class="btn ghost" id="oAddDay">＋ أضف يوم</button>` : ""}<small class="hint">مدة العرض = ${f.days.length} أيام، والخصم يتغيّر تلقائياً.</small>`}
         <label class="label">على وش الخصم؟</label><input id="oScope" class="input" value="${esc(f.scope)}" maxlength="40" placeholder="على جميع الأصناف">`}
-      <label class="label">تفاصيل العرض</label><textarea id="oDesc" class="input" rows="3" maxlength="2000">${esc(f.desc)}</textarea>
+      <label class="label">${isNew ? "وصف المنتج" : "تفاصيل العرض"}</label><textarea id="oDesc" class="input" rows="3" maxlength="2000">${esc(f.desc)}</textarea>
       <label class="label">الأصناف (للبحث)</label><input id="oTags" class="input" value="${esc(f.tags)}" placeholder="شاورما، برجر، بروست">
       ${deliveryFields(f)}
       <label class="label">التصنيف</label>
@@ -335,8 +344,8 @@ export async function openOfferForm(editing) {
       ${!f.all ? p.branches.map((b) => `<label class="switch-row sub"><span>${esc(b.name || districtLabel(b.district))}</span><input type="checkbox" data-br="${esc(b.id)}" ${f.sel.has(b.id) ? "checked" : ""}></label>`).join("") : ""}
       <div class="section-title">🔜 متى يبدأ؟</div>
       <div class="row2"><button class="chip${!f.start ? " on" : ""}" id="oNow">الحين</button><input type="date" id="oStart" class="input" value="${startStr()}"></div>
-      <label class="switch-row"><span>🎉 عرض افتتاح (محل جديد)</span><input type="checkbox" id="oOpen" ${f.opening ? "checked" : ""}></label>
-      ${f.percentMode && f.tiered ? "" : `<div class="section-title">⏰ مدة العرض</div><div class="chips wrap">
+      ${isNew ? "" : `<label class="switch-row"><span>🎉 عرض افتتاح (محل جديد)</span><input type="checkbox" id="oOpen" ${f.opening ? "checked" : ""}></label>`}
+      ${f.percentMode && f.tiered ? "" : `<div class="section-title">⏰ ${isNew ? "كم يظهر كـ «جديد»؟" : "مدة العرض"}</div><div class="chips wrap">
         ${e ? `<button class="chip${f.keepExpiry ? " on" : ""}" data-dur="keep">بدون تغيير (${esc(X.remainingText(e)?.t || "بدون انتهاء")})</button>` : ""}
         ${X.DURATIONS.map((d, i) => `<button class="chip${!f.keepExpiry && f.durIdx === i ? " on" : ""}" data-dur="${i}">${d.label}</button>`).join("")}
         <button class="chip${!f.keepExpiry && f.durIdx === -1 ? " on" : ""}" data-dur="-1">✎ عدد أيام</button></div>
@@ -360,7 +369,14 @@ export async function openOfferForm(editing) {
     body.querySelectorAll("[data-br]").forEach((c) => c.onchange = () => { c.checked ? f.sel.add(c.dataset.br) : f.sel.delete(c.dataset.br); });
     $("oNow").onclick = () => { f.start = null; render(); };
     $("oStart").onchange = (ev) => { if (!ev.target.value) { f.start = null; } else { const [y, mo, d] = ev.target.value.split("-").map(Number); f.start = new Date(y, mo - 1, d).getTime(); } render(); };
-    $("oOpen").onchange = (ev) => { f.opening = ev.target.checked; };
+    $("oOpen")?.addEventListener("change", (ev) => { f.opening = ev.target.checked; });
+    body.querySelectorAll("[data-kind]").forEach((b) => b.onclick = () => {
+      if (f.kind === b.dataset.kind) return;
+      f.kind = b.dataset.kind; dirty = true;
+      if (!e) f.durIdx = f.kind === "new" ? NEW_DUR : 1;
+      if (f.kind === "new") f.opening = false;
+      render();
+    });
     $("oDays")?.addEventListener("input", (ev) => { f.customDays = ev.target.value.replace(/\D/g, "").slice(0, 2); });
     body.querySelectorAll("[data-dur]").forEach((b) => b.onclick = () => { if (b.dataset.dur === "keep") f.keepExpiry = true; else { f.keepExpiry = false; f.durIdx = +b.dataset.dur; } render(); });
   };
@@ -381,9 +397,11 @@ export async function openOfferForm(editing) {
       : f.durIdx === -1 ? ((+f.customDays >= 1 && +f.customDays <= 90) ? base + (+f.customDays) * DAY : null)
       : (X.DURATIONS[f.durIdx].days ? base + X.DURATIONS[f.durIdx].days * DAY : null);
     if (!f.media.length) return err("أرفق صورة أو فيديو للعرض.");
-    if (!f.title.trim()) return err("اكتب عنوان العرض.");
+    if (!f.title.trim()) return err(f.kind === "new" ? "اكتب اسم المنتج." : "اكتب عنوان العرض.");
     if (!useTiers && !f.keepExpiry && f.durIdx === -1 && !(+f.customDays >= 1 && +f.customDays <= 90)) return err("اكتب عدد أيام العرض (من 1 إلى 90).");
-    if (!f.percentMode && !(price > 0)) return err("اكتب سعر صحيح.");
+    const isNew = f.kind === "new";
+    if (!f.percentMode && !(price > 0) && !(isNew && !String(f.price).trim())) return err("اكتب سعر صحيح.");
+    if (isNew && original && !(price > 0)) return err("اكتب السعر بعد الخصم.");
     if (useTiers && (steps.length < 2 || steps.length !== f.days.length || steps.some((n) => n < 1 || n > 99))) return err("اكتب نسبة الخصم لكل يوم (من 1 إلى 99).");
     if (f.percentMode && !useTiers && !(pct >= 1 && pct <= 99)) return err("اكتب نسبة الخصم (من 1 إلى 99).");
     if (!branches.length) return err("اختر فرع واحد على الأقل.");
@@ -399,7 +417,8 @@ export async function openOfferForm(editing) {
       const discount = useTiers ? steps[0] : f.percentMode ? pct : (original && original > price ? Math.floor((original - price) / original * 100) : 0);
       const data = {
         restaurantName: (p.restaurantName || "").slice(0, 100), offerTitle: f.title.trim().slice(0, 150),
-        description: (f.desc.trim() || "عرض متاح لجميع العملاء.").slice(0, 2000), cuisineType: f.category.slice(0, 60),
+        description: (f.desc.trim() || (isNew ? "منتج جديد متوفر الحين." : "عرض متاح لجميع العملاء.")).slice(0, 2000), cuisineType: f.category.slice(0, 60),
+        postType: isNew ? "new" : "offer",
         price, originalPrice: original, currency: "ر.س", discountBadge: discount >= 1 ? `خصم ${discount}% 🔥` : "",
         mediaType: f.isVideo ? "VIDEO" : "IMAGE", mediaUri: urls[0], mediaUris: urls.slice(0, 3), isPromotionalVideo: f.isVideo,
         district: primary.district || "", region: primary.region || "", latitude: primary.latitude, longitude: primary.longitude,
@@ -407,7 +426,7 @@ export async function openOfferForm(editing) {
         workingHours: X.hoursText(primary) ? "يومياً " + X.hoursText(primary) : "",
         expiresAt: expiry != null ? Timestamp.fromMillis(expiry) : null, startsAt: f.start ? Timestamp.fromMillis(f.start) : null,
         discountPercent: f.percentMode ? discount : 0, dailyPercents: useTiers ? steps : [], itemsScope: f.percentMode ? f.scope.trim().slice(0, 40) : "",
-        grandOpening: f.opening, tags: f.tags.split(/[,،\n#]/).map((t) => t.trim()).filter((t) => t && t.length <= 25).slice(0, 12),
+        grandOpening: isNew ? false : f.opening, tags: f.tags.split(/[,،\n#]/).map((t) => t.trim()).filter((t) => t && t.length <= 25).slice(0, 12),
         delivery: f.delivery, deliveryFee: f.delivery ? Number(f.fee) || 0 : 0, deliveryMinOrder: f.delivery ? Number(f.min) || 0 : 0,
         deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0,
         logoUrl: p.logoUrl || "", branches: branches.slice(0, 50),
@@ -421,7 +440,7 @@ export async function openOfferForm(editing) {
       }
       await setDoc(doc(db, "merchants", state.user.uid), { delivery: data.delivery, deliveryFee: data.deliveryFee, deliveryMinOrder: data.deliveryMinOrder, deliveryFreeOver: data.deliveryFreeOver }, { merge: true }).catch(() => {});
       saving = false; dirty = false; closePage(false);
-      toast(!direct ? "وصل عرضك للمراجعة ⏳ بيظهر على الخريطة بعد الموافقة" : e ? "تم حفظ التعديلات ✅" : "تم نشر العرض ✅", true);
+      toast(!direct ? "وصل للمراجعة ⏳ بيظهر على الخريطة بعد الموافقة" : e ? "تم حفظ التعديلات ✅" : isNew ? "تم نشر منتجك الجديد ✨" : "تم نشر العرض ✅", true);
     } catch (ex) {
       console.error(ex); saving = false; $("oSave").disabled = false; $("oSave").textContent = e ? "حفظ التعديلات ✓" : "انشر العرض ✨";
       err(ex.code === "permission-denied" ? "رفض النشر (صلاحيات). تأكد إن حسابك مو موقوف أو تواصل معنا." : (ex.message || "تعذّر النشر"));

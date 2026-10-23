@@ -23,6 +23,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -539,6 +540,7 @@ private suspend fun loadMarkerBitmap(context: Context, url: String): ImageBitmap
 private fun discountPercentLabel(offer: RestaurantOffer): String? {
     if (com.example.data.model.OfferPricing.isUpcoming(offer)) return "قريباً"
     val pct = com.example.data.model.OfferPricing.effectivePercent(offer)
+    if (offer.postType == "new") return if (pct >= 1) "جديد -$pct%" else "✨ جديد"
     return if (pct >= 1) "-$pct%" else null
 }
 
@@ -576,10 +578,11 @@ fun OfferCircleMarker(
     extraCount: Int = 0
 ) {
     val context = LocalContext.current
+    // عادي رصاصي فاتح، المختار أخضر، المميّز ذهبي (بهالة ذهبية)
     val ringColor = when {
-        isSelected -> Color(0xFFFFD166)
-        offer.isFeatured -> Color(0xFFF59E0B)
-        else -> CalmSagePrimary
+        isSelected -> CalmSagePrimary
+        offer.isFeatured -> Color(0xFFF5B301)
+        else -> Color(0xFFD1D5DB)
     }
     val circleSize = if (isSelected) 54.dp else 46.dp
 
@@ -592,7 +595,7 @@ fun OfferCircleMarker(
                 shape = RoundedCornerShape(10.dp),
                 color = CalmSagePrimary,
                 shadowElevation = 6.dp,
-                border = BorderStroke(1.5.dp, Color(0xFFFFD166))
+                border = BorderStroke(1.5.dp, Color.White)
             ) {
                 Text(
                     text = offer.restaurantName,
@@ -606,7 +609,10 @@ fun OfferCircleMarker(
             Spacer(modifier = Modifier.height(3.dp))
         }
 
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(circleSize + 6.dp)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(circleSize + if (offer.isFeatured && !isSelected) 14.dp else 6.dp)) {
+            if (offer.isFeatured && !isSelected) Box(
+                Modifier.size(circleSize + 12.dp).background(Color(0x55F5B301), CircleShape)
+            )
             Surface(
                 shape = CircleShape,
                 color = Color.White,
@@ -697,7 +703,11 @@ fun OfferCircleMarker(
         if (badge != null) {
             Surface(
                 shape = RoundedCornerShape(8.dp),
-                color = if (badge == "قريباً") Color(0xFF2563EB) else Color(0xFFE05A47),
+                color = when {
+                    badge == "قريباً" -> Color(0xFF2563EB)
+                    offer.postType == "new" -> Color(0xFF7C3AED)
+                    else -> Color(0xFFE05A47)
+                },
                 shadowElevation = 3.dp,
                 border = BorderStroke(1.dp, Color.White),
                 modifier = Modifier.offset(y = (-4).dp)

@@ -68,7 +68,7 @@ button { font-family: inherit; cursor: pointer; }
 
 /* ---------- أيقونات الخريطة ---------- */
 .mk { position: relative; display: flex; flex-direction: column; align-items: center; transition: transform .15s; }
-.mk .ring { width: 54px; height: 54px; border-radius: 50%; border: 3px solid #fff; overflow: hidden; background: #ddd; box-shadow: 0 3px 10px rgba(0,0,0,.3); }
+.mk .ring { position: relative; z-index: 1; width: 54px; height: 54px; border-radius: 50%; border: 3px solid #D1D5DB; overflow: hidden; background: #ddd; box-shadow: 0 3px 10px rgba(0,0,0,.3); }
 .mk .ring img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .mk .lg { position: absolute; top: -4px; left: -4px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; background: #fff; object-fit: cover; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 .mk .more { position: absolute; top: -4px; right: -6px; background: var(--green); color: #fff; font-size: 10px; font-weight: 800; border-radius: 9px; padding: 1px 5px; border: 1.5px solid #fff; }
@@ -403,3 +403,20 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .poi-locked small { font-weight: 500; }
 .poi-locked.mine { background: var(--green-soft); color: var(--green); border-color: #B7E4C7; }
 .poi-owner-hint { text-align: center; font-size: 13px; color: var(--muted); margin: 6px 0; }
+
+/* حلقات العروض: عادي رصاصي، المختار أخضر، المميّز ذهبي بوميض هادي */
+.mk.feat .ring { border-color: #F5B301; }
+.mk.feat::before { content: ""; position: absolute; top: -3px; left: 50%; width: 60px; height: 60px; margin-left: -30px; border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(245,179,1,.7); animation: featPulse 2.2s ease-out infinite; pointer-events: none; }
+@keyframes featPulse { 0% { box-shadow: 0 0 0 0 rgba(245,179,1,.65); } 70% { box-shadow: 0 0 0 14px rgba(245,179,1,0); } 100% { box-shadow: 0 0 0 0 rgba(245,179,1,0); } }
+.mk.on .ring, .mk.on.feat .ring { border-color: var(--green); }
+.mk.on::before { animation: none; }
+@media (prefers-reduced-motion: reduce) { .mk.feat::before { animation: none; box-shadow: 0 0 0 4px rgba(245,179,1,.35); } }
+/* جديدنا */
+.badge.new, .mk .pct.new, .mthumb .badge.new { background: #7C3AED; }
+.kind-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+.kind-btn { border: 2px solid var(--line); background: #fff; border-radius: 14px; padding: 12px 8px; font: inherit; text-align: center; color: var(--ink); }
+.kind-btn b { display: block; font-size: 15px; }
+.kind-btn small { color: var(--muted); font-size: 12px; }
+.kind-btn.on { border-color: var(--green); background: var(--green-soft); }
+.kind-btn.on.new { border-color: #7C3AED; background: #F3EEFF; }
