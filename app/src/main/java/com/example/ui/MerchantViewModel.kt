@@ -267,6 +267,22 @@ class MerchantViewModel(
 
     fun logInvite(poi: com.google.android.gms.maps.model.PointOfInterest) {
         launchSafely { repository.logPoi(poi.placeId, "invites") }
+        val uid = currentUser.value?.uid ?: return
+        viewModelScope.launch { runCatching { repository.lockPoiInvite(poi.placeId, uid, INVITE_LOCK_DAYS) } }
+    }
+
+    /** حالة قفل الدعوة لمحل: (أنا اللي دعيته؟, ينتهي متى) أو null لو مفتوح. */
+    suspend fun poiInviteLock(placeId: String): Pair<Boolean, Long>? {
+        val lock = runCatching { repository.getPoiInvite(placeId) }.getOrNull() ?: return null
+        if (lock.second <= System.currentTimeMillis()) return null
+        return (lock.first == currentUser.value?.uid) to lock.second
+    }
+
+    /** الدعوة تحتاج تسجيل دخول (عشان تنحسب باسمه وتنقفل للمحل). */
+    fun loginToInvite() {
+        selectedPoi.value = null
+        currentRole.value = AppRole.MERCHANT_PORTAL
+        toast("سجّل دخولك عشان تدعو المحل وتنحسب لك النقاط 🎁")
     }
 
     /** "أنا صاحب المحل": نوديه للتسجيل كتاجر وبيانات محله جاهزة. */
@@ -280,8 +296,8 @@ class MerchantViewModel(
                 toast("سجّل دخول كتاجر، وبنعبّي اسم محلك وموقعه لك 🏪")
             }
             !isMerchantAccount -> {
-                becomeMerchant()
-                isBranchesPageOpen.value = true
+                pendingClaim.value = null
+                toast("صاحب المحل؟ سجّل خروج وادخل بحساب صاحب محل عشان تسجّله")
             }
             else -> isBranchesPageOpen.value = true
         }
@@ -729,13 +745,15 @@ class MerchantViewModel(
             val role = when {
                 // اختار نوع الحساب من الزر وهو حساب جديد
                 saved == null && pendingRole != null -> pendingRole!!
+                // كان من أهل الحي واختار "صاحب محل" وهو يسجّل دخول: يتحوّل تاجر
+                saved == ROLE_CUSTOMER && pendingRole == ROLE_MERCHANT -> ROLE_MERCHANT
                 saved != null -> saved
                 // حسابات قديمة: عنده ملف متجر = تاجر
                 pendingRole == null && runCatching { repository.getMerchantProfile(uid) }.getOrNull() != null -> ROLE_MERCHANT
                 else -> pendingRole ?: ROLE_CUSTOMER
             }
             userRole.value = role
-            if (saved == null) runCatching { repository.setUserRole(uid, role) }
+            if (saved != role) runCatching { repository.setUserRole(uid, role) }
             // المفضلة: ندمج اللي على الجوال مع اللي في الحساب
             runCatching {
                 val remote = repository.getFavorites(uid)
@@ -1249,6 +1267,7 @@ class MerchantViewModel(
     }
 
     companion object {
+        const val INVITE_LOCK_DAYS = 5
         private const val TAG = "MerchantViewModel"
         /** عدد البلاغات اللي يختفي بعدها العرض تلقائياً لين يراجعه الأدمن. */
         const val AUTO_HIDE_REPORTS = 3

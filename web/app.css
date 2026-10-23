@@ -399,3 +399,7 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .tiers small { color: var(--muted); }
 .poi-pts { text-align: center; font-size: 13px; color: var(--amber); background: var(--amber-bg); border-radius: 12px; padding: 8px 10px; margin: 4px 0 8px; }
 .poi-pts a { color: var(--green); font-weight: 800; }
+.poi-locked { text-align: center; background: #F3F4F6; color: #6B7280; border: 1px dashed #D1D5DB; border-radius: 14px; padding: 12px; font-weight: 700; font-size: 14px; margin: 4px 0 8px; }
+.poi-locked small { font-weight: 500; }
+.poi-locked.mine { background: var(--green-soft); color: var(--green); border-color: #B7E4C7; }
+.poi-owner-hint { text-align: center; font-size: 13px; color: var(--muted); margin: 6px 0; }

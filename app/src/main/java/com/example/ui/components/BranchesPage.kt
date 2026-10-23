@@ -85,7 +85,9 @@ fun BranchesPage(
     onClose: () -> Unit,
     // جاي من "أنا صاحب المحل" والتوثيق مفعّل
     claimMode: Boolean = false,
-    categories: List<String> = com.example.data.repository.RestaurantOfferRepository.DEFAULT_CATEGORIES
+    categories: List<String> = com.example.data.repository.RestaurantOfferRepository.DEFAULT_CATEGORIES,
+    // "أنا صاحب المحل" وعنده متجر من قبل: نفتح فرع جديد في موقع المحل مباشرة
+    claimBranch: Branch? = null
 ) {
     var restaurantName by remember { mutableStateOf(profile.restaurantName) }
     var logoLocal by remember { mutableStateOf<String?>(null) }
@@ -129,7 +131,7 @@ fun BranchesPage(
             )
         }
     }
-    var editing by remember { mutableStateOf<Branch?>(null) }
+    var editing by remember { mutableStateOf<Branch?>(claimBranch) }
     var pendingDelete by remember { mutableStateOf<Branch?>(null) }
     var error by remember { mutableStateOf("") }
 

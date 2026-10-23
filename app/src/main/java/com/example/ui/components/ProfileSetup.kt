@@ -144,8 +144,6 @@ fun ProfileEditDialog(
                     value = phone, onValueChange = { phone = it.take(15) }, label = { Text("رقم الجوال") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                 )
-                Text("نوع الحساب", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                RolePicker(role) { role = it }
                 if (email.isNotBlank()) Text(email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             }

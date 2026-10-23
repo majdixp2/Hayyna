@@ -36,16 +36,27 @@ fun PoiInviteSheet(
     inviteText: String,
     onInvited: () -> Unit,
     onClaim: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isLoggedIn: Boolean = true,
+    canClaim: Boolean = true,
+    onLoginToInvite: () -> Unit = {},
+    loadLock: suspend (String) -> Pair<Boolean, Long>? = { null }
 ) {
     val context = LocalContext.current
     // رقم المحل من خرائط Google (لو متاح): جوال = نفتح واتساب المحل مباشرة
     var info by androidx.compose.runtime.remember(poi.placeId) { androidx.compose.runtime.mutableStateOf<com.example.data.PlacesLookup.Info?>(null) }
     var loading by androidx.compose.runtime.remember(poi.placeId) { androidx.compose.runtime.mutableStateOf(true) }
+    // قفل الدعوة: (أنا اللي دعيته؟, ينتهي متى)
+    var lock by androidx.compose.runtime.remember(poi.placeId) { androidx.compose.runtime.mutableStateOf<Pair<Boolean, Long>?>(null) }
     androidx.compose.runtime.LaunchedEffect(poi.placeId) {
+        lock = loadLock(poi.placeId)
         info = com.example.data.PlacesLookup.lookup(context, poi.placeId)
         loading = false
     }
+    val lockedByOther = lock?.first == false
+    val mine = lock?.first == true
+    val daysLeft = lock?.let { maxOf(1L, (it.second - System.currentTimeMillis() + 86_399_999L) / 86_400_000L) } ?: 0L
+    val daysWord = if (daysLeft == 1L) "يوم" else "أيام"
     val mobile = info?.phone?.let { com.example.data.PlacesLookup.saudiMobile(it) }
     val name = info?.name?.takeIf { it.isNotBlank() }
     val text = if (name != null && !inviteText.contains(name)) inviteText.replace(poi.name.trim(), name) else inviteText
@@ -61,6 +72,27 @@ fun PoiInviteSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(4.dp))
+            if (!loading && lockedByOther) {
+                androidx.compose.material3.Surface(
+                    color = androidx.compose.ui.graphics.Color(0xFFF3F4F6),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(14.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("📨 تمت دعوة هذا المحل من أحد أهل الحي", fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(0xFF6B7280))
+                        Text("ننتظره يسجّل — تقدر تدعوه بعد $daysLeft $daysWord", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color(0xFF6B7280))
+                    }
+                }
+            } else if (!isLoggedIn) {
+                Button(
+                    onClick = onLoginToInvite,
+                    colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                ) { Text("📨 سجّل دخولك وادعه", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+                Text("🎁 الدعوة تنحسب باسمك، ولو سجّل المحل تاخذ لين 100 نقطة", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color(0xFF8A5A00))
+            } else {
+                if (mine) Text("✅ دعيت هذا المحل — ننتظره يسجّل (باقي $daysLeft $daysWord محجوز لك)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary)
             Button(
                 onClick = {
                     onInvited()
@@ -84,11 +116,13 @@ fun PoiInviteSheet(
                 Text(
                     when {
                         loading -> "…"
-                        mobile != null -> "💬 ادعه على واتساب المحل"
-                        else -> "📣 ادعه لحيّنا"
+                        mobile != null -> if (mine) "💬 ذكّره على واتساب المحل" else "💬 ادعه على واتساب المحل"
+                        else -> if (mine) "📣 ذكّره مرة ثانية" else "📣 ادعه لحيّنا"
                     },
                     fontWeight = FontWeight.Bold, fontSize = 15.sp
                 )
+            }
+                if (!mine) Text("🎁 لو سجّل المحل عن طريق دعوتك تاخذ لين 100 نقطة", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color(0xFF8A5A00))
             }
             val phone = info?.phone.orEmpty()
             if (phone.isNotBlank() && mobile == null) {
@@ -98,11 +132,16 @@ fun PoiInviteSheet(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 ) { Text("📞 اتصل بالمحل ($phone)") }
             }
-            OutlinedButton(
+            if (canClaim) OutlinedButton(
                 onClick = onClaim,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
             ) { Text("🏪 أنا صاحب المحل — سجّله", fontWeight = FontWeight.Bold) }
+            else Text(
+                "صاحب المحل؟ سجّل خروج وادخل بحساب صاحب محل عشان تسجّله",
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
             Row { Text("المعلومات من خرائط Google", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }

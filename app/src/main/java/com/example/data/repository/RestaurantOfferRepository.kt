@@ -428,6 +428,24 @@ class RestaurantOfferRepository(
     private val poiInterest = db.collection("poiInterest")
 
     /** نسجّل الاهتمام بمحل من نقاط Google (نخزّن معرّف المكان فقط حسب شروط Google). */
+    /** قفل الدعوة: أول من يدعو المحل يحجزه كم يوم. يرجّع (by, untilMillis) أو null. */
+    suspend fun getPoiInvite(placeId: String): Pair<String, Long>? {
+        val d = db.collection("poiInvites").document(placeId.take(200)).get().await()
+        if (!d.exists()) return null
+        val until = d.getTimestamp("until")?.toDate()?.time ?: return null
+        return (d.getString("by").orEmpty()) to until
+    }
+
+    suspend fun lockPoiInvite(placeId: String, uid: String, days: Int) {
+        db.collection("poiInvites").document(placeId.take(200)).set(
+            hashMapOf(
+                "by" to uid,
+                "at" to FieldValue.serverTimestamp(),
+                "until" to Timestamp(java.util.Date(System.currentTimeMillis() + days * 86_400_000L))
+            )
+        ).await()
+    }
+
     suspend fun logPoi(placeId: String, field: String) {
         require(field in setOf("taps", "invites", "claims"))
         poiInterest.document(placeId.take(200)).set(

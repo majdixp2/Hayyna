@@ -5,7 +5,7 @@ import {
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, deleteUser
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
-  getFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, addDoc, deleteDoc, increment, serverTimestamp
+  getFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, addDoc, deleteDoc, increment, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
 import * as X from "./logic.js";
@@ -423,39 +423,61 @@ function openViewer(src) { $("viewerImg").src = src; $("viewer").classList.remov
 
 // ---------------- محلات Google غير المسجّلة: ادعه / أنا صاحب المحل ----------------
 const poiLog = (placeId, field) => setDoc(doc(db, "poiInterest", placeId), { [field]: increment(1), lastAt: serverTimestamp() }, { merge: true }).catch(() => {});
+const INVITE_LOCK_DAYS = 5; // بعد ما أحد يدعو المحل، تتقفل الدعوة كذا يوم لين يسجّل
+const daysLeft = (ms) => Math.max(1, Math.ceil((ms - Date.now()) / 864e5));
 async function openPoi({ placeId, lat, lng }) {
   poiLog(placeId, "taps");
   showSheet(`<div class="pad"><div class="spinner"></div></div>`);
-  const info = (await map?.placeInfo(placeId)) || { name: "", phone: "" };
-  const name = info.name || "";
-  const mobile = (() => { const d = String(info.phone || "").replace(/\D/g, ""); return d.startsWith("9665") && d.length === 12 ? d : d.startsWith("05") && d.length === 10 ? "966" + d.slice(1) : null; })();
+  const [info, lockSnap] = await Promise.all([
+    map?.placeInfo(placeId).catch(() => null),
+    getDoc(doc(db, "poiInvites", placeId)).catch(() => null),
+  ]);
+  const name = info?.name || "", phone = info?.phone || "";
+  const lock = lockSnap?.exists?.() ? lockSnap.data() : null;
+  const until = X.ms(lock?.until) || 0;
+  const locked = until > Date.now(), mine = locked && lock.by === state.user?.uid;
+  const mobile = (() => { const d = String(phone).replace(/\D/g, ""); return d.startsWith("9665") && d.length === 12 ? d : d.startsWith("05") && d.length === 10 ? "966" + d.slice(1) : null; })();
   const cfg = state.config;
   const shown = name || "هذا المحل";
   const appLink = withRef(cfg.appLink || location.origin);
   const invite = (cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة حيّنا. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')
     .replace(/\{name\}/g, name || "محلكم") + "\n" + appLink;
+  const isMerchant = state.role === "merchant" || (state.user && ADMIN_EMAILS.includes(state.user.email));
+  const inviteBtn = mobile
+    ? `<a class="btn wa" id="poiInvite" href="https://wa.me/${mobile}?text=${encodeURIComponent(invite)}" target="_blank" rel="noopener">💬 ${mine ? "ذكّره على واتساب المحل" : "ادعه على واتساب المحل"}</a>`
+    : `<button class="btn wa" id="poiInvite">📨 ${mine ? "ذكّره مرة ثانية" : "ادعه لحيّنا"}</button>`;
+  let inviteHtml = "";
+  if (cfg.poiInviteEnabled !== false) {
+    if (locked && !mine) inviteHtml = `<div class="poi-locked">📨 تمت دعوة هذا المحل من أحد أهل الحي<br><small>ننتظره يسجّل — تقدر تدعوه بعد ${daysLeft(until)} ${daysLeft(until) === 1 ? "يوم" : "أيام"}</small></div>`;
+    else if (!state.user) inviteHtml = `<button class="btn wa" id="poiLoginInvite">📨 سجّل دخولك وادعه</button>
+      <p class="poi-pts">🎁 الدعوة تنحسب باسمك، ولو سجّل المحل تاخذ لين <b>${POINTS.verified + POINTS.offer} نقطة</b></p>`;
+    else inviteHtml = (mine ? `<div class="poi-locked mine">✅ دعيت هذا المحل — ننتظره يسجّل (باقي ${daysLeft(until)} ${daysLeft(until) === 1 ? "يوم" : "أيام"} محجوز لك)</div>` : "")
+      + inviteBtn + (mine ? "" : `<p class="poi-pts">🎁 لو سجّل المحل عن طريق دعوتك تاخذ لين <b>${POINTS.verified + POINTS.offer} نقطة</b></p>`);
+  }
   showSheet(`<div class="pad poi-card">
     <div class="poi-ico">🏪</div>
     <div class="section-title" style="text-align:center">${esc(shown)}</div>
     <p class="desc" style="text-align:center">هذا المحل مو مسجّل في حيّنا للحين</p>
-    ${cfg.poiInviteEnabled !== false ? (mobile
-      ? `<a class="btn wa" id="poiInvite" href="https://wa.me/${mobile}?text=${encodeURIComponent(invite)}" target="_blank" rel="noopener">💬 ادعه على واتساب المحل</a>`
-      : `<button class="btn wa" id="poiInvite">📨 ادعه لحيّنا</button>`) : ""}
-    ${info.phone && !mobile ? `<a class="btn call" href="tel:${esc(info.phone.replace(/[^\d+]/g, ""))}">📞 اتصل بالمحل (${esc(info.phone)})</a>` : ""}
-    ${cfg.poiInviteEnabled !== false ? `<p class="poi-pts">${state.user ? `🎁 لو سجّل المحل عن طريق دعوتك تاخذ لين <b>${POINTS.verified + POINTS.offer} نقطة</b>` : `🎁 <a href="#" id="poiLoginPts">سجّل دخولك</a> قبل الدعوة عشان تنحسب لك نقاط لو سجّل المحل`}</p>` : ""}
-    <button class="btn dir" id="poiClaim">🏪 أنا صاحب المحل — سجّله</button>
+    ${inviteHtml}
+    ${phone && !mobile ? `<a class="btn call" href="tel:${esc(phone.replace(/[^\d+]/g, ""))}">📞 اتصل بالمحل (${esc(phone)})</a>` : ""}
+    ${!state.user || isMerchant ? `<button class="btn dir" id="poiClaim">🏪 أنا صاحب المحل — سجّله</button>`
+      : `<p class="poi-owner-hint">صاحب المحل؟ سجّل خروج وادخل بحساب <b>صاحب محل</b> عشان تسجّله</p>`}
     <a class="btn call" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${encodeURIComponent(placeId)}" target="_blank" rel="noopener">فتح في Google Maps</a>
   </div>`);
-  $("poiLoginPts")?.addEventListener("click", (e) => { e.preventDefault(); hideSheet(); setTab("account"); openLogin("customer"); });
-  $("poiInvite")?.addEventListener("click", () => { poiLog(placeId, "invites"); if (!mobile) share(invite, "", "حيّنا"); });
-  $("poiClaim").onclick = () => {
+  $("poiLoginInvite")?.addEventListener("click", () => { hideSheet(); setTab("account"); openLogin("customer"); });
+  $("poiInvite")?.addEventListener("click", () => {
+    poiLog(placeId, "invites");
+    // نحجز الدعوة باسمه كم يوم عشان ما يتكرر الإزعاج للمحل
+    setDoc(doc(db, "poiInvites", placeId), { by: state.user.uid, at: serverTimestamp(), until: Timestamp.fromMillis(Date.now() + INVITE_LOCK_DAYS * 864e5) }).catch(() => {});
+    if (!mobile) share(invite, "", "حيّنا");
+  });
+  $("poiClaim")?.addEventListener("click", () => {
     poiLog(placeId, "claims");
     try { sessionStorage.setItem("hayyna_claim", JSON.stringify({ name, lat, lng })); } catch {}
     hideSheet();
     if (!state.user) { setTab("account"); openLogin("merchant"); return; }
-    if (state.role !== "merchant") setRole("merchant");
     setTab("account");
-  };
+  });
 }
 export function takeClaim() {
   try { const c = JSON.parse(sessionStorage.getItem("hayyna_claim") || "null"); sessionStorage.removeItem("hayyna_claim"); return c; } catch { return null; }
@@ -537,7 +559,6 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
 
       ${ambassadorCard()}
 
-      <button class="role-card" id="becomeMerchant"><div class="rc-ico">🏪</div><div><b>عندك محل؟</b><br><small>حوّل حسابك لحساب تاجر وانشر عروضك مجاناً</small></div></button>
 
       <div class="menu">
         ${canOfferInstall() ? row("installAcc", "📲", "ثبّت حيّنا على جوالك", "يفتح بشاشة كاملة مثل التطبيق") : ""}
@@ -549,7 +570,6 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
   el.querySelector(".acc-foot .install-row")?.remove(); // موجود في القائمة فوق
   el.querySelector(".acc-foot .legal")?.remove();
   el.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => { const g = b.dataset.go; if (g === "locate") { setTab("map"); locate(true); } else setTab(g); });
-  $("becomeMerchant").onclick = () => setRole("merchant");
   $("contactBtn").onclick = openContact;
   $("inviteFriend").onclick = inviteFriend;
   $("howPts")?.addEventListener("click", howPoints);
@@ -666,11 +686,8 @@ function openProfileEdit() {
   showSheet(`<div class="pad form"><div class="section-title">بياناتي</div>
     <label class="label">الاسم</label><input id="peName" class="input" maxlength="60" value="${esc(pr.name || "")}">
     <label class="label">رقم الجوال</label><input id="pePhone" class="input" inputmode="tel" dir="ltr" value="${esc(X.toLocalPhone(pr.phone || ""))}">
-    <label class="label">نوع الحساب</label>
-    <div class="row2"><button class="role-mini${role === "customer" ? " on" : ""}" data-r="customer">🏡 من أهل الحي</button><button class="role-mini${role === "merchant" ? " on" : ""}" data-r="merchant">🏪 صاحب محل</button></div>
-    <small class="hint">${esc(u.email || "")}</small>
+    <small class="hint">${esc(u.email || "")} • ${roleName(role)}</small>
     <div id="peErr" class="err"></div><button class="btn dir" id="peSave">حفظ</button></div>`);
-  $("sheetBody").querySelectorAll("[data-r]").forEach((b) => b.onclick = () => { role = b.dataset.r; $("sheetBody").querySelectorAll("[data-r]").forEach((x) => x.classList.toggle("on", x === b)); });
   $("peSave").onclick = async () => {
     const name = $("peName").value.trim(), phone = X.normalizeSaudiPhone($("pePhone").value);
     if (name.length < 2) return $("peErr").textContent = "اكتب اسمك.";
@@ -942,6 +959,11 @@ onAuthStateChanged(auth, async (u) => {
     const ref = doc(db, "users", u.uid), snap = await getDoc(ref);
     const data = snap.exists() ? snap.data() : {};
     let role = data.role || null;
+    if (role === "customer" && pending === "merchant") {
+      role = "merchant";
+      await setDoc(ref, { role, updatedAt: serverTimestamp() }, { merge: true });
+      toast("صار حسابك حساب صاحب محل 🏪", true);
+    }
     if (!role) {
       // حساب جديد: نوع الحساب حسب الزر اللي اختاره (والحسابات القديمة اللي عندها متجر = تاجر)
       const merchant = pending ? null : await getDoc(doc(db, "merchants", u.uid)).catch(() => null);

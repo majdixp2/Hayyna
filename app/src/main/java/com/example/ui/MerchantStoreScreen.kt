@@ -817,7 +817,11 @@ fun MerchantStoreScreen(
                 inviteText = viewModel.inviteText(poi),
                 onInvited = { viewModel.logInvite(poi) },
                 onClaim = { viewModel.claimPoi(poi) },
-                onDismiss = { viewModel.dismissPoi() }
+                onDismiss = { viewModel.dismissPoi() },
+                isLoggedIn = currentUser != null,
+                canClaim = currentUser == null || viewModel.isMerchantAccount,
+                onLoginToInvite = { viewModel.loginToInvite() },
+                loadLock = { id -> viewModel.poiInviteLock(id) }
             )
         }
 
@@ -904,7 +908,16 @@ fun MerchantStoreScreen(
                 onSave = { p, logo -> viewModel.saveBranches(p, logo) },
                 onClose = { viewModel.closeBranchesPage() },
                 claimMode = pendingClaim != null && verifyConfig.enabled && myStatus?.verified != true,
-                categories = categories
+                categories = categories,
+                claimBranch = pendingClaim?.let { claim ->
+                    val p = merchantProfile
+                    if (p != null && (p.branches.isNotEmpty() || p.hasLocation)) com.example.data.model.Branch(
+                        id = java.util.UUID.randomUUID().toString().take(8),
+                        name = claim.name.replace("\n", " ").trim(),
+                        latitude = claim.latLng.latitude,
+                        longitude = claim.latLng.longitude
+                    ) else null
+                }
             )
         }
 

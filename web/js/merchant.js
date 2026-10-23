@@ -147,8 +147,21 @@ export function openStoreForm(claim = null) {
   openPage("صفحة متجري", "", `<div id="sErr" class="err"></div><button class="btn dir big" id="sSave">حفظ صفحة المتجر ✓</button>`,
     () => (dirty && !saving ? confirm("في تعديلات ما انحفظت. تطلع بدون حفظ؟") : true));
   render();
-  if (claim) branchEditor({ id: "b" + Date.now().toString(36), name: f.branches.length ? (claim.name || "") : "الفرع الرئيسي", latitude: claim.lat, longitude: claim.lng,
-    district: "", region: "", phone: state.profile?.phone || "", openMinute: 720, closeMinute: 0, landmark: "" }, (nb) => { f.branches.push(nb); dirty = true; render(); }, true);
+  if (claim) {
+    const addClaim = () => branchEditor({ id: "b" + Date.now().toString(36), name: f.branches.length ? (claim.name || "") : "الفرع الرئيسي", latitude: claim.lat, longitude: claim.lng,
+      district: "", region: "", phone: state.profile?.phone || "", openMinute: 720, closeMinute: 0, landmark: "" }, (nb) => { f.branches.push(nb); dirty = true; render(); }, true);
+    if (!f.branches.length) addClaim();
+    else {
+      // الحساب عنده متجر من قبل: نوضّح إن المحل بينضاف كفرع (مو متجر جديد) بدل ما يختلط مع موقع المتجر الحالي
+      showSheet(`<div class="pad install-sheet"><div style="font-size:40px">🏪</div>
+        <h2>عندك متجر مسجّل: ${esc(f.name || "متجري")}</h2>
+        <p class="muted">${claim.name ? `«${esc(claim.name)}»` : "هذا المحل"} بينضاف <b>كفرع جديد</b> لمتجرك في موقعه على الخريطة.<br>إذا هو محل مستقل باسم ثاني، سجّله بحساب ثاني.</p>
+        <button class="btn primary" id="claimAdd">أضفه كفرع لمتجري</button>
+        <button class="btn ghost" id="claimNo" style="margin-top:8px">لا، إلغاء</button></div>`);
+      $("claimAdd").onclick = () => { hideSheet(); setTimeout(addClaim, 80); };
+      $("claimNo").onclick = () => { hideSheet(); dirty = false; closePage(false); };
+    }
+  }
   $("sSave").onclick = async () => {
     const err = (t) => { $("sErr").textContent = t; };
     if (!f.name.trim()) return err("اكتب اسم المتجر.");

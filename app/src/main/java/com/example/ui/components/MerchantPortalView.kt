@@ -395,27 +395,13 @@ private fun CustomerAccountView(
             }
         }
 
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = CalmSagePrimary.copy(alpha = 0.08f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(16.dp)) {
-                Text("🏪 عندك متجر أو محل؟", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                Text(
-                    "حوّل حسابك لحساب تاجر وانشر عروضك والمنيو على خريطة حيّنا.",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
-                )
-                Button(
-                    onClick = { confirmMerchant = true },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) { Text("سجّل متجرك", fontWeight = FontWeight.Bold) }
-            }
-        }
+        // صاحب محل؟ يسجّل خروج ويدخل بحساب صاحب محل (ما نحوّل حساب أهل الحي من هنا)
+        Text(
+            "🏪 صاحب محل؟ سجّل خروج وادخل باختيار «صاحب محل» عشان تسجّل متجرك.",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+        )
 
         ContactUsButton(unread = unreadReplies, onClick = onOpenContact)
 
