@@ -198,6 +198,22 @@ service cloud.firestore {
       allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
     }
 
+    // الإحالات: المحل يسجّل مين دعاه (مرة وحدة، بدون نقاط)، والنقاط يحطها الأدمن فقط
+    match /referrals/{storeUid} {
+      allow read: if isAdmin()
+        || (isAuthenticated() && (resource.data.referrer == request.auth.uid || storeUid == request.auth.uid));
+      allow create: if isAuthenticated() && request.auth.uid == storeUid
+        && request.resource.data.keys().hasOnly(['referrer', 'storeUid', 'storeName', 'createdAt', 'verifiedPts', 'offerPts'])
+        && request.resource.data.referrer is string
+        && request.resource.data.referrer.size() >= 6 && request.resource.data.referrer.size() <= 128
+        && request.resource.data.referrer != storeUid
+        && request.resource.data.storeUid == storeUid
+        && request.resource.data.storeName is string && request.resource.data.storeName.size() <= 100
+        && request.resource.data.verifiedPts == 0 && request.resource.data.offerPts == 0
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if isAdmin();
+    }
+
     // حالة التاجر: موثوق / موقوف — التاجر يقرأ حالته، والأدمن فقط يكتب
     match /merchantStatus/{uid} {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());

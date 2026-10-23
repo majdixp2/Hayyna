@@ -3,7 +3,7 @@ import {
   collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDocs, getDoc, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { MAPS_WEB_KEY } from "../config.js";
-import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim } from "./app.js";
+import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
 
@@ -177,6 +177,7 @@ export function openStoreForm(claim = null) {
         delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver, updatedAt: serverTimestamp(),
       }, { merge: true });
       await syncOffers(profile, direct);
+      await recordReferral(uid, profile.restaurantName);
       saving = false; dirty = false; closePage(false);
       toast(direct ? "تم حفظ صفحة متجرك ✅" : "تم الحفظ ✅ صفحة متجرك بتظهر للعملاء بعد المراجعة", true);
     } catch (e) {
@@ -184,6 +185,16 @@ export function openStoreForm(claim = null) {
       err(e.code === "permission-denied" ? "رفض الحفظ (صلاحيات). تواصل معنا." : (e.message || "تعذّر الحفظ"));
     }
   };
+}
+
+// المحل جاء عن طريق دعوة؟ نسجّلها مرة وحدة (أول دعوة تفوز)، والنقاط يعتمدها الأدمن
+async function recordReferral(uid, storeName) {
+  const ref = pendingRef();
+  if (!ref || ref === uid) return clearRef();
+  try {
+    await setDoc(doc(db, "referrals", uid), { referrer: ref, storeUid: uid, storeName: (storeName || "").slice(0, 100), createdAt: serverTimestamp(), verifiedPts: 0, offerPts: 0 });
+  } catch (e) { /* موجودة من قبل */ }
+  clearRef();
 }
 
 async function syncOffers(profile, direct) {

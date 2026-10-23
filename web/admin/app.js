@@ -16,7 +16,7 @@ const db = getFirestore(app, FIRESTORE_DB_ID);
 // ---------------- الحالة ----------------
 const state = {
   tab: localStorage.getItem("hayyna_admin_tab") || "home",
-  offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [],
+  offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [], referrals: [], names: {},
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
 };
 const unsubs = [];
@@ -71,7 +71,25 @@ function listen() {
   unsubs.push(onSnapshot(query(collection(db, "feedback"), orderBy("createdAt", "desc"), limit(300)), (s) => { state.feedback = parse(s); render(); }, console.error));
   unsubs.push(onSnapshot(query(collection(db, "poiInterest"), orderBy("taps", "desc"), limit(50)), (s) => { state.poi = parse(s); render(); }, console.error));
   unsubs.push(onSnapshot(query(collection(db, "verificationRequests"), where("status", "==", "pending")), (s) => { state.verifs = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
+  unsubs.push(onSnapshot(collection(db, "referrals"), (s) => { state.referrals = parse(s).map((x) => ({ ...x, storeUid: x.id })); loadNames(); render(); }, console.error));
   unsubs.push(onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; render(); }, console.error));
+}
+
+// أسماء أصحاب الدعوات (من users)
+async function loadNames() {
+  const need = [...new Set(state.referrals.map((r) => r.referrer))].filter((u) => !(u in state.names));
+  for (const u of need) {
+    state.names[u] = "…";
+    try { const d = await getDoc(doc(db, "users", u)); const x = d.data() || {}; state.names[u] = x.name ? `${x.name}${x.phone ? " • " + x.phone : ""}` : u.slice(0, 8); } catch { state.names[u] = u.slice(0, 8); }
+  }
+  if (need.length) render();
+}
+const PTS = { verified: 50, offer: 50 };
+function refInfo(r) {
+  const st = statusOf(r.storeUid);
+  const joined = !!(st?.verified || st?.trusted);
+  const hasOffer = state.offers.some((o) => o.merchantId === r.storeUid && o.isApproved);
+  return { joined, hasOffer, canVerified: joined && !r.verifiedPts, canOffer: hasOffer && !r.offerPts };
 }
 
 // ---------------- أوامر الإدارة (نفس منطق التطبيق) ----------------
@@ -120,6 +138,8 @@ const actions = {
   reply: (id, reply) => updateDoc(doc(db, "feedback", id), { reply, status: "done", replySeen: !reply }),
   fbStatus: (id, status) => updateDoc(doc(db, "feedback", id), { status }),
   async deleteFb(id) { if (confirm("حذف الرسالة؟")) await deleteDoc(doc(db, "feedback", id)); },
+  awardRef: (uid, field) => updateDoc(doc(db, "referrals", uid), { [field]: field === "verifiedPts" ? PTS.verified : PTS.offer, [field.replace("Pts", "At")]: serverTimestamp() }),
+  async removeRef(uid) { if (confirm("حذف الإحالة؟ (لو كانت وهمية) — بتنحذف نقاطها")) await deleteDoc(doc(db, "referrals", uid)); },
   saveConfig: (data) => setDoc(doc(db, "config", "app"), data, { merge: true }),
   async verify(uid, ok, reason) {
     const v = state.verifs.find((x) => x.uid === uid);
@@ -141,25 +161,26 @@ function computed() {
   state.reports.filter((r) => !hiddenIds.has(r.offerId)).forEach((r) => (otherReports[r.offerId] ||= []).push(r));
   const pendingStores = state.pendingStores.filter((s) => !suspendedIds.has(s.uid));
   const newMsgs = state.feedback.filter((f) => (f.status || "new") === "new").length;
-  return { pending, hidden, otherReports, pendingStores, newMsgs };
+  const refAwards = state.referrals.filter((r) => { const i = refInfo(r); return i.canVerified || i.canOffer; }).length;
+  return { pending, hidden, otherReports, pendingStores, newMsgs, refAwards };
 }
 
 const TABS = [
   ["home", "🏠 الرئيسية"], ["review", "⏳ المراجعة"], ["stores", "🏪 المتاجر"],
-  ["messages", "📨 الرسائل"], ["offers", "📋 كل العروض"], ["settings", "⚙️ الإعدادات"],
+  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["settings", "⚙️ الإعدادات"],
 ];
 
 function render() {
   if ($("app").classList.contains("hidden")) return;
   const c = computed();
-  const badges = { review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs };
+  const badges = { review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs, refs: c.refAwards };
   $("tabs").innerHTML = TABS.map(([k, t]) =>
     `<button class="tab ${state.tab === k ? "active" : ""}" data-tab="${k}">${t}${badges[k] ? `<span class="badge">${badges[k]}</span>` : ""}</button>`
   ).join("");
   $("tabs").querySelectorAll(".tab").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; localStorage.setItem("hayyna_admin_tab", state.tab); render(); }));
   const focused = document.activeElement?.id;
   const caret = document.activeElement?.selectionStart;
-  $("content").innerHTML = ({ home, review, stores, messages, offers, settings }[state.tab] || home)(c);
+  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, settings }[state.tab] || home)(c);
   bind();
   if (focused && $(focused)) { $(focused).focus(); try { $(focused).setSelectionRange(caret, caret); } catch {} }
 }
@@ -188,6 +209,7 @@ function home(c) {
     ["🏪 صفحات متاجر تنتظر الموافقة", c.pendingStores.length, "stores"],
     ["🛡️ طلبات توثيق", state.verifs.length, "stores"],
     ["📨 رسائل جديدة", c.newMsgs, "messages"],
+    ["🎁 نقاط إحالة تنتظر اعتمادك", c.refAwards, "refs"],
   ].filter((t) => t[1] > 0);
   const active = state.offers.filter((o) => o.isApproved && !isExpired(o)).length;
   const stat = (t, v) => `<div class="card stat"><div class="v">${v}</div><div class="t">${t}</div></div>`;
@@ -260,6 +282,26 @@ function stores(c) {
     <h2>⛔ حسابات موقوفة (${suspended.length})</h2>
     ${suspended.length ? `<div class="grid">${suspended.map((s) => `<div class="card row" style="align-items:center;justify-content:space-between">
       <b>${esc(s.name || s.uid.slice(0, 8))}</b><button class="btn" data-act="unsuspend" data-id="${s.uid}">إلغاء الإيقاف</button></div>`).join("")}</div>` : `<p class="muted">ما فيه حسابات موقوفة ✅</p>`}`;
+}
+
+function refs() {
+  const totals = {};
+  state.referrals.forEach((r) => { totals[r.referrer] = (totals[r.referrer] || 0) + (r.verifiedPts || 0) + (r.offerPts || 0); });
+  const board = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 20);
+  const list = [...state.referrals].sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  return `<h2>🎁 المحلات اللي جت عن طريق دعوة (${list.length})</h2>
+    <p class="muted">+${PTS.verified} لما يتوثّق/يصير موثوق، و +${PTS.offer} لما ينزل أول عرض معتمد. تأكد إن المحل حقيقي ومو نفس الشخص قبل الاعتماد.</p>
+    ${list.length ? `<div class="grid">${list.map((r) => { const i = refInfo(r); return `<div class="card">
+      <div class="name">🏪 ${esc(r.storeName || r.storeUid.slice(0, 8))}</div>
+      <div class="muted">دعاه: <b>${esc(state.names[r.referrer] || r.referrer.slice(0, 8))}</b></div>
+      <div class="muted">${i.joined ? "✅ موثوق/موثّق" : "⏳ ما توثّق للحين"} • ${i.hasOffer ? "🔥 عنده عرض معتمد" : "ما نزّل عرض"} • النقاط: <b>${(r.verifiedPts || 0) + (r.offerPts || 0)}</b></div>
+      <div class="actions">
+        ${r.verifiedPts ? `<span class="pill">✓ توثيق +${r.verifiedPts}</span>` : `<button class="btn ${i.canVerified ? "primary" : ""}" data-act="awardV" data-id="${r.storeUid}" ${i.joined ? "" : "disabled"}>+${PTS.verified} توثيق</button>`}
+        ${r.offerPts ? `<span class="pill">✓ أول عرض +${r.offerPts}</span>` : `<button class="btn ${i.canOffer ? "primary" : ""}" data-act="awardO" data-id="${r.storeUid}" ${i.hasOffer ? "" : "disabled"}>+${PTS.offer} أول عرض</button>`}
+        <button class="btn danger" data-act="removeRef" data-id="${r.storeUid}">حذف</button>
+      </div></div>`; }).join("")}</div>` : `<p class="muted">ما فيه إحالات للحين</p>`}
+    <h2>🏅 أكثر السفراء نقاط</h2>
+    ${board.length ? `<div class="grid">${board.map(([u, p], k) => `<div class="card row" style="justify-content:space-between"><b>${k + 1}. ${esc(state.names[u] || u.slice(0, 8))}</b><span>${p} نقطة ${p >= 10000 ? "💎" : p >= 5000 ? "🥇" : p >= 1000 ? "🥈" : "🏅"}</span></div>`).join("")}</div>` : `<p class="muted">—</p>`}`;
 }
 
 const FB_TYPES = ["🐞 مشكلة", "💡 اقتراح", "✨ فكرة إضافية", "🚩 شكوى على متجر", "أخرى"];
@@ -390,6 +432,9 @@ function bind() {
       saveSupport: () => actions.saveConfig({ supportWhatsapp: $("supportNum").value.trim() }),
       saveModel: () => actions.saveConfig({ aiModel: $("aiModel").value.trim() }),
       verifyOk: () => actions.verify(id, true, ""),
+      awardV: () => actions.awardRef(id, "verifiedPts"),
+      awardO: () => actions.awardRef(id, "offerPts"),
+      removeRef: () => actions.removeRef(id),
       verifyNo: () => actions.verify(id, false, $("reason_" + id).value.trim()),
       catAdd: () => { const v = $("catNew").value.trim(); if (v && !catDraft().some((x) => x.name.trim() === v)) catDraft().push({ orig: null, name: v }); render(); },
       saveCats: async () => {

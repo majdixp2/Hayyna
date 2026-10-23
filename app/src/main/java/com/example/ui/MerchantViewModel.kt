@@ -258,7 +258,10 @@ class MerchantViewModel(
     fun inviteText(poi: com.google.android.gms.maps.model.PointOfInterest): String {
         val c = poiConfig.value
         val msg = c.inviteMessage.replace("{name}", poi.name.trim())
-        val link = c.appLink.ifBlank { com.example.data.OfferSharer.WEB_BASE }
+        val base = c.appLink.ifBlank { com.example.data.OfferSharer.WEB_BASE }
+        // رابط فيه رمز صاحب الدعوة: لو سجّل المحل من الويب تنحسب النقاط له
+        val uid = auth?.currentUser?.uid
+        val link = if (uid != null) base + (if ('?' in base) "&" else "?") + "ref=" + uid else base
         return "$msg\n$link"
     }
 

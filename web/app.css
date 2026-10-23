@@ -369,3 +369,33 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .menu-row .ml b { font-size: 15px; }
 .menu-row .ml small { color: var(--muted); font-size: 12px; }
 .menu-row .chev { color: var(--muted); font-size: 20px; }
+
+/* ===== سفير الحي (النقاط) ===== */
+.amb { margin-top: 18px; border-radius: 20px; padding: 16px; color: #fff; background: linear-gradient(135deg, #8A5A2B, #C0874A); box-shadow: 0 8px 22px rgba(0,0,0,.12); }
+.amb.tier-1 { background: linear-gradient(135deg, #5E6B78, #A9B4BF); }
+.amb.tier-2 { background: linear-gradient(135deg, #A87A00, #E2B53B); }
+.amb.tier-3 { background: linear-gradient(135deg, #2B4C9B, #6FA8E8 60%, #B79CF0); }
+.amb-top { display: flex; align-items: center; gap: 12px; }
+.amb-ico { width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,.22); display: flex; align-items: center; justify-content: center; font-size: 26px; }
+.amb-main { flex: 1; display: flex; flex-direction: column; }
+.amb-main b { font-size: 17px; }
+.amb-main small, .amb-pts small { opacity: .85; font-size: 12px; }
+.amb-pts { text-align: center; }
+.amb-pts b { display: block; font-size: 24px; line-height: 1.1; }
+.amb-bar { height: 10px; border-radius: 99px; background: rgba(255,255,255,.25); margin: 14px 0 6px; overflow: hidden; }
+.amb-bar span { display: block; height: 100%; border-radius: 99px; background: #fff; transition: width .6s ease; min-width: 6px; }
+.amb-next { font-size: 13px; opacity: .95; }
+.amb-list { margin-top: 12px; background: rgba(255,255,255,.14); border-radius: 14px; padding: 4px 10px; }
+.amb-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.15); font-size: 14px; }
+.amb-row:last-child { border-bottom: 0; }
+.amb-row b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.amb-row small { font-size: 12px; opacity: .9; }
+.amb-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+.amb .invite-btn { background: #fff; color: var(--ink); }
+.amb .link { border: 0; background: none; color: #fff; font: inherit; font-size: 13px; font-weight: 700; text-decoration: underline; }
+.tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 6px 0 12px; }
+.tiers div { background: var(--cream); border: 1px solid var(--line); border-radius: 12px; padding: 8px 2px; display: flex; flex-direction: column; align-items: center; font-size: 12px; }
+.tiers span { font-size: 22px; }
+.tiers small { color: var(--muted); }
+.poi-pts { text-align: center; font-size: 13px; color: var(--amber); background: var(--amber-bg); border-radius: 12px; padding: 8px 10px; margin: 4px 0 8px; }
+.poi-pts a { color: var(--green); font-weight: 800; }

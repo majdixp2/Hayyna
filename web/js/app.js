@@ -24,8 +24,36 @@ export const state = {
   offers: [], stores: [], q: "", cat: "الكل", sort: "near", openOnly: false, browse: null,
   me: null, selected: null, branchId: null, view: null, tab: "map",
   favs: new Set(), user: null, role: null, profile: null, scope: "all", roleLoading: false, pendingRole: null,
-  config: {}, loaded: false, storesLoaded: false,
+  config: {}, loaded: false, storesLoaded: false, referrals: [],
 };
+
+// ---------------- الإحالات: مين دعا المحل ----------------
+// اللي يفتح رابط فيه ?ref=… نحفظ صاحب الدعوة 60 يوم، ولو سجّل محل تنحسب الدعوة له
+(() => {
+  try {
+    const u = new URL(location.href), r = u.searchParams.get("ref");
+    if (r && /^[A-Za-z0-9_-]{6,128}$/.test(r)) {
+      localStorage.setItem("hayyna_ref", JSON.stringify({ uid: r, at: Date.now() }));
+      u.searchParams.delete("ref"); history.replaceState(history.state, "", u.pathname + (u.search || "") + u.hash);
+    }
+  } catch {}
+})();
+export function pendingRef() {
+  try { const r = JSON.parse(localStorage.getItem("hayyna_ref") || "null"); return r && Date.now() - r.at < 60 * 864e5 ? r.uid : null; } catch { return null; }
+}
+export const clearRef = () => { try { localStorage.removeItem("hayyna_ref"); } catch {} };
+export const withRef = (link) => state.user ? link + (link.includes("?") ? "&" : "?") + "ref=" + state.user.uid : link;
+export const POINTS = { verified: 50, offer: 50 };
+export const TIERS = [
+  { min: 0, name: "سفير الحي", ico: "🏅" }, { min: 1000, name: "سفير فضي", ico: "🥈" },
+  { min: 5000, name: "سفير ذهبي", ico: "🥇" }, { min: 10000, name: "سفير ماسي", ico: "💎" },
+];
+export const pointsOf = (list) => list.reduce((a, r) => a + (r.verifiedPts || 0) + (r.offerPts || 0), 0);
+export function tierOf(pts) {
+  let i = 0; TIERS.forEach((t, k) => { if (pts >= t.min) i = k; });
+  const cur = TIERS[i], next = TIERS[i + 1];
+  return { ...cur, next, pct: next ? Math.min(100, Math.round((pts - cur.min) / (next.min - cur.min) * 100)) : 100, left: next ? next.min - pts : 0 };
+}
 
 // ---------------- أدوات الواجهة (مشتركة مع لوحة التاجر) ----------------
 export const toast = (m, long) => { const t = $("toast"); t.textContent = m; t.classList.remove("hidden"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add("hidden"), long ? 4500 : 2600); };
@@ -403,7 +431,7 @@ async function openPoi({ placeId, lat, lng }) {
   const mobile = (() => { const d = String(info.phone || "").replace(/\D/g, ""); return d.startsWith("9665") && d.length === 12 ? d : d.startsWith("05") && d.length === 10 ? "966" + d.slice(1) : null; })();
   const cfg = state.config;
   const shown = name || "هذا المحل";
-  const appLink = cfg.appLink || location.origin;
+  const appLink = withRef(cfg.appLink || location.origin);
   const invite = (cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة حيّنا. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')
     .replace(/\{name\}/g, name || "محلكم") + "\n" + appLink;
   showSheet(`<div class="pad poi-card">
@@ -414,9 +442,11 @@ async function openPoi({ placeId, lat, lng }) {
       ? `<a class="btn wa" id="poiInvite" href="https://wa.me/${mobile}?text=${encodeURIComponent(invite)}" target="_blank" rel="noopener">💬 ادعه على واتساب المحل</a>`
       : `<button class="btn wa" id="poiInvite">📨 ادعه لحيّنا</button>`) : ""}
     ${info.phone && !mobile ? `<a class="btn call" href="tel:${esc(info.phone.replace(/[^\d+]/g, ""))}">📞 اتصل بالمحل (${esc(info.phone)})</a>` : ""}
+    ${cfg.poiInviteEnabled !== false ? `<p class="poi-pts">${state.user ? `🎁 لو سجّل المحل عن طريق دعوتك تاخذ لين <b>${POINTS.verified + POINTS.offer} نقطة</b>` : `🎁 <a href="#" id="poiLoginPts">سجّل دخولك</a> قبل الدعوة عشان تنحسب لك نقاط لو سجّل المحل`}</p>` : ""}
     <button class="btn dir" id="poiClaim">🏪 أنا صاحب المحل — سجّله</button>
     <a class="btn call" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${encodeURIComponent(placeId)}" target="_blank" rel="noopener">فتح في Google Maps</a>
   </div>`);
+  $("poiLoginPts")?.addEventListener("click", (e) => { e.preventDefault(); hideSheet(); setTab("account"); openLogin("customer"); });
   $("poiInvite")?.addEventListener("click", () => { poiLog(placeId, "invites"); if (!mobile) share(invite, "", "حيّنا"); });
   $("poiClaim").onclick = () => {
     poiLog(placeId, "claims");
@@ -505,10 +535,7 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
       ${favList.length ? `<div class="favrow">${favList.slice(0, 10).map(mini).join("")}</div>`
         : `<div class="fav-empty"><span>🤍</span><div><b>مفضلتك فاضية</b><br><small>اضغط القلب على أي عرض يعجبك، ويظهر هنا عشان ترجع له بسرعة</small></div></div>`}
 
-      <div class="invite-card">
-        <div><b>ادع جيرانك وأصحابك 🎁</b><br><small>كل ما زاد أهل الحي في حيّنا، نزّلت المحلات عروض أكثر</small></div>
-        <button class="invite-btn" id="inviteFriend">شارك حيّنا</button>
-      </div>
+      ${ambassadorCard()}
 
       <button class="role-card" id="becomeMerchant"><div class="rc-ico">🏪</div><div><b>عندك محل؟</b><br><small>حوّل حسابك لحساب تاجر وانشر عروضك مجاناً</small></div></button>
 
@@ -525,9 +552,36 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
   $("becomeMerchant").onclick = () => setRole("merchant");
   $("contactBtn").onclick = openContact;
   $("inviteFriend").onclick = inviteFriend;
+  $("howPts")?.addEventListener("click", howPoints);
+}
+function ambassadorCard() {
+  const refs = state.referrals, pts = pointsOf(refs), t = tierOf(pts);
+  const st = (r) => r.offerPts ? ["🔥", "نزّل عروض", "done"] : r.verifiedPts ? ["✅", "انضم وتوثّق", "done"] : ["⏳", "تحت المراجعة", "wait"];
+  return `<div class="amb tier-${TIERS.indexOf(TIERS.find((x) => x.name === t.name))}">
+    <div class="amb-top"><div class="amb-ico">${t.ico}</div>
+      <div class="amb-main"><b>${t.name}</b><small>${refs.length ? `دعيت ${refs.length} ${refs.length === 1 ? "محل" : "محلات"}` : "ادع المحلات اللي تحبها لحيّنا"}</small></div>
+      <div class="amb-pts"><b>${pts.toLocaleString("en")}</b><small>نقطة</small></div></div>
+    <div class="amb-bar"><span style="width:${t.pct}%"></span></div>
+    <div class="amb-next">${t.next ? `باقي <b>${t.left.toLocaleString("en")}</b> نقطة وتصير <b>${t.next.ico} ${t.next.name}</b>` : "💎 وصلت أعلى مستوى — أنت فخر الحي"}</div>
+    ${refs.length ? `<div class="amb-list">${refs.slice(0, 20).map((r) => { const [i, l, c] = st(r); return `<div class="amb-row"><span>${i}</span><b>${esc(r.storeName || "محل")}</b><small class="${c}">${l}${(r.verifiedPts || 0) + (r.offerPts || 0) ? ` • +${(r.verifiedPts || 0) + (r.offerPts || 0)}` : ""}</small></div>`; }).join("")}</div>` : ""}
+    <div class="amb-actions"><button class="invite-btn" id="inviteFriend">🎁 شارك رابطك</button><button class="link" id="howPts">كيف أجمع نقاط؟</button></div>
+  </div>`;
+}
+function howPoints() {
+  showSheet(`<div class="pad install-sheet"><div style="font-size:44px">🏅</div><h2>كيف تجمع نقاط؟</h2>
+    <ol>
+      <li>اضغط على أي محل <b>مو مسجّل</b> في الخريطة، واختر <b>«ادعه»</b> — الرسالة فيها رابطك الخاص</li>
+      <li>أو اضغط <b>«شارك رابطك»</b> وأرسله لأصحاب المحلات اللي تعرفهم</li>
+      <li>إذا سجّل المحل من رابطك وتوثّق: <b>+${POINTS.verified}</b> نقطة</li>
+      <li>إذا نزّل أول عرض: <b>+${POINTS.offer}</b> نقطة</li>
+    </ol>
+    <div class="tiers">${TIERS.map((x) => `<div><span>${x.ico}</span><b>${x.name}</b><small>${x.min ? x.min.toLocaleString("en") + "+" : "البداية"}</small></div>`).join("")}</div>
+    <p class="muted">النقاط تنحسب بعد مراجعة فريق حيّنا، وقريباً تقدر تستبدلها بخصومات وكوبونات من المحلات 🎁</p>
+    <button class="btn primary" id="howOk">تمام</button></div>`);
+  $("howOk").onclick = hideSheet;
 }
 async function inviteFriend() {
-  const link = state.config.appLink || location.origin;
+  const link = withRef(state.config.appLink || location.origin);
   const text = `شف حيّنا 📍 تطبيق يعرض لك عروض وخصومات المحلات اللي حولك على الخريطة — مطاعم، مقاهي، ملابس وأكثر. جرّبه:`;
   if (navigator.share) { try { await navigator.share({ title: "حيّنا", text, url: link }); return; } catch (e) { if (e?.name === "AbortError") return; } }
   window.open(`https://wa.me/?text=${encodeURIComponent(text + "\n" + link)}`, "_blank");
@@ -875,9 +929,13 @@ if (isSignInWithEmailLink(auth, location.href)) {
     .catch((e) => toast("الرابط منتهي أو مستخدم، اطلب رابط جديد (" + (e.code || "") + ")", true))
     .finally(() => history.replaceState({}, "", "/"));
 }
+let refUnsub = null;
 onAuthStateChanged(auth, async (u) => {
   state.user = u;
+  refUnsub?.(); refUnsub = null; state.referrals = [];
   if (!u) { state.role = null; state.profile = null; renderAll(); return; }
+  refUnsub = onSnapshot(query(collection(db, "referrals"), where("referrer", "==", u.uid)),
+    (snap) => { state.referrals = snap.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.tab === "account") renderAccount(); }, () => {});
   state.roleLoading = true; renderAccount();
   let pending = state.pendingRole; try { pending = pending || sessionStorage.getItem("hayyna_pending_role"); sessionStorage.removeItem("hayyna_pending_role"); } catch {}
   try {
