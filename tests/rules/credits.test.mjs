@@ -3,11 +3,13 @@ import { initializeTestEnvironment, assertSucceeds, assertFails } from "@firebas
 import { doc, setDoc, getDoc, writeBatch, serverTimestamp, Timestamp, collection } from "firebase/firestore";
 import { readFileSync } from "node:fs";
 
+process.on("unhandledRejection", (e) => { console.log(`::error title=crash::${String(e?.message || e).split("\n")[0].slice(0, 400)}`); process.exit(1); });
 const env = await initializeTestEnvironment({ projectId: "demo-hayyna", firestore: { rules: readFileSync(new URL("../../firestore.rules", import.meta.url), "utf8"), host: "127.0.0.1", port: 8080 } });
 const DAY = 864e5;
 let pass = 0, fail = 0;
 async function t(name, fn) {
-  try { await fn(); pass++; console.log("  ✔", name); } catch (e) { fail++; console.log("  ✘", name, "\n     ", e.message?.split("\n")[0]); }
+  try { await fn(); pass++; console.log("  ✔", name); }
+  catch (e) { fail++; const msg = (e.message || String(e)).split("\n")[0].slice(0, 300); console.log("  ✘", name, "\n     ", msg); console.log(`::error title=${name}::${msg}`); }
 }
 async function seed() {
   await env.clearFirestore();
@@ -73,4 +75,5 @@ await t("الزائر يقرأ الخدمات النشطة (للخريطة)", ()
 
 await env.cleanup();
 console.log(`\n${pass} نجح، ${fail} فشل`);
+console.log(`::notice title=rules tests::${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
