@@ -9,12 +9,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+        with: { node-version: 22 }
       - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: 21 }
       - name: Install
         working-directory: tests/rules
-        run: npm install --no-audit --no-fund
+        run: |
+          npm install --no-audit --no-fund > install.log 2>&1 || { tail -15 install.log | sed 's/^/::error title=install::/'; exit 1; }
       - name: Run rules tests on the emulator
         working-directory: tests/rules
-        run: npx firebase emulators:exec --only firestore --project demo-hayyna "node credits.test.mjs"
+        run: |
+          set -o pipefail
+          npx firebase emulators:exec --only firestore --project demo-hayyna "node credits.test.mjs" 2>&1 | tee run.log || {
+            grep -vE '^::' run.log | grep -iE 'error|fail|✘|exception' | head -20 | sed 's/^/::error title=emulator::/'; tail -8 run.log | sed 's/^/::warning title=tail::/'; exit 1; }
