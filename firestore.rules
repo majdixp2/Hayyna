@@ -49,6 +49,7 @@ service cloud.firestore {
         && (!('itemsScope' in data) || (data.itemsScope is string && data.itemsScope.size() <= 60))
         && (!('grandOpening' in data) || data.grandOpening is bool)
         && (!('postType' in data) || data.postType in ['offer', 'new'])
+        && (!('exclusive' in data) || data.exclusive is bool)
         && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12))
         && (!('delivery' in data) || data.delivery is bool)
         && (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5))
@@ -197,6 +198,115 @@ service cloud.firestore {
         || (isAuthenticated() && request.auth.uid == uid && validStoreWrite(uid)
           && request.resource.data.get('verified', false) == resource.data.get('verified', false));
       allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
+    }
+
+    // ===== رصيد العروض (يُشحن بأكواد من متجر سلة، ويُصرف على خدمات حيّنا) =====
+    function creditsCfg() {
+      return get(/databases/$(database)/documents/config/app).data.get('credits', {});
+    }
+    function walletPath(uid) { return /databases/$(database)/documents/wallets/$(uid); }
+    function codePath(code) { return /databases/$(database)/documents/creditCodes/$(code); }
+    function boostPath(id) { return /databases/$(database)/documents/boosts/$(id); }
+
+    // شحن: الكود ينتقل من "غير مستخدم" لصاحب المحفظة في نفس العملية، والرصيد يزيد بقيمته بالضبط
+    function walletRedeemOk(uid) {
+      let op = request.resource.data.lastOp;
+      let before = get(codePath(op.ref)).data;
+      let after = getAfter(codePath(op.ref)).data;
+      let old = resource == null ? 0 : resource.data.balance;
+      return op.kind == 'redeem'
+        && before.get('redeemedBy', null) == null
+        && after.redeemedBy == uid
+        && request.resource.data.balance == old + before.points;
+    }
+    // صرف: يُنشأ سجل خدمة (boost) جديد في نفس العملية، والرصيد ينقص بتكلفته بالضبط
+    function walletSpendOk(uid) {
+      let op = request.resource.data.lastOp;
+      return op.kind == 'spend'
+        && !exists(boostPath(op.ref))
+        && existsAfter(boostPath(op.ref))
+        && getAfter(boostPath(op.ref)).data.merchantId == uid
+        && request.resource.data.balance == resource.data.balance - getAfter(boostPath(op.ref)).data.cost
+        && request.resource.data.balance >= 0;
+    }
+    function walletShapeOk() {
+      return request.resource.data.keys().hasOnly(['balance', 'lastOp', 'updatedAt'])
+        && request.resource.data.balance is int
+        && request.resource.data.lastOp.keys().hasOnly(['kind', 'ref'])
+        && request.resource.data.lastOp.ref is string && request.resource.data.lastOp.ref.size() <= 64
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    match /wallets/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow create: if isAdmin()
+        || (isAuthenticated() && request.auth.uid == uid && walletShapeOk()
+          && ((request.resource.data.lastOp.kind == 'welcome' && request.resource.data.balance == creditsCfg().get('welcome', 0))
+            || walletRedeemOk(uid)));
+      allow update: if isAdmin()
+        || (isAuthenticated() && request.auth.uid == uid && walletShapeOk()
+          && (walletRedeemOk(uid) || walletSpendOk(uid)));
+      allow delete: if isAdmin();
+
+      // سجل الحركات (للعرض فقط؛ الرصيد نفسه محمي فوق)
+      match /tx/{txId} {
+        allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+        allow create: if isAdmin()
+          || (isAuthenticated() && request.auth.uid == uid
+            && request.resource.data.keys().hasOnly(['kind', 'points', 'note', 'ref', 'at'])
+            && request.resource.data.kind in ['redeem', 'spend', 'welcome']
+            && request.resource.data.points is int
+            && request.resource.data.note is string && request.resource.data.note.size() <= 120
+            && request.resource.data.at == request.time);
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // أكواد الشحن: الأدمن ينشئها، وأي مسجّل يقرأ كود يعرفه ويستخدمه مرة وحدة
+    match /creditCodes/{code} {
+      allow get: if isAuthenticated();
+      allow list: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (isAuthenticated()
+          && resource.data.get('redeemedBy', null) == null
+          && (resource.data.get('expiresAt', null) == null || resource.data.expiresAt > request.time)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['redeemedBy', 'redeemedAt'])
+          && request.resource.data.redeemedBy == request.auth.uid
+          && request.resource.data.redeemedAt == request.time
+          && getAfter(walletPath(request.auth.uid)).data.lastOp.kind == 'redeem'
+          && getAfter(walletPath(request.auth.uid)).data.lastOp.ref == code);
+    }
+
+    // خدمات مدفوعة (نشر / تمييز / إعلان بارز): السعر من إعدادات الأدمن، والخصم من المحفظة بنفس العملية
+    function boostOk(d) {
+      let it = creditsCfg().get('items', {}).get(d.item, null);
+      return it != null && it.get('active', false) == true
+        && d.effect == it.effect
+        && d.days is int && d.days >= 1 && d.days <= 90
+        && d.cost is int && d.cost > 0
+        && (it.unit == 'day'
+            ? d.cost == it.price * d.days
+            : (d.cost == it.price && d.days == it.days))
+        && d.createdAt == request.time
+        && d.startsAt is timestamp && d.endsAt is timestamp
+        && d.startsAt >= request.time - duration.value(1, 'h')
+        && d.startsAt <= request.time + duration.value(61, 'd')
+        && d.endsAt > d.startsAt
+        && d.endsAt <= d.startsAt + duration.value(d.days, 'd') + duration.value(1, 'h')
+        && getAfter(/databases/$(database)/documents/offers/$(d.offerId)).data.merchantId == request.auth.uid
+        && getAfter(walletPath(request.auth.uid)).data.lastOp.ref == d.id;
+    }
+    match /boosts/{boostId} {
+      allow read: if true;
+      allow create: if isAdmin()
+        || (isAuthenticated()
+          && request.resource.data.keys().hasOnly(['id', 'merchantId', 'offerId', 'item', 'effect', 'days', 'cost', 'createdAt', 'startsAt', 'endsAt'])
+          && request.resource.data.id == boostId
+          && request.resource.data.merchantId == request.auth.uid
+          && request.resource.data.offerId is string
+          && boostOk(request.resource.data));
+      allow update, delete: if isAdmin();
     }
 
     // قفل دعوة محل من Google: أول من يدعوه يحجزه كم يوم (عشان ما يتكرر الإزعاج للمحل)

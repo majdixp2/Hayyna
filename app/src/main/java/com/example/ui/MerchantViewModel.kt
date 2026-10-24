@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import com.example.ui.components.ExclusiveBadge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -515,9 +517,28 @@ class MerchantViewModel(
         .flatMapLatest { admin -> if (admin) repository.allMerchantStatuses else flowOf(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val creditsConfig: StateFlow<com.example.data.repository.CreditsConfig> = repository.creditsConfig
+        .onEach { ExclusiveBadge.label = if (it.exclusiveEnabled) "${it.exclusiveIcon} ${it.exclusiveLabel}" else "" }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.repository.CreditsConfig())
+
+    /**
+     * العروض الظاهرة: لما يكون رصيد العروض مفعّل، العرض الجديد لازم له "نشر" مدفوع،
+     * والتمييز المدفوع يخلي العرض مميّز (حلقة صفراء وأول الترتيب).
+     */
     private val approvedOffers: StateFlow<List<RestaurantOffer>> =
-        combine(repository.approvedOffers, userLocation) { offers, loc -> withDistance(offers, loc) }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        combine(repository.approvedOffers, userLocation, creditsConfig, repository.activeBoosts, nowMillis) { offers, loc, cr, boosts, now ->
+            val byOffer = boosts.groupBy { it.offerId }
+            val visible = offers.mapNotNull { o ->
+                val bs = byOffer[o.id].orEmpty()
+                val created = o.createdAt?.toDate()?.time ?: 0L
+                val paidUp = !cr.enabled || cr.enabledAtMillis == 0L || created < cr.enabledAtMillis ||
+                    bs.any { it.effect == "publish" && it.endsAt > now }
+                if (!paidUp) return@mapNotNull null
+                val featured = bs.any { it.effect == "feature" && it.startsAt <= now && now < it.endsAt }
+                if (featured && !o.isFeatured) o.copy(isFeatured = true) else o
+            }
+            withDistance(visible, loc)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ---------------- الفلاتر ----------------
 
@@ -937,6 +958,10 @@ class MerchantViewModel(
         }
         if (myStatus.value?.suspended == true) {
             toast("حسابك موقوف حالياً. تواصل مع إدارة حيّنا.")
+            return
+        }
+        if (offer.id.isBlank() && creditsConfig.value.enabled && !isAdmin.value) {
+            toast("النشر صار برصيد العروض: انشر عرضك من لوحة التاجر في موقع حيّنا 🌐")
             return
         }
         val direct = canPublishDirectly

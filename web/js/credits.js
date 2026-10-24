@@ -1,0 +1,49 @@
+// رصيد العروض: الإعدادات الافتراضية + حساب الخدمات النشطة لكل عرض.
+// الأسعار والخدمات كلها تنعدّل من لوحة الأدمن (config/app.credits) بدون تحديث للتطبيق.
+
+// أنواع التأثير اللي يفهمها حيّنا (أي خدمة جديدة يضيفها الأدمن تختار واحد منها)
+export const EFFECTS = {
+  publish: { label: "نشر العرض", hint: "العرض يظهر على الخريطة وفي القائمة طوال المدة" },
+  feature: { label: "تمييز على الخريطة", hint: "حلقة صفراء مع وميض، ويطلع أول في الترتيب" },
+  listTop: { label: "إعلان بارز في صفحة العروض", hint: "يتثبّت فوق قائمة العروض في قسم «إعلانات بارزة»" },
+};
+
+export const DEFAULT_ITEMS = {
+  publish: { name: "📢 نشر عرض", effect: "publish", unit: "day", price: 3, days: 1, active: true, order: 0 },
+  feature: { name: "✨ تمييز 3 أيام", effect: "feature", unit: "fixed", price: 10, days: 3, active: true, order: 1 },
+  boost: { name: "🚀 إبراز أسبوع", effect: "feature", unit: "fixed", price: 25, days: 7, active: true, order: 2 },
+  listtop: { name: "📌 إعلان بارز في صفحة العروض", effect: "listTop", unit: "fixed", price: 40, days: 7, active: false, order: 3 },
+};
+export const DEFAULT_PACKS = [{ points: 50, price: 50 }, { points: 100, price: 98 }, { points: 500, price: 475 }];
+
+export const creditsOf = (config) => {
+  const c = config?.credits || {};
+  return { enabled: !!c.enabled, enabledAt: c.enabledAt || null, welcome: c.welcome || 0, items: c.items || DEFAULT_ITEMS, packs: c.packs || DEFAULT_PACKS };
+};
+export const itemList = (items) => Object.entries(items || {}).map(([id, it]) => ({ id, ...it })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+export const costOf = (it, days) => it.unit === "day" ? it.price * days : it.price;
+
+export const EXCLUSIVE_DEFAULT = { enabled: true, label: "حصري لحيّنا", icon: "💎", color: "#7C3AED" };
+export const exclusiveOf = (config) => ({ ...EXCLUSIVE_DEFAULT, ...(config?.exclusive || {}) });
+
+const ms = (t) => (t && t.toMillis ? t.toMillis() : (typeof t === "number" ? t : 0));
+
+/** خدمات العرض النشطة الحين من قائمة boosts. */
+export function activeEffects(boosts, offerId, now = Date.now()) {
+  const out = { feature: false, listTop: false, publishUntil: 0 };
+  for (const b of boosts) {
+    if (b.offerId !== offerId) continue;
+    const s = ms(b.startsAt), e = ms(b.endsAt);
+    if (b.effect === "publish") out.publishUntil = Math.max(out.publishUntil, e);
+    else if (s <= now && now < e) out[b.effect] = true;
+  }
+  return out;
+}
+
+/** هل العرض مدفوع النشر؟ (لما يكون الرصيد مفعّل: العروض الجديدة لازم لها نشر مدفوع) */
+export function isPaidUp(o, boosts, credits, now = Date.now()) {
+  if (!credits.enabled) return true;
+  const since = ms(credits.enabledAt);
+  if (!since || ms(o.createdAt) < since) return true; // عروض قبل تفعيل الرصيد: مجانية
+  return activeEffects(boosts, o.id, now).publishUntil > now;
+}

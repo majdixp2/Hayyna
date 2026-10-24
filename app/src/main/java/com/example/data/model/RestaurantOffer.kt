@@ -64,6 +64,8 @@ data class RestaurantOffer(
     val grandOpening: Boolean = false,
     // نوع المنشور: "offer" عرض، "new" جديدنا (صنف/منتج جديد، الخصم اختياري)
     val postType: String = "offer",
+    // 💎 حصري لعملاء حيّنا (مجاني، يعلّمه التاجر)
+    val exclusive: Boolean = false,
     // وسوم الأصناف للبحث: شاورما، برجر، بروست
     val tags: List<String> = emptyList(),
     // التوصيل (نسخة من ملف المتجر)

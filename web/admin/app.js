@@ -5,8 +5,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
   getFirestore, collection, doc, onSnapshot, query, where, orderBy, limit,
-  updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp
+  updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+import { EFFECTS, creditsOf, itemList, exclusiveOf, DEFAULT_ITEMS } from "/js/credits.js";
 import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS } from "../config.js";
 
 const app = initializeApp(firebaseConfig);
@@ -16,7 +17,7 @@ const db = getFirestore(app, FIRESTORE_DB_ID);
 // ---------------- الحالة ----------------
 const state = {
   tab: localStorage.getItem("hayyna_admin_tab") || "home",
-  offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [], referrals: [], names: {},
+  offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [], referrals: [], names: {}, wallets: [], codes: null, itemsDraft: null, packsDraft: null,
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
 };
 const unsubs = [];
@@ -72,6 +73,7 @@ function listen() {
   unsubs.push(onSnapshot(query(collection(db, "poiInterest"), orderBy("taps", "desc"), limit(50)), (s) => { state.poi = parse(s); render(); }, console.error));
   unsubs.push(onSnapshot(query(collection(db, "verificationRequests"), where("status", "==", "pending")), (s) => { state.verifs = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
   unsubs.push(onSnapshot(collection(db, "referrals"), (s) => { state.referrals = parse(s).map((x) => ({ ...x, storeUid: x.id })); loadNames(); render(); }, console.error));
+  unsubs.push(onSnapshot(collection(db, "wallets"), (s) => { state.wallets = parse(s); render(); }, console.error));
   unsubs.push(onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; render(); }, console.error));
 }
 
@@ -167,7 +169,7 @@ function computed() {
 
 const TABS = [
   ["home", "🏠 الرئيسية"], ["review", "⏳ المراجعة"], ["stores", "🏪 المتاجر"],
-  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["settings", "⚙️ الإعدادات"],
+  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["credits", "💰 الرصيد"], ["settings", "⚙️ الإعدادات"],
 ];
 
 function render() {
@@ -180,7 +182,7 @@ function render() {
   $("tabs").querySelectorAll(".tab").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; localStorage.setItem("hayyna_admin_tab", state.tab); render(); }));
   const focused = document.activeElement?.id;
   const caret = document.activeElement?.selectionStart;
-  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, settings }[state.tab] || home)(c);
+  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, settings }[state.tab] || home)(c);
   bind();
   if (focused && $(focused)) { $(focused).focus(); try { $(focused).setSelectionRange(caret, caret); } catch {} }
 }
@@ -304,6 +306,95 @@ function refs() {
     ${board.length ? `<div class="grid">${board.map(([u, p], k) => `<div class="card row" style="justify-content:space-between"><b>${k + 1}. ${esc(state.names[u] || u.slice(0, 8))}</b><span>${p} نقطة ${p >= 10000 ? "💎" : p >= 5000 ? "🥇" : p >= 1000 ? "🥈" : "🥉"}</span></div>`).join("")}</div>` : `<p class="muted">—</p>`}`;
 }
 
+// ================= 💰 الرصيد =================
+const CODE_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+const newCode = () => { const a = crypto.getRandomValues(new Uint8Array(8)); const c = [...a].map((x) => CODE_CHARS[x % CODE_CHARS.length]).join(""); return `HY-${c.slice(0, 4)}-${c.slice(4)}`; };
+const itemsDraft = () => state.itemsDraft || (state.itemsDraft = itemList(creditsOf(state.config).items).map((x) => ({ ...x })));
+const packsDraft = () => state.packsDraft || (state.packsDraft = creditsOf(state.config).packs.map((x) => ({ ...x })));
+const nameOfUid = (uid) => statusOf(uid)?.name || state.names[uid] || uid.slice(0, 8);
+function jumpNav(items) { return `<div class="jump">${items.map(([id, l]) => `<a href="#${id}">${l}</a>`).join("")}</div>`; }
+
+function credits() {
+  const cr = creditsOf(state.config), items = itemsDraft(), packs = packsDraft();
+  const total = state.wallets.reduce((a, w) => a + (w.balance || 0), 0);
+  const codes = state.codes;
+  const batches = {};
+  (codes || []).forEach((c) => { const b = (batches[c.batch || "—"] ||= { name: c.batch || "—", points: c.points, total: 0, used: 0, at: c.createdAt }); b.total++; if (c.redeemedBy) b.used++; });
+  return jumpNav([["cr-status", "الحالة"], ["cr-items", "الخدمات والأسعار"], ["cr-packs", "باقات الشحن"], ["cr-codes", "الأكواد"], ["cr-wallets", "أرصدة التجار"]]) + `
+    <h2 id="cr-status">💰 نظام رصيد العروض</h2>
+    <div class="card">
+      <label class="switch"><input type="checkbox" id="crOn" ${cr.enabled ? "checked" : ""}> <b>${cr.enabled ? "مفعّل — النشر الجديد يحتاج رصيد" : "موقف — النشر مجاني للجميع"}</b></label>
+      <p class="muted">العروض المنشورة قبل التفعيل تبقى ظاهرة بدون رصيد. شغّله بعد ما يجهز متجر سلة والأكواد.</p>
+      <div class="row" style="align-items:center;margin-top:8px"><span>🎁 هدية ترحيب لكل تاجر جديد</span>
+        <input type="number" id="crWelcome" min="0" max="1000" value="${cr.welcome}" style="width:90px"> نقطة
+        <button class="btn primary" data-act="saveWelcome">حفظ</button></div>
+      <div class="row" style="align-items:center;margin-top:8px"><span>🛒 رابط متجر سلة (يظهر للتاجر في الويب فقط)</span>
+        <input type="text" id="crStore" value="${esc(state.config.credits?.storeUrl || "")}" placeholder="https://..." style="flex:1">
+        <button class="btn primary" data-act="saveStore">حفظ</button></div>
+      <div class="stats" style="margin-top:12px">
+        <div class="card stat"><div class="v">${state.wallets.length}</div><div class="t">محافظ تجار</div></div>
+        <div class="card stat"><div class="v">${total}</div><div class="t">نقاط في أرصدة التجار</div></div>
+      </div>
+    </div>
+
+    <h2 id="cr-items">🧾 الخدمات والأسعار</h2>
+    <div class="card">
+      <p class="muted">غيّر أي سعر وقت ما تبي، ويطبّق على أي شراء بعد الحفظ (المشتريات السابقة ما تتأثر). «يومي» = السعر × عدد الأيام اللي يختارها التاجر، «ثابت» = سعر واحد لمدة محددة.</p>
+      <table class="tbl"><thead><tr><th>الخدمة (الاسم اللي يشوفه التاجر)</th><th>النوع</th><th>التسعير</th><th>المدة</th><th>السعر (نقطة)</th><th>مفعّلة</th><th></th></tr></thead><tbody>
+      ${items.map((it, i) => `<tr>
+        <td><input type="text" data-it="${i}" data-k="name" value="${esc(it.name)}" maxlength="40"></td>
+        <td><select data-it="${i}" data-k="effect" ${it.id === "publish" ? "disabled" : ""}>${Object.entries(EFFECTS).map(([k, e]) => `<option value="${k}" ${it.effect === k ? "selected" : ""}>${e.label}</option>`).join("")}</select></td>
+        <td><select data-it="${i}" data-k="unit"><option value="day" ${it.unit === "day" ? "selected" : ""}>يومي</option><option value="fixed" ${it.unit !== "day" ? "selected" : ""}>ثابت</option></select></td>
+        <td>${it.unit === "day" ? `<span class="muted">يختارها التاجر</span>` : `<input type="number" min="1" max="90" data-it="${i}" data-k="days" value="${it.days || 1}" style="width:64px"> يوم`}</td>
+        <td><input type="number" min="1" max="10000" data-it="${i}" data-k="price" value="${it.price}" style="width:80px"></td>
+        <td><input type="checkbox" data-it="${i}" data-k="active" ${it.active ? "checked" : ""}></td>
+        <td><button class="btn" data-itup="${i}" ${i === 0 ? "disabled" : ""}>↑</button>${it.id === "publish" ? "" : ` <button class="btn danger" data-itdel="${i}">حذف</button>`}</td></tr>`).join("")}
+      </tbody></table>
+      <p class="muted">${Object.entries(EFFECTS).map(([, e]) => `<b>${e.label}:</b> ${e.hint}`).join(" • ")}</p>
+      <div class="actions"><button class="btn" data-act="itAdd">＋ خدمة جديدة</button><button class="btn" data-act="itReset">رجّع الافتراضي</button>
+        <button class="btn primary" data-act="saveItems">حفظ الأسعار</button></div>
+    </div>
+
+    <h2 id="cr-packs">📦 باقات الشحن (تبيعها في سلة)</h2>
+    <div class="card">
+      <p class="muted">للعرض والتنظيم: نفس الباقات اللي تحطها كمنتجات في سلة، وتختار منها وقت توليد الأكواد.</p>
+      ${packs.map((p, i) => `<div class="row" style="align-items:center;margin:4px 0"><input type="number" min="1" data-pk="${i}" data-k="points" value="${p.points}" style="width:90px"> نقطة بـ
+        <input type="number" min="1" data-pk="${i}" data-k="price" value="${p.price}" style="width:90px"> ريال
+        <span class="muted">(${(p.price / p.points).toFixed(2)} ريال/نقطة)</span><button class="btn danger" data-pkdel="${i}">حذف</button></div>`).join("")}
+      <div class="actions"><button class="btn" data-act="pkAdd">＋ باقة</button><button class="btn primary" data-act="savePacks">حفظ الباقات</button></div>
+    </div>
+
+    <h2 id="cr-codes">🔑 أكواد الشحن</h2>
+    <div class="card">
+      <div class="row" style="align-items:center;flex-wrap:wrap">
+        <span>قيمة الكود</span><select id="cdPoints">${packs.map((p) => `<option value="${p.points}">${p.points} نقطة (${p.price} ريال)</option>`).join("")}</select>
+        <span>العدد</span><input type="number" id="cdCount" min="1" max="300" value="20" style="width:80px">
+        <span>صلاحية</span><select id="cdExp"><option value="12">12 شهر</option><option value="6">6 شهور</option><option value="0">بدون انتهاء</option></select>
+        <button class="btn primary" data-act="genCodes">إنشاء الأكواد</button></div>
+      <p class="muted">بعد الإنشاء: «نسخ» الأكواد غير المستخدمة وألصقها في منتج سلة الرقمي (كل كود في سطر).</p>
+      ${codes === null ? `<div class="actions"><button class="btn" data-act="loadCodes">عرض الأكواد</button></div>`
+        : Object.values(batches).length ? `<table class="tbl"><thead><tr><th>الدفعة</th><th>القيمة</th><th>المستخدم</th><th></th></tr></thead><tbody>
+          ${Object.values(batches).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0)).map((b) => `<tr><td>${esc(b.name)}</td><td>${b.points} نقطة</td><td>${b.used} / ${b.total}</td>
+            <td><button class="btn" data-copyb="${esc(b.name)}">نسخ غير المستخدمة</button> <button class="btn" data-csvb="${esc(b.name)}">تنزيل</button> <button class="btn danger" data-delb="${esc(b.name)}">حذف غير المستخدمة</button></td></tr>`).join("")}
+          </tbody></table>` : `<p class="muted">ما فيه أكواد للحين</p>`}
+    </div>
+
+    <h2 id="cr-wallets">👛 أرصدة التجار</h2>
+    ${state.wallets.length ? `<div class="card"><table class="tbl"><thead><tr><th>التاجر</th><th>الرصيد</th><th>تعديل يدوي (+ أو −)</th></tr></thead><tbody>
+      ${[...state.wallets].sort((a, b) => (b.balance || 0) - (a.balance || 0)).map((w) => `<tr><td>${esc(nameOfUid(w.id))}</td><td><b>${w.balance || 0}</b></td>
+        <td><input type="number" id="adj_${w.id}" placeholder="مثال: 20 أو -10" style="width:110px"> <input type="text" id="adjn_${w.id}" placeholder="السبب (يظهر للتاجر)" style="width:200px">
+        <button class="btn" data-adj="${w.id}">تطبيق</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">ما فيه محافظ للحين</p>`}`;
+}
+async function adminCredit(uid, delta, note) {
+  const ref = doc(db, "wallets", uid), snap = await getDoc(ref);
+  const bal = (snap.data()?.balance || 0) + delta;
+  if (bal < 0) throw new Error("الرصيد ما يصير بالسالب");
+  await setDoc(ref, { balance: bal, lastOp: { kind: "admin", ref: "" }, updatedAt: serverTimestamp() });
+  await addDoc(collection(db, "wallets", uid, "tx"), { kind: "admin", points: delta, note: note || (delta > 0 ? "إضافة من إدارة حيّنا" : "خصم من إدارة حيّنا"), ref: "", at: serverTimestamp() });
+}
+async function loadCodes() { state.codes = (await getDocs(collection(db, "creditCodes"))).docs.map((d) => ({ id: d.id, ...d.data() })); render(); }
+const unusedOf = (batch) => (state.codes || []).filter((c) => (c.batch || "—") === batch && !c.redeemedBy);
+
 const FB_TYPES = ["🐞 مشكلة", "💡 اقتراح", "✨ فكرة إضافية", "🚩 شكوى على متجر", "أخرى"];
 const statusLabel = (s) => ({ in_progress: "قيد المتابعة", done: "تمت ✅" }[s] || "جديدة");
 
@@ -353,7 +444,19 @@ function catDraft() {
 function settings() {
   const cfg = state.config;
   const cats = catDraft();
-  return `<h2>🏷️ تصنيفات المتاجر</h2>
+  const ex = exclusiveOf(cfg);
+  const COLORS = ["#7C3AED", "#2D6A4F", "#E05A47", "#2563EB", "#B7791F", "#111827"];
+  return jumpNav([["st-cats", "التصنيفات"], ["st-excl", "شارة الحصري"], ["st-support", "الدعم"], ["st-ai", "التعبئة الذكية"], ["st-verify", "التوثيق"], ["st-poi", "محلات Google"]]) + `<h2 id="st-excl">💎 شارة «حصري لحيّنا»</h2>
+    <div class="card">
+      <p class="muted">مجانية: التاجر يعلّم على العرض «حصري لعملاء حيّنا»، وتطلع الشارة على الخريطة والبطاقات.</p>
+      <label class="switch"><input type="checkbox" id="exOn" ${ex.enabled ? "checked" : ""}> إظهار الخيار والشارة</label>
+      <div class="row" style="align-items:center;margin-top:8px;flex-wrap:wrap"><span>النص</span><input type="text" id="exLabel" value="${esc(ex.label)}" maxlength="20" style="width:180px">
+        <span>الأيقونة</span><input type="text" id="exIcon" value="${esc(ex.icon)}" maxlength="4" style="width:60px">
+        <span>اللون</span>${COLORS.map((c) => `<button class="swatch${ex.color === c ? " on" : ""}" data-excolor="${c}" style="background:${c}"></button>`).join("")}
+        <span class="xbadge" id="exPrev" style="background:${esc(ex.color)}">${esc(ex.icon)} ${esc(ex.label)}</span></div>
+      <div class="actions"><button class="btn primary" data-act="saveExcl">حفظ</button></div>
+    </div>
+    <h2 id="st-cats">🏷️ تصنيفات المتاجر</h2>
     <div class="card">
       <p class="muted">تظهر للتجار عند إعداد المتجر ونشر العروض، وللزبائن في الفلاتر. تعديل الاسم يحدّث العروض والمتاجر اللي عليه.</p>
       ${cats.map((c, i) => `<div class="row" style="align-items:center;margin:4px 0">
@@ -364,23 +467,23 @@ function settings() {
         <button class="btn" data-act="catAdd">إضافة</button></div>
       <div class="actions"><button class="btn primary" data-act="saveCats">حفظ التصنيفات</button></div>
     </div>
-    <h2>⚙️ رقم واتساب الدعم</h2>
+    <h2 id="st-support">⚙️ رقم واتساب الدعم</h2>
     <div class="card"><div class="row" style="align-items:center"><input type="text" id="supportNum" value="${esc(cfg.supportWhatsapp || "0552793379")}" style="max-width:240px">
       <button class="btn primary" data-act="saveSupport">حفظ</button></div></div>
-    <h2>✨ التعبئة الذكية</h2>
+    <h2 id="st-ai">✨ التعبئة الذكية</h2>
     <div class="card">
       <label class="switch"><input type="checkbox" id="aiOn" ${cfg.aiAutofillEnabled ? "checked" : ""}> ${cfg.aiAutofillEnabled ? "مفعّلة" : "موقفة"}</label>
       <details><summary>إعدادات متقدمة (اسم النموذج)</summary>
         <div class="row" style="margin-top:8px"><input type="text" id="aiModel" value="${esc(cfg.aiModel || "gemini-3.8-flash")}" style="max-width:260px">
         <button class="btn primary" data-act="saveModel">حفظ</button></div></details>
     </div>
-    <h2>🛡️ توثيق المتاجر</h2>
+    <h2 id="st-verify">🛡️ توثيق المتاجر</h2>
     <div class="card">
       <p class="muted">التوثيق اختياري للتاجر: الموثّق ياخذ ✓ وينشر مباشرة، وغيره عروضه تمر بالمراجعة.</p>
       ${[["verifyEnabled", "تفعيل التوثيق (زر وثّق متجرك للتجار)"], ["verifyRequireDoc", "رقم السجل التجاري / العمل الحر"], ["verifyRequirePhoto", "صورة حيّة لواجهة المحل"], ["verifyRequireLocation", "التأكد إنه عند المحل (GPS)"]]
         .map(([k, l]) => `<label class="switch" style="margin:6px 0"><input type="checkbox" data-cfg="${k}" ${cfg[k] !== false ? "checked" : ""}> ${l}</label>`).join("")}
     </div>
-    <h2>📍 محلات Google على الخريطة</h2>
+    <h2 id="st-poi">📍 محلات Google على الخريطة</h2>
     <div class="card">
       <label class="switch"><input type="checkbox" id="poiOn" ${cfg.showGooglePoi !== false ? "checked" : ""}> إظهار نقاط المحلات (باهتة)</label>
       <label class="switch" style="margin-top:8px"><input type="checkbox" id="inviteOn" ${cfg.poiInviteEnabled !== false ? "checked" : ""}> بطاقة "ادعه لحيّنا" عند الضغط</label>
@@ -409,6 +512,36 @@ function bind() {
   c.querySelectorAll("[data-catup]").forEach((b) => (b.onclick = () => { const d = catDraft(), i = +b.dataset.catup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
   c.querySelectorAll("[data-catdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف التصنيف؟ العروض الحالية تبقى عليه.")) { catDraft().splice(+b.dataset.catdel, 1); render(); } }));
   const ai = $("aiOn"); if (ai) ai.onchange = () => run(() => actions.saveConfig({ aiAutofillEnabled: ai.checked }), ai.checked ? "التعبئة الذكية مفعّلة ✨" : "التعبئة الذكية موقفة");
+  // ---- الرصيد ----
+  c.querySelectorAll("[data-it]").forEach((x) => (x.onchange = x.oninput = () => {
+    const it = itemsDraft()[+x.dataset.it], k = x.dataset.k;
+    it[k] = x.type === "checkbox" ? x.checked : (k === "price" || k === "days") ? Math.max(1, parseInt(x.value, 10) || 1) : x.value;
+    if (k === "unit" || k === "effect") render();
+  }));
+  c.querySelectorAll("[data-itup]").forEach((b) => (b.onclick = () => { const d = itemsDraft(), i = +b.dataset.itup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
+  c.querySelectorAll("[data-itdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف الخدمة؟ (المشتريات السابقة تبقى)")) { itemsDraft().splice(+b.dataset.itdel, 1); render(); } }));
+  c.querySelectorAll("[data-pk]").forEach((x) => (x.oninput = () => { packsDraft()[+x.dataset.pk][x.dataset.k] = Math.max(1, parseInt(x.value, 10) || 1); }));
+  c.querySelectorAll("[data-pkdel]").forEach((b) => (b.onclick = () => { packsDraft().splice(+b.dataset.pkdel, 1); render(); }));
+  const crOn = $("crOn"); if (crOn) crOn.onchange = () => run(async () => {
+    if (crOn.checked && !confirm("تفعيل الرصيد؟ أي عرض جديد بعدها يحتاج رصيد عشان يظهر.")) { crOn.checked = false; return; }
+    const cur = state.config.credits || {};
+    await updateDoc(doc(db, "config", "app"), { "credits.enabled": crOn.checked, ...(crOn.checked && !cur.enabledAt ? { "credits.enabledAt": serverTimestamp() } : {}), ...(cur.items ? {} : { "credits.items": DEFAULT_ITEMS }) });
+  }, crOn.checked ? "تم تفعيل الرصيد ✅" : "تم إيقاف الرصيد");
+  c.querySelectorAll("[data-copyb]").forEach((b) => (b.onclick = async () => { const list = unusedOf(b.dataset.copyb).map((x) => x.id).join("\n"); try { await navigator.clipboard.writeText(list); toast(`نسخنا ${unusedOf(b.dataset.copyb).length} كود ✅`); } catch { prompt("انسخ:", list); } }));
+  c.querySelectorAll("[data-csvb]").forEach((b) => (b.onclick = () => { const list = unusedOf(b.dataset.csvb).map((x) => x.id).join("\n"); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([list], { type: "text/plain" })); a.download = `hayyna-codes-${b.dataset.csvb}.txt`; a.click(); }));
+  c.querySelectorAll("[data-delb]").forEach((b) => (b.onclick = () => run(async () => {
+    const list = unusedOf(b.dataset.delb); if (!list.length || !confirm(`حذف ${list.length} كود غير مستخدم؟ (لا تحذفها لو رفعتها في سلة)`)) return;
+    for (let i = 0; i < list.length; i += 400) { const wb = writeBatch(db); list.slice(i, i + 400).forEach((x) => wb.delete(doc(db, "creditCodes", x.id))); await wb.commit(); }
+    await loadCodes();
+  }, "تم الحذف")));
+  c.querySelectorAll("[data-adj]").forEach((b) => (b.onclick = () => run(async () => {
+    const uid = b.dataset.adj, delta = parseInt($("adj_" + uid).value, 10);
+    if (!delta) return toast("اكتب رقم مثل 20 أو -10");
+    await adminCredit(uid, delta, $("adjn_" + uid).value.trim().slice(0, 120));
+  }, "تم تعديل الرصيد ✅")));
+  // ---- شارة الحصري ----
+  c.querySelectorAll("[data-excolor]").forEach((b) => (b.onclick = () => { c.querySelectorAll("[data-excolor]").forEach((x) => x.classList.toggle("on", x === b)); $("exPrev").style.background = b.dataset.excolor; }));
+  ["exLabel", "exIcon"].forEach((id) => { const el = $(id); if (el) el.oninput = () => { $("exPrev").textContent = `${$("exIcon").value} ${$("exLabel").value}`; }; });
   c.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => {
     const id = b.dataset.id, o = byId(id);
     const map = {
@@ -448,6 +581,31 @@ function bind() {
         }
         state.catDraft = null; if (moved) toast(`تحدّث ${moved} عرض للاسم الجديد`);
       },
+      saveWelcome: () => updateDoc(doc(db, "config", "app"), { "credits.welcome": Math.max(0, parseInt($("crWelcome").value, 10) || 0) }),
+      saveStore: () => updateDoc(doc(db, "config", "app"), { "credits.storeUrl": $("crStore").value.trim().slice(0, 300) }),
+      itAdd: () => { itemsDraft().push({ id: "x" + Date.now().toString(36), name: "خدمة جديدة", effect: "feature", unit: "fixed", price: 10, days: 7, active: false }); render(); },
+      itReset: () => { if (confirm("ترجع الخدمات والأسعار للافتراضي؟ (ما تنحفظ إلا لما تضغط حفظ)")) { state.itemsDraft = null; state.config = { ...state.config, credits: { ...(state.config.credits || {}), items: undefined } }; state.itemsDraft = itemList(DEFAULT_ITEMS).map((x) => ({ ...x })); render(); } },
+      saveItems: async () => {
+        const map = {};
+        itemsDraft().forEach((it, i) => { const id = it.id; map[id] = { name: String(it.name || "").trim().slice(0, 40) || "خدمة", effect: id === "publish" ? "publish" : it.effect, unit: it.unit === "day" ? "day" : "fixed", price: Math.max(1, it.price | 0), days: it.unit === "day" ? 1 : Math.min(90, Math.max(1, it.days | 0)), active: !!it.active, order: i }; });
+        await updateDoc(doc(db, "config", "app"), { "credits.items": map }); state.itemsDraft = null;
+      },
+      pkAdd: () => { packsDraft().push({ points: 200, price: 195 }); render(); },
+      savePacks: async () => { await updateDoc(doc(db, "config", "app"), { "credits.packs": packsDraft().map((p) => ({ points: p.points | 0, price: p.price | 0 })) }); state.packsDraft = null; },
+      loadCodes: () => loadCodes(),
+      genCodes: async () => {
+        const points = parseInt($("cdPoints").value, 10), count = Math.min(300, Math.max(1, parseInt($("cdCount").value, 10) || 0)), months = parseInt($("cdExp").value, 10);
+        if (!confirm(`إنشاء ${count} كود بقيمة ${points} نقطة؟`)) return;
+        const d = new Date(), batch = `${points}نقطة-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+        const exp = months ? Timestamp.fromMillis(Date.now() + months * 30 * 864e5) : null;
+        for (let i = 0; i < count; i += 400) {
+          const wb = writeBatch(db);
+          for (let k = i; k < Math.min(count, i + 400); k++) wb.set(doc(db, "creditCodes", newCode()), { points, batch, createdAt: serverTimestamp(), expiresAt: exp, redeemedBy: null, redeemedAt: null });
+          await wb.commit();
+        }
+        await loadCodes();
+      },
+      saveExcl: () => actions.saveConfig({ exclusive: { enabled: $("exOn").checked, label: $("exLabel").value.trim().slice(0, 20) || "حصري لحيّنا", icon: $("exIcon").value.trim().slice(0, 4) || "💎", color: $("content").querySelector("[data-excolor].on")?.dataset.excolor || "#7C3AED" } }),
       savePoi: () => actions.saveConfig({ inviteMessage: $("inviteMsg").value.trim(), appLink: $("appLink").value.trim() }),
     };
     if (map[b.dataset.act]) run(map[b.dataset.act], ["approve", "trust", "suspendOffer", "suspendUid", "verifyOk", "verifyNo"].includes(b.dataset.act) ? null : "تم ✅");

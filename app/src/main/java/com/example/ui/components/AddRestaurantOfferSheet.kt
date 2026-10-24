@@ -128,6 +128,8 @@ fun AddRestaurantOfferSheet(
     var grandOpening by remember { mutableStateOf(editingOffer?.grandOpening ?: false) }
     // ✨ جديدنا: صنف/منتج جديد (السعر والخصم اختياري)
     var isNewProduct by remember { mutableStateOf(editingOffer?.postType == "new") }
+    // 💎 حصري لعملاء حيّنا
+    var exclusive by remember { mutableStateOf(editingOffer?.exclusive ?: false) }
     var startMillis by remember { mutableStateOf(editingOffer?.startsAt?.toDate()?.time) }
     var showDatePicker by remember { mutableStateOf(false) }
 
@@ -297,6 +299,7 @@ fun AddRestaurantOfferSheet(
             dailyPercents = if (useTiers) steps.map { it.toLong() } else emptyList(),
             itemsScope = if (percentMode) itemsScope.trim().take(40) else "",
             grandOpening = grandOpening && !isNewProduct,
+            exclusive = exclusive && ExclusiveBadge.label.isNotBlank(),
             tags = parseTags(tagsText),
             delivery = delivery,
             deliveryFee = if (delivery) deliveryFeeText.toDoubleOrNull() ?: 0.0 else 0.0,
@@ -746,6 +749,10 @@ fun AddRestaurantOfferSheet(
                     if (!isNewProduct) Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = grandOpening, onCheckedChange = { grandOpening = it })
                         Text("🎉 عرض افتتاح (محل جديد)", fontSize = 13.sp)
+                    }
+                    if (ExclusiveBadge.label.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = exclusive, onCheckedChange = { exclusive = it })
+                        Text("${ExclusiveBadge.label} (لعملاء حيّنا بس)", fontSize = 13.sp)
                     }
 
                     // ---------- المدة ----------

@@ -72,12 +72,16 @@ val RestaurantOffer.displayBadge: String
         val now = System.currentTimeMillis()
         val pct = com.example.data.model.OfferPricing.effectivePercent(this, now)
         val parts = buildList {
+            if (exclusive && ExclusiveBadge.label.isNotBlank()) add(ExclusiveBadge.label)
             if (postType == "new") add("✨ جديد")
             if (grandOpening) add("🎉 افتتاح")
             if (pct >= 1) add("خصم $pct% 🔥")
         }
         return parts.joinToString(" • ")
     }
+
+/** نص شارة "حصري لحيّنا" (من إعدادات الأدمن؛ فاضي = موقفة). */
+object ExclusiveBadge { @Volatile var label: String = "💎 حصري لحيّنا" }
 
 /** شعار المتجر صغير ودائري (لا يظهر شي إذا ما عنده شعار). */
 @Composable

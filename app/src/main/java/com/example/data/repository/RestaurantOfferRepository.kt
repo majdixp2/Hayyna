@@ -398,6 +398,42 @@ class RestaurantOfferRepository(
         ).await()
     }
 
+    /** رصيد العروض + شارة الحصري (من لوحة الأدمن). */
+    val creditsConfig: Flow<CreditsConfig> = callbackFlow {
+        val listener = configDoc.addSnapshotListener { snap, _ ->
+            @Suppress("UNCHECKED_CAST")
+            val cr = snap?.get("credits") as? Map<String, Any?> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST")
+            val ex = snap?.get("exclusive") as? Map<String, Any?> ?: emptyMap()
+            trySend(
+                CreditsConfig(
+                    enabled = cr["enabled"] as? Boolean ?: false,
+                    enabledAtMillis = (cr["enabledAt"] as? Timestamp)?.toDate()?.time ?: 0L,
+                    exclusiveEnabled = ex["enabled"] as? Boolean ?: true,
+                    exclusiveLabel = (ex["label"] as? String)?.takeIf { it.isNotBlank() } ?: "حصري لحيّنا",
+                    exclusiveIcon = (ex["icon"] as? String)?.takeIf { it.isNotBlank() } ?: "💎"
+                )
+            )
+        }
+        awaitClose { listener.remove() }
+    }
+
+    /** الخدمات المدفوعة النشطة (نشر / تمييز / إعلان بارز). */
+    val activeBoosts: Flow<List<Boost>> = callbackFlow {
+        val listener = db.collection("boosts").whereGreaterThan("endsAt", Timestamp.now())
+            .addSnapshotListener { snap, _ ->
+                trySend(snap?.documents.orEmpty().map { d ->
+                    Boost(
+                        offerId = d.getString("offerId").orEmpty(),
+                        effect = d.getString("effect").orEmpty(),
+                        startsAt = d.getTimestamp("startsAt")?.toDate()?.time ?: 0L,
+                        endsAt = d.getTimestamp("endsAt")?.toDate()?.time ?: 0L
+                    )
+                })
+            }
+        awaitClose { listener.remove() }
+    }
+
     /** إعدادات نقاط محلات Google والدعوات (يتحكم فيها الأدمن). */
     val poiConfig: Flow<PoiConfig> = callbackFlow {
         val listener = configDoc.addSnapshotListener { snap, _ ->
@@ -670,6 +706,7 @@ class RestaurantOfferRepository(
             "itemsScope" to itemsScope.take(60),
             "grandOpening" to grandOpening,
             "postType" to (if (postType == "new") "new" else "offer"),
+            "exclusive" to exclusive,
             "tags" to tags.take(12),
             "delivery" to delivery,
             "deliveryFee" to deliveryFee,
@@ -849,6 +886,16 @@ class RestaurantOfferRepository(
 }
 
 data class UserProfile(val role: String?, val name: String, val phone: String)
+
+data class CreditsConfig(
+    val enabled: Boolean = false,
+    val enabledAtMillis: Long = 0L,
+    val exclusiveEnabled: Boolean = true,
+    val exclusiveLabel: String = "حصري لحيّنا",
+    val exclusiveIcon: String = "💎"
+)
+
+data class Boost(val offerId: String, val effect: String, val startsAt: Long, val endsAt: Long)
 
 data class PoiConfig(
     val showGooglePoi: Boolean = true,

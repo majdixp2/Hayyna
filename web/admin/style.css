@@ -47,3 +47,17 @@ textarea{min-height:70px;resize:vertical}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:12px;z-index:30}
 .switch{display:flex;align-items:center;gap:8px;cursor:pointer}
 details summary{cursor:pointer;color:var(--muted);margin-top:8px}
+
+.jump{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px;position:sticky;top:112px;background:var(--bg);padding:6px 0;z-index:3}
+.jump a{border:1px solid var(--border);background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;color:var(--text);text-decoration:none}
+.jump a:hover{border-color:var(--green);color:var(--green)}
+h2[id]{scroll-margin-top:170px}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{text-align:start;color:var(--muted);font-weight:600;font-size:12px;padding:6px 4px;border-bottom:1px solid var(--border)}
+.tbl td{padding:6px 4px;border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl input[type=text]{padding:6px 8px}
+select,input[type=number]{font:inherit;border:1px solid var(--border);border-radius:10px;padding:6px 8px;background:#fff}
+.swatch{width:26px;height:26px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--border);cursor:pointer}
+.swatch.on{box-shadow:0 0 0 2px var(--text)}
+.xbadge{color:#fff;border-radius:999px;padding:4px 10px;font-size:13px;font-weight:700}
+@media(max-width:760px){.tbl,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}.tbl thead{display:none}.tbl tr{border:1px solid var(--border);border-radius:12px;padding:8px;margin-bottom:8px}.tbl td{border:0}}

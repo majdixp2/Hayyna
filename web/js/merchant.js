@@ -1,15 +1,19 @@
 // لوحة التاجر على الويب: صفحة متجري (الفروع، الشعار، المنيو، التوصيل) + نشر وتعديل العروض.
 import {
-  collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDocs, getDoc, serverTimestamp, Timestamp
+  collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDocs, getDoc, serverTimestamp, Timestamp, writeBatch, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { MAPS_WEB_KEY } from "../config.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
+import { creditsOf, itemList, costOf, activeEffects, isPaidUp, exclusiveOf, EFFECTS } from "./credits.js";
 
 const { esc, cld, thumb, priceLabel, districtLabel, money } = X;
 const DAILY_LIMIT = 3;
-const m = { uid: null, profile: null, status: null, offers: [], unsubs: [], root: null, ctx: null };
+const m = { uid: null, profile: null, status: null, offers: [], unsubs: [], root: null, ctx: null, wallet: undefined, boosts: [] };
+const cr = () => creditsOf(state.config);
+const bal = () => m.wallet?.balance || 0;
+const fmtDate = (t) => { const d = new Date(t); return `${d.getDate()}/${d.getMonth() + 1}`; };
 
 const canPublishDirectly = () => m.ctx?.isAdmin || (m.status?.trusted === true && m.status?.suspended !== true);
 
@@ -20,6 +24,9 @@ export function renderMerchant(root, ctx) {
     m.unsubs.forEach((u) => u()); m.unsubs = []; m.uid = uid; m.profile = undefined; m.status = undefined; m.offers = [];
     m.unsubs.push(onSnapshot(doc(db, "merchants", uid), (s) => { m.profile = s.exists() ? s.data() : null; draw(); }, () => { m.profile = null; draw(); }));
     m.unsubs.push(onSnapshot(doc(db, "merchantStatus", uid), (s) => { m.status = s.exists() ? s.data() : null; draw(); }, () => { m.status = null; draw(); }));
+    m.wallet = undefined; m.boosts = [];
+    m.unsubs.push(onSnapshot(doc(db, "wallets", uid), (s) => { m.wallet = s.exists() ? s.data() : null; ensureWallet(); draw(); }, () => { m.wallet = null; draw(); }));
+    m.unsubs.push(onSnapshot(query(collection(db, "boosts"), where("merchantId", "==", uid)), (snap) => { m.boosts = snap.docs.map((d) => ({ ...d.data(), id: d.id })); draw(); }, () => {}));
     m.unsubs.push(onSnapshot(query(collection(db, "offers"), where("merchantId", "==", uid)), (snap) => {
       m.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => (X.ms(b.createdAt) || 0) - (X.ms(a.createdAt) || 0)); draw();
     }, (e) => console.error(e)));
@@ -53,6 +60,7 @@ function draw() {
       <div class="stat"><b>${sum("directionsCount")}</b><small>اتجاهات</small></div>
       <div class="stat"><b>${sum("whatsappCount")}</b><small>واتساب</small></div>
     </div>
+    ${walletCard()}
     <button class="btn dir big" id="newOffer" ${st.suspended ? "disabled" : ""}>＋ عرض جديد</button>
     <div class="section-title">عروضي (${m.offers.length})</div>
     <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
@@ -63,6 +71,9 @@ function draw() {
   if (claim) setTimeout(() => openStoreForm(claim), 50);
   $("newOffer").onclick = () => hasStore ? openOfferForm(null) : (toast("جهّز صفحة متجرك وموقعك أول 📍"), openStoreForm());
   $("mContact").onclick = m.ctx.contact;
+  $("wRedeem")?.addEventListener("click", openRedeem);
+  $("wHistory")?.addEventListener("click", openHistory);
+  root.querySelectorAll("[data-boost]").forEach((b) => b.onclick = () => openBoost(m.offers.find((o) => o.id === b.dataset.boost)));
   root.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => openOfferForm(m.offers.find((o) => o.id === b.dataset.edit)));
   root.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => confirmDelete(m.offers.find((o) => o.id === b.dataset.del)));
   root.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { if (state.offers.some((o) => o.id === b.dataset.view)) openOffer(b.dataset.view, true); else toast("العرض بيظهر للناس بعد ما ينعتمد"); });
@@ -75,9 +86,124 @@ function offerRow(o) {
   return `<div class="mrow${exp ? " dim" : ""}">
     <img src="${esc(thumb(o, 160))}" alt="" data-view="${esc(o.id)}">
     <div class="mr-main" data-view="${esc(o.id)}"><b>${esc(o.offerTitle)}</b><div class="price">${esc(priceLabel(o))}</div>
-      <div class="pills">${chip}<span class="pill closed">👁 ${o.viewsCount || 0}</span></div></div>
-    <div class="mr-act"><button class="icon-btn" data-edit="${esc(o.id)}" aria-label="تعديل">✎</button><button class="icon-btn" data-del="${esc(o.id)}" aria-label="حذف">🗑</button></div>
+      <div class="pills">${chip}${paidChips(o)}<span class="pill closed">👁 ${o.viewsCount || 0}</span></div></div>
+    <div class="mr-act">${cr().enabled && !exp ? `<button class="icon-btn" data-boost="${esc(o.id)}" aria-label="تمييز">🚀</button>` : ""}<button class="icon-btn" data-edit="${esc(o.id)}" aria-label="تعديل">✎</button><button class="icon-btn" data-del="${esc(o.id)}" aria-label="حذف">🗑</button></div>
   </div>`;
+}
+
+// =================== رصيد العروض ===================
+let ensuring = false;
+async function ensureWallet() {
+  // أول ما يتفعّل الرصيد: ننشئ محفظة التاجر (مع هدية الترحيب إن وجدت)
+  if (ensuring || m.wallet !== null || !cr().enabled || !state.user) return;
+  ensuring = true;
+  try {
+    const w = cr().welcome || 0, wb = writeBatch(db);
+    wb.set(doc(db, "wallets", m.uid), { balance: w, lastOp: { kind: "welcome", ref: "" }, updatedAt: serverTimestamp() });
+    if (w > 0) wb.set(doc(collection(db, "wallets", m.uid, "tx")), { kind: "welcome", points: w, note: "🎁 هدية الترحيب من حيّنا", ref: "", at: serverTimestamp() });
+    await wb.commit();
+    if (w > 0) toast(`🎁 أهلاً بك! أضفنا لك ${w} نقطة هدية`, true);
+  } catch (e) { console.warn("wallet", e); }
+  ensuring = false;
+}
+function walletCard() {
+  if (!cr().enabled && !m.wallet) return "";
+  const store = state.config.credits?.storeUrl;
+  return `<div class="wallet-card">
+    <div class="wc-top"><div><small>💰 رصيد العروض</small><b>${bal()}</b><small>نقطة</small></div>
+      <div class="wc-prices">${itemList(cr().items).filter((it) => it.active).slice(0, 4).map((it) => `<span>${esc(it.name)}: <b>${it.price}</b>${it.unit === "day" ? "/يوم" : ""}</span>`).join("")}</div></div>
+    <div class="wc-act">
+      <button class="btn call" id="wRedeem">🔑 شحن بكود</button>
+      ${store ? `<a class="btn call" href="${esc(store)}" target="_blank" rel="noopener">🛒 اشترِ رصيد</a>` : ""}
+      <button class="btn ghost" id="wHistory">📜 الحركات</button>
+    </div></div>`;
+}
+function paidChips(o) {
+  if (!cr().enabled && !m.boosts.length) return "";
+  const now = Date.now(), ef = activeEffects(m.boosts, o.id, now), out = [];
+  if (ef.feature) out.push(`<span class="pill feat">✨ مميّز</span>`);
+  if (ef.listTop) out.push(`<span class="pill feat">📌 بارز</span>`);
+  if (o.isApproved && !X.isExpired(o, now) && !isPaidUp({ ...o, id: o.id }, m.boosts, cr(), now)) out.push(`<span class="pill urgent">⚠️ غير منشور — يحتاج رصيد</span>`);
+  else if (ef.publishUntil > now) out.push(`<span class="pill">📢 منشور لين ${fmtDate(ef.publishUntil)}</span>`);
+  return out.join("");
+}
+function openRedeem() {
+  showSheet(`<div class="pad form"><div class="section-title">🔑 شحن الرصيد بكود</div>
+    <p class="desc tr">اكتب الكود اللي وصلك بعد الشراء (مثال: HY-K7Q2-9XMP)</p>
+    <input id="rCode" class="input" dir="ltr" autocomplete="off" placeholder="HY-XXXX-XXXX" maxlength="16" style="text-transform:uppercase;letter-spacing:2px;text-align:center">
+    <div id="rErr" class="err"></div><button class="btn dir" id="rGo">شحن</button></div>`);
+  $("rCode").focus();
+  $("rGo").onclick = async () => {
+    const raw = $("rCode").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const code = raw.length === 10 && raw.startsWith("HY") ? `HY-${raw.slice(2, 6)}-${raw.slice(6)}` : $("rCode").value.trim().toUpperCase();
+    const err = (t) => { $("rErr").textContent = t; };
+    if (!/^HY-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) return err("الكود غير صحيح، تأكد منه.");
+    $("rGo").disabled = true; err("");
+    try {
+      const snap = await getDoc(doc(db, "creditCodes", code));
+      if (!snap.exists()) { $("rGo").disabled = false; return err("الكود غير صحيح، تأكد منه."); }
+      const c = snap.data();
+      if (c.redeemedBy) { $("rGo").disabled = false; return err("هذا الكود مستخدم من قبل."); }
+      if (c.expiresAt && X.ms(c.expiresAt) < Date.now()) { $("rGo").disabled = false; return err("هذا الكود منتهي."); }
+      const wb = writeBatch(db);
+      wb.update(doc(db, "creditCodes", code), { redeemedBy: m.uid, redeemedAt: serverTimestamp() });
+      wb.set(doc(db, "wallets", m.uid), { balance: bal() + c.points, lastOp: { kind: "redeem", ref: code }, updatedAt: serverTimestamp() });
+      wb.set(doc(collection(db, "wallets", m.uid, "tx")), { kind: "redeem", points: c.points, note: "شحن بكود " + code.slice(-4), ref: code, at: serverTimestamp() });
+      await wb.commit();
+      hideSheet(); toast(`تم الشحن ✅ أضفنا ${c.points} نقطة`, true);
+    } catch (e) { console.error(e); $("rGo").disabled = false; err("تعذّر الشحن، حاول مرة ثانية أو تواصل معنا."); }
+  };
+}
+async function openHistory() {
+  showSheet(`<div class="pad"><div class="spinner"></div></div>`);
+  let list = [];
+  try { list = (await getDocs(query(collection(db, "wallets", m.uid, "tx"), orderBy("at", "desc"), limit(50)))).docs.map((d) => d.data()); } catch {}
+  showSheet(`<div class="pad"><div class="section-title">📜 حركات الرصيد</div>
+    ${list.length ? `<div class="tx-list">${list.map((t) => `<div class="tx"><span>${esc(t.note || "")}</span><small>${t.at ? fmtDate(X.ms(t.at)) : ""}</small><b class="${t.points >= 0 ? "plus" : "minus"}">${t.points > 0 ? "+" : ""}${t.points}</b></div>`).join("")}</div>`
+      : `<div class="empty-inline">ما فيه حركات للحين</div>`}</div>`);
+}
+/** يجهّز عملية صرف (خدمة + خصم) داخل batch. يرجّع null لو الرصيد ما يكفي. */
+function addSpend(wb, { item, offerId, days, startsAt, note }) {
+  const it = { ...cr().items[item], id: item };
+  const d = it.unit === "day" ? days : (it.days || 1);
+  const cost = costOf(it, d);
+  const admin = !!m.ctx?.isAdmin;
+  if (!admin && bal() < cost) return null;
+  const ref = doc(collection(db, "boosts"));
+  const start = Math.max(Date.now(), startsAt || 0);
+  wb.set(ref, { id: ref.id, merchantId: m.uid, offerId, item, effect: it.effect, days: d, cost, createdAt: serverTimestamp(),
+    startsAt: Timestamp.fromMillis(start), endsAt: Timestamp.fromMillis(start + d * X.DAY) });
+  if (!admin) {
+    wb.set(doc(db, "wallets", m.uid), { balance: bal() - cost, lastOp: { kind: "spend", ref: ref.id }, updatedAt: serverTimestamp() });
+    wb.set(doc(collection(db, "wallets", m.uid, "tx")), { kind: "spend", points: -cost, note: (note || it.name).slice(0, 120), ref: ref.id, at: serverTimestamp() });
+  }
+  return cost;
+}
+function openBoost(o) {
+  if (!o) return;
+  const items = itemList(cr().items).filter((it) => it.active);
+  const now = Date.now(), ef = activeEffects(m.boosts, o.id, now);
+  showSheet(`<div class="pad"><div class="section-title">🚀 ${esc(o.offerTitle)}</div>
+    <p class="desc tr">رصيدك: <b>${bal()}</b> نقطة</p>
+    <div class="boost-list">${items.map((it) => {
+      const isPub = it.effect === "publish";
+      return `<div class="boost-item"><div><b>${esc(it.name)}</b><small>${esc(EFFECTS[it.effect]?.hint || "")}${isPub && ef.publishUntil > now ? ` • منشور لين ${fmtDate(ef.publishUntil)}` : ""}</small></div>
+        ${it.unit === "day" ? `<select class="input bdays" data-bd="${it.id}">${[1, 3, 7, 14, 30].map((d) => `<option value="${d}">${d} ${d === 1 ? "يوم" : "أيام"} • ${it.price * d} نقطة</option>`).join("")}</select>`
+          : `<span class="bprice">${it.price} نقطة • ${it.days} ${it.days === 1 ? "يوم" : "أيام"}</span>`}
+        <button class="btn dir" data-buy="${it.id}">${isPub ? "تمديد النشر" : "اشترِ"}</button></div>`; }).join("")}</div>
+    <div id="bErr" class="err"></div></div>`);
+  $("sheetBody").querySelectorAll("[data-buy]").forEach((b) => b.onclick = async () => {
+    const id = b.dataset.buy, it = cr().items[id];
+    const days = it.unit === "day" ? +($("sheetBody").querySelector(`[data-bd="${id}"]`)?.value || 1) : it.days;
+    // التمديد يبدأ من نهاية النشر الحالي
+    const start = it.effect === "publish" ? Math.max(now, ef.publishUntil) : now;
+    const wb = writeBatch(db), cost = addSpend(wb, { item: id, offerId: o.id, days, startsAt: start, note: `${it.name} — ${o.offerTitle}` });
+    if (cost == null) return $("bErr").textContent = `رصيدك ما يكفي (تحتاج ${costOf(it, days)} نقطة). اشحن رصيدك أول.`;
+    if (!confirm(`تأكيد: ${it.name} بـ ${cost} نقطة؟`)) return;
+    b.disabled = true;
+    try { await wb.commit(); hideSheet(); toast(`تم ✅ خصمنا ${cost} نقطة`, true); }
+    catch (e) { console.error(e); b.disabled = false; $("bErr").textContent = "تعذّرت العملية. حدّث الصفحة وجرّب مرة ثانية."; }
+  });
 }
 
 function confirmDelete(o) {
@@ -306,7 +432,15 @@ export async function openOfferForm(editing) {
     all: !e || !(e.branches || []).length || p.branches.every((b) => (e.branches || []).some((x) => x.id === b.id)),
     sel: new Set((e?.branches || []).map((b) => b.id)),
     media: e ? X.gallery(e).map((u) => ({ url: u })) : [], isVideo: e?.mediaType === "VIDEO",
-    kind: e?.postType === "new" ? "new" : "offer",
+    kind: e?.postType === "new" ? "new" : "offer", exclusive: !!e?.exclusive,
+  };
+  const paid = cr().enabled && !e; // النشر الجديد بالرصيد
+  if (paid && f.durIdx === 0) f.durIdx = 3; // بدون انتهاء ما يصلح مع الرصيد
+  const pubItem = cr().items.publish || { price: 0, unit: "day" };
+  const daysOf = () => {
+    if (f.percentMode && f.tiered) return f.days.length;
+    if (f.durIdx === -1) return +f.customDays || 0;
+    return X.DURATIONS[f.durIdx]?.days || 0;
   };
   const NEW_DUR = X.DURATIONS.findIndex((d) => d.days === 14); // جديدنا: أسبوعين افتراضياً
   if (!e && f.kind === "new") f.durIdx = NEW_DUR;
@@ -345,11 +479,13 @@ export async function openOfferForm(editing) {
       <div class="section-title">🔜 متى يبدأ؟</div>
       <div class="row2"><button class="chip${!f.start ? " on" : ""}" id="oNow">الحين</button><input type="date" id="oStart" class="input" value="${startStr()}"></div>
       ${isNew ? "" : `<label class="switch-row"><span>🎉 عرض افتتاح (محل جديد)</span><input type="checkbox" id="oOpen" ${f.opening ? "checked" : ""}></label>`}
-      ${f.percentMode && f.tiered ? "" : `<div class="section-title">⏰ ${isNew ? "كم يظهر كـ «جديد»؟" : "مدة العرض"}</div><div class="chips wrap">
+      ${exclusiveOf(state.config).enabled ? `<label class="switch-row"><span>${esc(exclusiveOf(state.config).icon)} ${esc(exclusiveOf(state.config).label)} <small class="hint">(العرض متاح لعملاء حيّنا بس)</small></span><input type="checkbox" id="oExcl" ${f.exclusive ? "checked" : ""}></label>` : ""}
+      ${cr().enabled && e ? `<div class="hint-box">⏰ لتمديد مدة العرض أو تمييزه استخدم زر 🚀 في قائمة عروضك.</div>` : f.percentMode && f.tiered ? "" : `<div class="section-title">⏰ ${isNew ? "كم يظهر كـ «جديد»؟" : "مدة العرض"}</div><div class="chips wrap">
         ${e ? `<button class="chip${f.keepExpiry ? " on" : ""}" data-dur="keep">بدون تغيير (${esc(X.remainingText(e)?.t || "بدون انتهاء")})</button>` : ""}
-        ${X.DURATIONS.map((d, i) => `<button class="chip${!f.keepExpiry && f.durIdx === i ? " on" : ""}" data-dur="${i}">${d.label}</button>`).join("")}
+        ${X.DURATIONS.map((d, i) => paid && !d.days ? "" : `<button class="chip${!f.keepExpiry && f.durIdx === i ? " on" : ""}" data-dur="${i}">${d.label}</button>`).join("")}
         <button class="chip${!f.keepExpiry && f.durIdx === -1 ? " on" : ""}" data-dur="-1">✎ عدد أيام</button></div>
         ${!f.keepExpiry && f.durIdx === -1 ? `<input id="oDays" class="input" inputmode="numeric" maxlength="2" value="${esc(f.customDays)}" placeholder="كم يوم؟ مثال: 2">` : ""}`}
+      ${paid ? `<div class="cost-line" id="oCost">💰 تكلفة النشر: <b>${daysOf()} ${daysOf() === 1 ? "يوم" : "أيام"} × ${pubItem.price} = ${costOf(pubItem, daysOf())} نقطة</b> • رصيدك ${bal()}${bal() < costOf(pubItem, daysOf()) ? ` <span class="err">— ما يكفي، اشحن رصيدك</span>` : ""}</div>` : ""}
       <small class="hint">بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة. ✨ التعبئة الذكية من الصورة متاحة في تطبيق أندرويد.</small>
     </div>`;
     const set = (id, k) => { const el = $(id); if (el) el.oninput = (ev) => { f[k] = ev.target.value; dirty = true; }; };
@@ -370,6 +506,7 @@ export async function openOfferForm(editing) {
     $("oNow").onclick = () => { f.start = null; render(); };
     $("oStart").onchange = (ev) => { if (!ev.target.value) { f.start = null; } else { const [y, mo, d] = ev.target.value.split("-").map(Number); f.start = new Date(y, mo - 1, d).getTime(); } render(); };
     $("oOpen")?.addEventListener("change", (ev) => { f.opening = ev.target.checked; });
+    $("oExcl")?.addEventListener("change", (ev) => { f.exclusive = ev.target.checked; dirty = true; });
     body.querySelectorAll("[data-kind]").forEach((b) => b.onclick = () => {
       if (f.kind === b.dataset.kind) return;
       f.kind = b.dataset.kind; dirty = true;
@@ -377,7 +514,8 @@ export async function openOfferForm(editing) {
       if (f.kind === "new") f.opening = false;
       render();
     });
-    $("oDays")?.addEventListener("input", (ev) => { f.customDays = ev.target.value.replace(/\D/g, "").slice(0, 2); });
+    $("oDays")?.addEventListener("input", (ev) => { f.customDays = ev.target.value.replace(/\D/g, "").slice(0, 2); const c = $("oCost"); if (c) { ev.target.value = f.customDays; } });
+    $("oDays")?.addEventListener("change", () => { if (paid) render(); });
     body.querySelectorAll("[data-dur]").forEach((b) => b.onclick = () => { if (b.dataset.dur === "keep") f.keepExpiry = true; else { f.keepExpiry = false; f.durIdx = +b.dataset.dur; } render(); });
   };
   openPage(e ? "تعديل العرض" : "عرض جديد", "", `<div id="oErr" class="err"></div><button class="btn dir big" id="oSave">${e ? "حفظ التعديلات ✓" : "انشر العرض ✨"}</button>`,
@@ -408,6 +546,8 @@ export async function openOfferForm(editing) {
     if (f.start && f.start > now + 60 * DAY) return err("تاريخ البداية بعيد، اختر تاريخ خلال شهرين.");
     if (expiry != null && expiry <= now) return err("حسب التاريخ والمدة العرض منتهي، عدّل البداية أو المدة.");
     const direct = canPublishDirectly();
+    const pubDays = paid ? (useTiers ? steps.length : Math.max(1, Math.round(((expiry || 0) - base) / DAY))) : 0;
+    if (paid && !m.ctx?.isAdmin && bal() < costOf(pubItem, pubDays)) return err(`رصيدك ما يكفي للنشر (تحتاج ${costOf(pubItem, pubDays)} نقطة، رصيدك ${bal()}). اشحن رصيدك من لوحة التاجر.`);
     if (!e && !direct && m.offers.filter((o) => (X.ms(o.createdAt) || 0) > now - DAY).length >= DAILY_LIMIT)
       return err(`وصلت للحد اليومي (${DAILY_LIMIT} عروض) للحسابات الجديدة. جرّب بكرة 🙏`);
     saving = true; $("oSave").disabled = true; $("oSave").textContent = "جاري رفع العرض…"; err("");
@@ -426,7 +566,7 @@ export async function openOfferForm(editing) {
         workingHours: X.hoursText(primary) ? "يومياً " + X.hoursText(primary) : "",
         expiresAt: expiry != null ? Timestamp.fromMillis(expiry) : null, startsAt: f.start ? Timestamp.fromMillis(f.start) : null,
         discountPercent: f.percentMode ? discount : 0, dailyPercents: useTiers ? steps : [], itemsScope: f.percentMode ? f.scope.trim().slice(0, 40) : "",
-        grandOpening: isNew ? false : f.opening, tags: f.tags.split(/[,،\n#]/).map((t) => t.trim()).filter((t) => t && t.length <= 25).slice(0, 12),
+        grandOpening: isNew ? false : f.opening, exclusive: !!f.exclusive && exclusiveOf(state.config).enabled, tags: f.tags.split(/[,،\n#]/).map((t) => t.trim()).filter((t) => t && t.length <= 25).slice(0, 12),
         delivery: f.delivery, deliveryFee: f.delivery ? Number(f.fee) || 0 : 0, deliveryMinOrder: f.delivery ? Number(f.min) || 0 : 0,
         deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0,
         logoUrl: p.logoUrl || "", branches: branches.slice(0, 50),
@@ -435,15 +575,24 @@ export async function openOfferForm(editing) {
         await updateDoc(doc(db, "offers", e.id), { ...data, isApproved: direct ? e.isApproved : false });
       } else {
         const ref = doc(collection(db, "offers"));
-        await setDoc(ref, { ...data, id: ref.id, merchantId: state.user.uid, isApproved: direct, isFeatured: false,
-          viewsCount: 0, directionsCount: 0, whatsappCount: 0, reportsCount: 0, createdAt: serverTimestamp() });
+        const offerDoc = { ...data, id: ref.id, merchantId: state.user.uid, isApproved: direct, isFeatured: false,
+          viewsCount: 0, directionsCount: 0, whatsappCount: 0, reportsCount: 0, createdAt: serverTimestamp() };
+        if (paid) {
+          // العرض + خصم النشر في عملية وحدة: يا يصيرون كلهم يا ولا شي
+          const wb = writeBatch(db);
+          wb.set(ref, offerDoc);
+          if (addSpend(wb, { item: "publish", offerId: ref.id, days: pubDays, startsAt: base, note: `📢 نشر: ${data.offerTitle}` }) == null) throw Object.assign(new Error("balance"), { code: "balance" });
+          await wb.commit();
+        } else await setDoc(ref, offerDoc);
       }
       await setDoc(doc(db, "merchants", state.user.uid), { delivery: data.delivery, deliveryFee: data.deliveryFee, deliveryMinOrder: data.deliveryMinOrder, deliveryFreeOver: data.deliveryFreeOver }, { merge: true }).catch(() => {});
       saving = false; dirty = false; closePage(false);
       toast(!direct ? "وصل للمراجعة ⏳ بيظهر على الخريطة بعد الموافقة" : e ? "تم حفظ التعديلات ✅" : isNew ? "تم نشر منتجك الجديد ✨" : "تم نشر العرض ✅", true);
     } catch (ex) {
       console.error(ex); saving = false; $("oSave").disabled = false; $("oSave").textContent = e ? "حفظ التعديلات ✓" : "انشر العرض ✨";
-      err(ex.code === "permission-denied" ? "رفض النشر (صلاحيات). تأكد إن حسابك مو موقوف أو تواصل معنا." : (ex.message || "تعذّر النشر"));
+      err(ex.code === "balance" ? "رصيدك ما يكفي للنشر. اشحن رصيدك من لوحة التاجر."
+        : ex.code === "permission-denied" ? (paid ? "رفض النشر: تأكد من رصيدك وحدّث الصفحة، أو تواصل معنا." : "رفض النشر (صلاحيات). تأكد إن حسابك مو موقوف أو تواصل معنا.")
+        : (ex.message || "تعذّر النشر"));
     }
   };
 }

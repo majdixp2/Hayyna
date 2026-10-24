@@ -11,6 +11,7 @@ import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
 import { startI18n } from "./i18n.js";
+import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
 startI18n();
 
 const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf, km, distText, openNow, hoursText,
@@ -26,7 +27,7 @@ export const state = {
   offers: [], stores: [], q: "", cat: "الكل", sort: "near", openOnly: false, browse: null,
   me: null, selected: null, branchId: null, view: null, tab: "map",
   favs: new Set(), user: null, role: null, profile: null, scope: "all", roleLoading: false, pendingRole: null,
-  config: {}, loaded: false, storesLoaded: false, referrals: [], fresh: false, kind: "all",
+  config: {}, loaded: false, storesLoaded: false, referrals: [], boosts: [], fresh: false, kind: "all",
 };
 
 // ---------------- الإحالات: مين دعا المحل ----------------
@@ -136,10 +137,15 @@ export function toggleFav(id) {
 // ---------------- الفلترة ----------------
 // نزل اليوم (آخر 24 ساعة)
 const isFresh = (o, now = Date.now()) => { const t = X.ms(o.startsAt) || X.ms(o.createdAt); return !!t && t <= now && now - t < 864e5; };
+// الخدمات المدفوعة (تمييز / بارز) + شارة الحصري
+const isFeat = (o) => !!o.isFeatured || activeEffects(state.boosts, o.id).feature;
+const isListTop = (o) => activeEffects(state.boosts, o.id).listTop;
+const exclBadge = (o, cls = "") => { const ex = exclusiveOf(state.config); return o.exclusive && ex.enabled ? `<span class="xbadge ${cls}" style="background:${esc(ex.color)}">${esc(ex.icon)} ${esc(ex.label)}</span>` : ""; };
 function filtered({ ignoreQuery = false } = {}) {
   const now = Date.now(), q = ignoreQuery ? "" : norm(state.q), catKey = state.cat.replace(/[^\p{L}\s]/gu, "").trim();
   const list = state.offers.filter((o) => {
     if (X.isExpired(o, now) || (o.reportsCount || 0) >= AUTO_HIDE_REPORTS) return false;
+    if (!isPaidUp(o, state.boosts, creditsOf(state.config), now)) return false;
     if (state.cat !== "الكل" && !String(o.cuisineType || "").includes(catKey)) return false;
     if (state.openOnly && !branchesOf(o).some((b) => openNow(b) === true)) return false;
     if (state.fresh && !isFresh(o, now)) return false;
@@ -149,7 +155,7 @@ function filtered({ ignoreQuery = false } = {}) {
       ...branchesOf(o).flatMap((b) => [b.district, b.landmark, b.name])];
     return hay.some((h) => norm(h).includes(q));
   }).map((o) => ({ o, ...nearestBranch(o) }));
-  const feat = (a, b) => (b.o.isFeatured ? 1 : 0) - (a.o.isFeatured ? 1 : 0);
+  const feat = (a, b) => (isFeat(b.o) ? 1 : 0) - (isFeat(a.o) ? 1 : 0);
   if (state.sort === "cheap") list.sort((a, b) => feat(a, b) || ((a.o.price > 0 ? a.o.price : 1e9) - (b.o.price > 0 ? b.o.price : 1e9)));
   else if (state.sort === "discount") list.sort((a, b) => feat(a, b) || effectivePercent(b.o) - effectivePercent(a.o));
   else if (state.sort === "new") list.sort((a, b) => feat(a, b) || (X.ms(b.o.createdAt) || 0) - (X.ms(a.o.createdAt) || 0));
@@ -210,7 +216,8 @@ let map = null, fitted = false;
 function markerHtml(o, extra, on) {
   const bd = badge(o);
   const logo = o.logoUrl ? `<img class="lg" src="${esc(cld(o.logoUrl, 80))}" alt="">` : "";
-  return `<div class="mk${on ? " on" : ""}${o.isFeatured ? " feat" : ""}${o.postType === "new" ? " isnew" : ""}"><div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
+  const ex = exclusiveOf(state.config);
+  return `<div class="mk${on ? " on" : ""}${isFeat(o) ? " feat" : ""}${o.postType === "new" ? " isnew" : ""}">${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
     + (extra > 0 ? `<span class="more">+${extra}</span>` : "")
     + (bd ? `<span class="pct${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : "") + `</div>`;
 }
@@ -225,9 +232,9 @@ function renderMap(list) {
   }));
   const items = [];
   groups.forEach(({ b, items: arr }) => {
-    arr.sort((x, y) => (y.isFeatured ? 1 : 0) - (x.isFeatured ? 1 : 0) || effectivePercent(y) - effectivePercent(x));
+    arr.sort((x, y) => (isFeat(y) ? 1 : 0) - (isFeat(x) ? 1 : 0) || effectivePercent(y) - effectivePercent(x));
     const top = arr[0], on = state.selected === top.id;
-    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : top.isFeatured ? 500 : 10,
+    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : isFeat(top) ? 500 : 10,
       onClick: () => { state.selected = top.id; renderAll(); scrollCardIntoView(top.id); if (arr.length > 1) openGroup(arr); } });
   });
   map.setMarkers(items);
@@ -261,7 +268,7 @@ function carouselCard({ o, b, d }) {
       <div class="title">${esc(o.offerTitle)}</div>
       <div class="price">${esc(priceLabel(o))}${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)}</s>` : ""}</div>
       <div class="meta">${esc(meta)}</div>
-      <div class="pills">${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+      <div class="pills">${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
     </div></div>`;
 }
 function listCard(o) {
@@ -274,7 +281,7 @@ function listCard(o) {
       <div class="title">${esc(o.offerTitle)}</div>
       <div class="price">${esc(priceLabel(o, true))}${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)}</s>` : ""}</div>
       <div class="meta">${esc([districtLabel(b.district || o.district), distText(d), deliveryText(o) || ""].filter(Boolean).join(" • "))}</div>
-      <div class="pills">${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+      <div class="pills">${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
     </div></div>`;
 }
 function scrollCardIntoView(id) {
@@ -304,7 +311,9 @@ export function renderAll() {
     + `<button class="chip${state.openOnly ? " on" : ""}" data-open="1">● مفتوح الآن</button>`
     + `<button class="chip${state.kind === "new" ? " on" : ""}" data-kind="1">✨ جديدنا</button>`
     + `<button class="chip${state.fresh ? " on" : ""}" data-fresh="1">🆕 نزل اليوم${state.fresh ? " ✕" : ""}</button>`;
-  $("list").innerHTML = list.length ? list.map(({ o }) => listCard(o)).join("") : `<div class="empty-inline">ما فيه عروض مطابقة</div>`;
+  const pins = list.filter(({ o }) => isListTop(o));
+  $("list").innerHTML = (pins.length ? `<div class="pinned"><div class="ptitle">📌 إعلانات بارزة</div>${pins.map(({ o }) => listCard(o).replace('class="lcard"', 'class="lcard pin"')).join("")}</div>` : "")
+    + (list.length ? list.filter(({ o }) => !isListTop(o)).map(({ o }) => listCard(o)).join("") : `<div class="empty-inline">ما فيه عروض مطابقة</div>`);
   // المفضلة
   const favList = state.offers.filter((o) => state.favs.has(o.id) && !X.isExpired(o));
   $("favs").innerHTML = favList.length ? favList.map(listCard).join("")
@@ -342,7 +351,7 @@ export function openOffer(id, push) {
           ${store ? `<button class="btn-soft" data-store="${esc(store.uid)}">🏪 صفحة المتجر ›</button>` : ""}
         </div>
         <h1 class="title">${esc(o.offerTitle)}</h1>
-        <div class="pills">${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+        <div class="pills">${exclBadge(o)}${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
         <div class="row3">
           <button class="btn-out" data-act="fav">${heartSvg(fav)} ${fav ? "محفوظ" : "حفظ"}</button>
           <button class="btn-out" data-act="share">↗︎ مشاركة</button>
@@ -1068,7 +1077,10 @@ onAuthStateChanged(auth, async (u) => {
 });
 
 // ---------------- البيانات ----------------
-onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); }, () => {});
+onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); if (state.loaded) renderAll(); }, () => {});
+onSnapshot(query(collection(db, "boosts"), where("endsAt", ">", Timestamp.now())), (snap) => {
+  state.boosts = snap.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.loaded) renderAll();
+}, () => {});
 onSnapshot(query(collection(db, "offers"), where("isApproved", "==", true)), (snap) => {
   state.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
   const first = !state.loaded; state.loaded = true;
