@@ -581,7 +581,7 @@ fun OfferCircleMarker(
     // عادي رصاصي فاتح، المختار أخضر، المميّز ذهبي (بهالة ذهبية)
     val ringColor = when {
         isSelected -> CalmSagePrimary
-        offer.isFeatured -> Color(0xFFF5B301)
+        offer.isFeatured -> Color(0xFFFFD166)
         else -> Color(0xFFD1D5DB)
     }
     val circleSize = if (isSelected) 54.dp else 46.dp
@@ -611,7 +611,7 @@ fun OfferCircleMarker(
 
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(circleSize + if (offer.isFeatured && !isSelected) 14.dp else 6.dp)) {
             if (offer.isFeatured && !isSelected) Box(
-                Modifier.size(circleSize + 12.dp).background(Color(0x55F5B301), CircleShape)
+                Modifier.size(circleSize + 12.dp).background(Color(0x66FFD166), CircleShape)
             )
             Surface(
                 shape = CircleShape,

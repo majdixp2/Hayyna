@@ -20,6 +20,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/app.css">
+  <script>
+    // المظهر واللغة قبل الرسم (بدون وميض)
+    try {
+      var t = localStorage.getItem("hayyna_theme") || "auto", l = localStorage.getItem("hayyna_lang") || "ar";
+      var d = t === "dark" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = d ? "dark" : "light";
+      if (l === "en") { document.documentElement.lang = "en"; document.documentElement.dir = "ltr"; }
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <!-- ===== تبويب الخريطة ===== -->
@@ -52,6 +61,7 @@
   <section id="tab-list" class="tab page">
     <header class="page-head">
       <h1>العروض</h1>
+      <div class="list-search"><span>🔍</span><input id="lq" type="search" placeholder="ابحث في العروض: شاورما، قهوة، اسم محل…" autocomplete="off" enterkeyhint="search"><button id="lqClear" class="icon-btn hidden" aria-label="مسح">✕</button></div>
       <div class="sortbar" id="sortbar"></div>
     </header>
     <div id="list" class="list"></div>

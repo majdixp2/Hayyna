@@ -15,6 +15,22 @@ export const CLEAN_STYLE = [
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#D3E3EA" }] },
   { featureType: "water", elementType: "labels", stylers: [{ visibility: "off" }] },
 ];
+// الوضع الداكن: نفس الستايل بألوان ليلية هادية
+const DARK_COLORS = [
+  { elementType: "geometry", stylers: [{ color: "#1B2320" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#8C9A93" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#141B18" }] },
+  { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#1B2320" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#2B3531" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#4A4130" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#7D8A84" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#1F3328" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#102A33" }] },
+  { featureType: "administrative.neighborhood", elementType: "labels.text.fill", stylers: [{ color: "#9FB3A8" }] },
+  { featureType: "poi.business", elementType: "labels.text.fill", stylers: [{ color: "#76827C" }] },
+  { featureType: "poi.business", elementType: "labels.text.stroke", stylers: [{ color: "#141B18" }] },
+];
+const styleFor = (shops, dark) => dark ? [...(shops ? SHOPS_STYLE : CLEAN_STYLE), ...DARK_COLORS] : (shops ? SHOPS_STYLE : CLEAN_STYLE);
 const SHOPS_STYLE = [...CLEAN_STYLE,
   { featureType: "poi.business", stylers: [{ visibility: "on" }] },
   { featureType: "poi.business", elementType: "labels.icon", stylers: [{ saturation: -75 }, { lightness: 30 }] },
@@ -93,6 +109,7 @@ export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 1
     setPin: (lat, lng) => { last.pin = [lat, lng]; impl.setPin(lat, lng); },
     setCircle: (c) => { last.circle = c; impl.setCircle(c); },
     setShowShops: (on) => impl.setShowShops?.(on),
+    setDark: (d) => impl.setDark?.(d),
     placeInfo: (id) => impl.placeInfo ? impl.placeInfo(id) : Promise.resolve({ name: "", phone: "" }),
     center: () => impl.center(),
     resize: () => impl.resize(),
@@ -106,7 +123,7 @@ window.gm_authFailure = () => { googleFailed = true; googleFailHandlers.forEach(
 
 function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
   const map = new g.Map(el, {
-    center: { lat: center[0], lng: center[1] }, zoom, styles: showShops ? SHOPS_STYLE : CLEAN_STYLE,
+    center: { lat: center[0], lng: center[1] }, zoom, styles: styleFor(showShops, document.documentElement.dataset.theme === "dark"),
     disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: !!(showShops && onPoiClick), backgroundColor: "#F5F3EF",
   });
   class Html extends g.OverlayView {
@@ -121,6 +138,7 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
     setPos(pos) { this.pos = new g.LatLng(pos.lat, pos.lng); this.draw(); }
   }
   const layers = { markers: [], dots: [] };
+  let shopsOn = showShops, dark = document.documentElement.dataset.theme === "dark";
   let me = null, pin = null, circle = null;
   const node = (html, cls, onClick) => {
     const d = document.createElement("div"); d.className = "ov " + (cls || ""); d.innerHTML = html;
@@ -138,7 +156,8 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
   });
   return {
     kind: "google",
-    setShowShops: (on) => map.setOptions({ styles: on ? SHOPS_STYLE : CLEAN_STYLE, clickableIcons: !!(on && onPoiClick) }),
+    setShowShops: (on) => { shopsOn = on; map.setOptions({ styles: styleFor(on, dark), clickableIcons: !!(on && onPoiClick) }); },
+    setDark: (d) => { dark = d; map.setOptions({ styles: styleFor(shopsOn, d), backgroundColor: d ? "#1B2320" : "#F5F3EF" }); },
     // اسم المحل ورقمه من خرائط Google (Places API New) — لحظة الضغط بس، وما نخزّنه
     placeInfo: async (placeId) => {
       try {

@@ -10,6 +10,8 @@ import {
 import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
+import { startI18n } from "./i18n.js";
+startI18n();
 
 const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf, km, distText, openNow, hoursText,
   remainingText, tiersText, startsText, deliveryText, badge, waDigits, norm, districtLabel, money, gallery, videoThumb } = X;
@@ -471,7 +473,7 @@ async function openPoi({ placeId, lat, lng }) {
   showSheet(`<div class="pad poi-card">
     <div class="poi-ico">🏪</div>
     <div class="section-title" style="text-align:center">${esc(shown)}</div>
-    <p class="desc" style="text-align:center">هذا المحل مو مسجّل في حيّنا للحين</p>
+    <p class="desc tr" style="text-align:center">هذا المحل مو مسجّل في حيّنا للحين</p>
     ${inviteHtml}
     ${phone && !mobile ? `<a class="btn call" href="tel:${esc(phone.replace(/[^\d+]/g, ""))}">📞 اتصل بالمحل (${esc(phone)})</a>` : ""}
     ${!state.user || isMerchant ? `<button class="btn dir" id="poiClaim">🏪 أنا صاحب المحل — سجّله</button>`
@@ -538,6 +540,44 @@ function openPlaces() {
   $("placeQ").oninput = (e) => { const q = norm(e.target.value); body.querySelectorAll("[data-i]").forEach((el) => el.classList.toggle("hidden", q && !norm(el.textContent).includes(q))); };
 }
 
+// ---------------- الإعدادات: المظهر واللغة والحساب ----------------
+export const prefs = {
+  get theme() { try { return localStorage.getItem("hayyna_theme") || "auto"; } catch { return "auto"; } },
+  get lang() { try { return localStorage.getItem("hayyna_lang") || "ar"; } catch { return "ar"; } },
+};
+const darkMQ = matchMedia("(prefers-color-scheme: dark)");
+export const isDark = () => prefs.theme === "dark" || (prefs.theme === "auto" && darkMQ.matches);
+export function applyTheme() {
+  const dark = isDark();
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#0F1A15" : "#2D6A4F");
+  map?.setDark?.(dark);
+}
+darkMQ.addEventListener?.("change", () => { if (prefs.theme === "auto") applyTheme(); });
+function openSettings() {
+  const seg = (name, cur, opts) => `<div class="seg" data-seg="${name}">${opts.map(([v, l]) => `<button class="${cur === v ? "on" : ""}" data-v="${v}">${l}</button>`).join("")}</div>`;
+  showSheet(`<div class="pad settings">
+    <div class="section-title">⚙️ الإعدادات</div>
+    <div class="set-label">🌓 المظهر</div>
+    ${seg("theme", prefs.theme, [["auto", "تلقائي"], ["light", "☀️ فاتح"], ["dark", "🌙 داكن"]])}
+    <div class="set-label">🌐 اللغة</div>
+    ${seg("lang", prefs.lang, [["ar", "العربية"], ["en", "English"]])}
+    ${state.user ? `<div class="set-label">👤 الحساب</div>
+      <button class="btn ghost danger-text" id="setDelete">🗑️ حذف الحساب نهائياً</button>
+      <small class="hint">يحذف بياناتك ومفضلتك${state.role === "merchant" ? " وصفحة متجرك وعروضك" : ""}، وما يمكن استرجاعها.</small>` : ""}
+    <div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div>
+  </div>`);
+  const body = $("sheetBody");
+  body.querySelectorAll("[data-seg] button").forEach((b) => b.onclick = () => {
+    const name = b.parentElement.dataset.seg, v = b.dataset.v;
+    try { localStorage.setItem("hayyna_" + name, v); } catch {}
+    b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    if (name === "theme") applyTheme();
+    if (name === "lang") { toast(v === "en" ? "Switching to English…" : "جاري التحويل للعربية…"); setTimeout(() => location.replace("/"), 350); }
+  });
+  $("setDelete")?.addEventListener("click", () => { hideSheet(); confirmDeleteAccount(); });
+}
+
 // ---------------- حسابي (أهل الحي) ----------------
 function renderCustomer(el, { name, pr, u, support, foot }) {
   const now = Date.now();
@@ -575,6 +615,7 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
 
 
       <div class="menu">
+        ${row("settingsRow", "⚙️", "الإعدادات", "المظهر، اللغة، الحساب")}
         ${canOfferInstall() ? row("installAcc", "📲", "ثبّت حيّنا على جوالك", "يفتح بشاشة كاملة مثل التطبيق") : ""}
         ${row("contactBtn", "💬", "تواصل معنا", "اقتراح، مشكلة، أو محل تبيه ينضم")}
         ${row("", "🟢", "واتساب الدعم", esc(support), `https://wa.me/${waDigits(support)}`)}
@@ -585,6 +626,8 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
   el.querySelector(".acc-foot .legal")?.remove();
   el.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => { const g = b.dataset.go; if (g === "locate") { setTab("map"); locate(true); } else if (g === "fresh") { state.fresh = true; state.scope = "all"; renderAll(); setTab("list"); } else setTab(g); });
   $("contactBtn").onclick = openContact;
+  $("settingsRow").onclick = openSettings;
+  el.querySelector(".acc-foot #settingsBtn")?.remove(); // موجودة في القائمة فوق
   $("inviteFriend").onclick = inviteFriend;
   $("howPts")?.addEventListener("click", howPoints);
 }
@@ -634,11 +677,13 @@ export function renderAccount() {
         <button class="role-card" data-login="customer"><div class="rc-ico">🏡</div><div><b>أنا من أهل الحي</b><br><small>أدوّر عروض المحلات حولي، وأحفظ اللي يعجبني</small></div></button>
         <button class="role-card" data-login="merchant"><div class="rc-ico">🏪</div><div><b>أنا صاحب محل</b><br><small>انشر عروضك مجاناً وخلّ أهل الحي يوصلون لك</small></div></button>
         <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
+        <button class="btn call" id="settingsBtn">⚙️ الإعدادات</button>
         ${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت حيّنا على جوالك</button>` : ""}
         <div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div>
       </div>`;
     el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => openLogin(b.dataset.login));
     $("contactBtn").onclick = openContact;
+    $("settingsBtn").onclick = openSettings;
     if ($("installAcc")) $("installAcc").onclick = doInstall;
     return;
   }
@@ -651,8 +696,7 @@ export function renderAccount() {
   const head = `<div class="acc-user">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="">` : `<div class="avatar">${esc((name || "؟")[0])}</div>`}
     <div class="au-main"><b>${esc(name)}</b><br><small dir="ltr">${esc(X.toLocalPhone(pr.phone))}</small> <span class="pill role">${roleName(state.role)}</span></div>
     <button class="icon-btn" id="editProfile" aria-label="تعديل البيانات">✎</button></div>`;
-  const foot = `<div class="pad acc-foot">${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت حيّنا على جوالك</button>` : ""}<button class="btn ghost" id="logoutBtn">تسجيل الخروج</button>
-    <button class="btn ghost danger-text" id="deleteAcc">حذف الحساب</button><div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div></div>`;
+  const foot = `<div class="pad acc-foot">${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت حيّنا على جوالك</button>` : ""}<button class="btn call" id="settingsBtn">⚙️ الإعدادات</button><button class="btn ghost" id="logoutBtn">تسجيل الخروج</button><div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div></div>`;
   if (state.role === "merchant" || isAdmin) {
     el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
     import("./merchant.js").then((m) => m.renderMerchant($("merchantRoot"), { isAdmin, support, logout: doLogout, contact: openContact }));
@@ -662,7 +706,7 @@ export function renderAccount() {
   $("editProfile").onclick = () => openProfileEdit();
   $("logoutBtn").onclick = doLogout;
   if ($("installAcc")) $("installAcc").onclick = doInstall;
-  $("deleteAcc").onclick = confirmDeleteAccount;
+  if ($("settingsBtn")) $("settingsBtn").onclick = openSettings;
 }
 
 function renderOnboarding(el) {
@@ -874,8 +918,18 @@ $("chips").onclick = (e) => {
   renderAll();
 };
 let qt;
-$("q").oninput = (e) => { state.q = e.target.value; $("clearQ").classList.toggle("hidden", !state.q); clearTimeout(qt); qt = setTimeout(() => { fitted = false; renderAll(); }, 200); };
-$("clearQ").onclick = () => { $("q").value = ""; state.q = ""; $("clearQ").classList.add("hidden"); renderAll(); };
+$("q").oninput = (e) => setQuery(e.target.value, "q");
+$("clearQ").onclick = () => { setQuery(""); };
+// البحث مشترك بين الخريطة وقائمة العروض
+function setQuery(v, from) {
+  state.q = v;
+  if (from !== "q") $("q").value = v;
+  if (from !== "lq") $("lq").value = v;
+  $("clearQ").classList.toggle("hidden", !v); $("lqClear").classList.toggle("hidden", !v);
+  clearTimeout(qt); qt = setTimeout(() => { fitted = false; renderAll(); }, from ? 200 : 0);
+}
+$("lq").oninput = (e) => setQuery(e.target.value, "lq");
+$("lqClear").onclick = () => setQuery("");
 $("filterBtn").onclick = openFilters;
 $("placeBtn").onclick = openPlaces;
 
@@ -1031,6 +1085,7 @@ setInterval(renderAll, 60000);
 
 // الخريطة (تتحمّل بعد الواجهة)
 createMap($("map"), { key: MAPS_WEB_KEY, showShops: state.config.showGooglePoi !== false, onPoiClick: (p) => openPoi(p) }).then((m) => {
+  setTimeout(() => m?.setDark?.(isDark()), 0);
   map = m; if (state.me) map.setMe(state.me.lat, state.me.lng);
   map.setShowShops(state.config.showGooglePoi !== false);
   renderAll();
@@ -1045,3 +1100,5 @@ createMap($("map"), { key: MAPS_WEB_KEY, showShops: state.config.showGooglePoi !
   if (here !== "/" && /^\/(o|s)\//.test(location.pathname)) history.pushState({ v: 1 }, "", here);
 })();
 try { const t = sessionStorage.getItem("hayyna_tab"); if (t && !location.pathname.match(/^\/(o|s)\//)) setTab(t); } catch {}
+
+applyTheme();
