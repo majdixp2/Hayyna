@@ -465,7 +465,8 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .wallet-card { background: linear-gradient(135deg, #1F4D39, #2D6A4F); color: #fff; border-radius: 18px; padding: 14px; margin: 12px 0; }
 .wc-top { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 .wc-top > div:first-child { display: flex; flex-direction: column; }
-.wc-top b { font-size: 30px; line-height: 1.1; }
+.wc-top > div:first-child b { font-size: 30px; line-height: 1.1; }
+.wc-prices b { font-size: 13px; }
 .wc-top small { opacity: .85; font-size: 12px; }
 .wc-prices { display: flex; flex-direction: column; gap: 2px; font-size: 12px; opacity: .9; text-align: end; }
 .wc-act { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
