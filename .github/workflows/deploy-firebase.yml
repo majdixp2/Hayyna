@@ -37,16 +37,25 @@ jobs:
           grep -iE "Hosting URL" hosting.txt | sed 's/^/::notice::/' || true
       - name: Deploy Firestore rules
         if: steps.check.outputs.skip != 'true'
-        continue-on-error: true
         run: |
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
-          set -o pipefail
-          npx -y firebase-tools@14 deploy --only firestore:rules --project gen-lang-client-0536850806 --non-interactive 2>&1 | tee rules.txt || {
-            grep -iE "error|denied|permission|missing" rules.txt | head -8 | sed 's/^/::error::/'
+          # ننشر القواعد مباشرة عبر Firebase Rules API لقاعدة البيانات المسمّاة
+          # (firebase deploy كان يقول "complete" بدون ما ينشر شي لهالقاعدة)
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" >/dev/null 2>&1
+          TOKEN=$(gcloud auth print-access-token)
+          P=gen-lang-client-0536850806
+          DB=ai-studio-android-307cc811-cd30-4d36-b6c1-76e9fb2ac335
+          BODY=$(python3 -c 'import json; print(json.dumps({"source":{"files":[{"name":"firestore.rules","content":open("firestore.rules").read()}]}}))')
+          RS=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BODY" "https://firebaserules.googleapis.com/v1/projects/$P/rulesets")
+          NAME=$(echo "$RS" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("name",""))')
+          if [ -z "$NAME" ]; then
+            echo "$RS" | python3 -c 'import sys,json; d=json.load(sys.stdin).get("error",{}); print(d.get("message","")); [print(x) for x in [str(i) for i in d.get("details",[])][:5]]' | sed 's/^/::error title=rules compile::/'
             exit 1
-          }
-          # ملخص الأمر (يظهر كتنبيهات لأن السجل الكامل ما يوصل)
-          grep -iE "released|compiled|upload|skip|unchanged|deploy complete|rules file" rules.txt | head -10 | sed 's/\x1b\[[0-9;]*m//g; s/^/::notice title=rules deploy::/' || true
+          fi
+          REL=$(curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            -d "{\"release\":{\"name\":\"projects/$P/releases/cloud.firestore/$DB\",\"rulesetName\":\"$NAME\"}}" \
+            "https://firebaserules.googleapis.com/v1/projects/$P/releases/cloud.firestore/$DB")
+          echo "$REL" | python3 -c 'import sys,json; d=json.load(sys.stdin); e=d.get("error"); print(("::error title=rules release::"+e.get("message","")) if e else ("::notice title=rules released::"+d.get("rulesetName","")+" "+d.get("updateTime","")))'
+          echo "$REL" | grep -q '"error"' && exit 1 || true
       - name: Verify live rules
         if: steps.check.outputs.skip != 'true'
         continue-on-error: true
