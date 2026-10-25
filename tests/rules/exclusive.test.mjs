@@ -29,6 +29,7 @@ async function seed(reward) {
     await setDoc(doc(db, "offers/oX"), offer("oX", { exclusive: true }));
     await setDoc(doc(db, "offers/oN"), offer("oN", { exclusive: false }));
     await setDoc(doc(db, "offers/oD"), offer("oD", { exclusive: false, draft: true }));
+    await setDoc(doc(db, "merchantStatus/m1"), { trusted: true });
     await setDoc(doc(db, "wallets/m1"), { balance: 100, lastOp: { kind: "welcome", ref: "" }, updatedAt: Timestamp.now() });
   });
 }
