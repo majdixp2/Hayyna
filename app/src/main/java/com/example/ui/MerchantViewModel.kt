@@ -535,6 +535,148 @@ class MerchantViewModel(
         .onEach { ExclusiveBadge.label = if (it.exclusiveEnabled) "${it.exclusiveIcon} ${it.exclusiveLabel}" else "" }
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.repository.CreditsConfig())
 
+    // ---------------- رصيد العروض (المحفظة) ----------------
+    // الشراء برّا التطبيق (بدون أي رابط دفع)، وهنا نعرض الرصيد ونصرفه على النشر والتمييز والإبراز.
+
+    /** -1 = يحمّل، null = ما عنده محفظة، غيره = الرصيد */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val walletBalance: StateFlow<Long?> = currentUser
+        .flatMapLatest { u -> if (u == null) flowOf(null) else repository.walletBalance(u.uid) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, WALLET_LOADING)
+    private fun balance(): Long = walletBalance.value?.takeIf { it >= 0 } ?: 0L
+
+    val activeBoostsAll: StateFlow<List<com.example.data.repository.Boost>> = repository.activeBoosts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private var ensuringWallet = false
+    /** أول ما يفتح التاجر حسابه والرصيد مفعّل: ننشئ محفظته (مع هدية الترحيب). */
+    fun ensureWallet() {
+        val uid = currentUser.value?.uid ?: return
+        if (ensuringWallet || walletBalance.value != null || !creditsConfig.value.enabled) return
+        ensuringWallet = true
+        viewModelScope.launch {
+            val w = creditsConfig.value.welcome
+            runCatching { repository.createWelcomeWallet(uid, w) }
+                .onSuccess { if (w > 0) toast("🎁 أهلاً بك! أضفنا لك $w نقطة هدية") }
+                .onFailure { Log.w(TAG, "wallet: ${it.message}") }
+            ensuringWallet = false
+        }
+    }
+
+    data class Price(val item: com.example.data.repository.CreditItem, val days: Int, val full: Long, val cost: Long, val disc: Int)
+
+    /** تكلفة خدمة على عرض (النشر عليه خصم لو العرض حصري ومكافأة الحصري شغّالة). null = الخدمة موقفة. */
+    fun priceFor(itemId: String, days: Int, excl: Boolean): Price? {
+        val cr = creditsConfig.value
+        val it = cr.items[itemId]?.takeIf { it.active } ?: return null
+        val d = it.daysFor(days.coerceIn(1, 90))
+        val full = it.baseCost(d)
+        val disc = if (it.effect == "publish" && excl && cr.rewardOn) cr.rewardPercent else 0
+        val cost = if (disc > 0) Math.ceil(full * (100 - disc) / 100.0).toLong() else full
+        return Price(it, d, full, cost, disc)
+    }
+    private fun spendNote(note: String, disc: Int) = if (disc > 0) "$note (💎 ${if (disc >= 100) "مجاني" else "خصم $disc%"})" else note
+
+    private fun publishDaysOf(o: RestaurantOffer): Int {
+        if (o.dailyPercents.isNotEmpty()) return o.dailyPercents.size
+        val base = o.startsAt?.toDate()?.time ?: System.currentTimeMillis()
+        val exp = o.expiresAt?.toDate()?.time ?: return 7
+        return Math.round((exp - base) / 86_400_000.0).toInt().coerceIn(1, 90)
+    }
+
+    /** رسائل الرصيد: رصيد ما يكفي / انحفظت المسودة / نشر مسودة */
+    data class CreditPrompt(
+        val kind: String, val offer: RestaurantOffer? = null, val days: Int = 0, val fullCost: Long = 0, val exclCost: Long = 0,
+        val myCost: Long = 0, val balance: Long = 0, val exclOk: Boolean = false, val canPay: Boolean = false
+    ) {
+        companion object { const val SHORT = "short"; const val SAVED = "saved"; const val DRAFT = "draft" }
+    }
+    val creditPrompt = MutableStateFlow<CreditPrompt?>(null)
+    fun dismissCreditPrompt() { creditPrompt.value = null }
+
+    /** من رسالة "رصيدك ما يكفي": excl = خلّه حصري وانشره، غيره = احفظه مسودة */
+    fun resolveShortfall(makeExclusive: Boolean) {
+        val p = creditPrompt.value ?: return
+        val o = p.offer ?: return
+        creditPrompt.value = null
+        if (makeExclusive) saveOffer(o.copy(exclusive = true)) else saveOffer(o, asDraft = true)
+    }
+
+    /** زر "📢 انشر الحين" على المسودة */
+    fun openPublishDraft(o: RestaurantOffer) {
+        val days = publishDaysOf(o)
+        val full = priceFor("publish", days, false) ?: run { toast("خدمة النشر موقفة حالياً."); return }
+        val ex = priceFor("publish", days, true) ?: full
+        val mine = if (o.exclusive) ex else full
+        creditPrompt.value = CreditPrompt(
+            kind = CreditPrompt.DRAFT, offer = o, days = days, fullCost = full.cost, exclCost = ex.cost, myCost = mine.cost, balance = balance(),
+            canPay = isAdmin.value || balance() >= mine.cost,
+            exclOk = !o.exclusive && creditsConfig.value.rewardOn && balance() >= ex.cost && ex.cost < full.cost
+        )
+    }
+
+    fun publishDraft(makeExclusive: Boolean) {
+        val p = creditPrompt.value ?: return
+        val o = p.offer ?: return
+        val uid = currentUser.value?.uid ?: return
+        creditPrompt.value = null
+        val excl = o.exclusive || makeExclusive
+        val now = System.currentTimeMillis(); val dayMs = 86_400_000L
+        val st = o.startsAt?.toDate()?.time ?: 0L
+        val start = if (st > now) st else now
+        val tiers = o.dailyPercents.size
+        val pr = priceFor("publish", p.days, excl) ?: return
+        val expiry = if (tiers > 0) com.example.data.model.OfferPricing.midnight(start) + tiers * dayMs else start + pr.days * dayMs
+        if (!isAdmin.value && balance() < pr.cost) { toast("رصيدك ما يكفي."); return }
+        launchSafely("تعذّر النشر. جرّب مرة ثانية.") {
+            repository.spendOnOffer(
+                uid = uid, balance = balance(), charge = !isAdmin.value, offerId = o.id, item = pr.item, days = pr.days,
+                cost = if (isAdmin.value) pr.full else pr.cost, disc = if (isAdmin.value) 0 else pr.disc, startMillis = start,
+                note = spendNote("📢 نشر: ${o.offerTitle}", if (isAdmin.value) 0 else pr.disc),
+                offerUpdate = mapOf(
+                    "draft" to false, "exclusive" to excl,
+                    "startsAt" to com.google.firebase.Timestamp(java.util.Date(start)),
+                    "expiresAt" to com.google.firebase.Timestamp(java.util.Date(expiry))
+                )
+            )
+            toast(if (!o.isApproved) "انرسل للمراجعة ⏳ بيظهر بعد الموافقة" else if (pr.cost == 0L || isAdmin.value) "تم نشر العرض ✅" else "تم نشر العرض ✅ خصمنا ${pr.cost} نقطة")
+        }
+    }
+
+    // ----- شراء خدمة (تمديد نشر / تمييز / إبراز) لعرض موجود -----
+    val boostTarget = MutableStateFlow<RestaurantOffer?>(null)
+    fun openBoost(o: RestaurantOffer) { boostTarget.value = o }
+    fun closeBoost() { boostTarget.value = null }
+
+    /** كم إبراز نشط في نفس الحي (للحد الأقصى) */
+    fun spotlightsInDistrict(district: String): Int {
+        val now = System.currentTimeMillis(); val key = normalizeDistrict(district)
+        val ids = activeBoostsAll.value.filter { it.effect == "spotlight" && it.startsAt <= now && now < it.endsAt }.map { it.offerId }.toSet()
+        return (approvedOffers.value + merchantOffers.value).distinctBy { it.id }.count { it.id in ids && normalizeDistrict(it.district) == key }
+    }
+
+    fun buyBoost(o: RestaurantOffer, itemId: String, days: Int) {
+        val uid = currentUser.value?.uid ?: return
+        val pr = priceFor(itemId, days, o.exclusive) ?: return
+        if (!isAdmin.value && balance() < pr.cost) { toast("رصيدك ما يكفي (تحتاج ${pr.cost} نقطة)."); return }
+        val now = System.currentTimeMillis()
+        val pubUntil = activeBoostsAll.value.filter { it.offerId == o.id && it.effect == "publish" }.maxOfOrNull { it.endsAt } ?: 0L
+        val cr = creditsConfig.value
+        val created = o.createdAt?.toDate()?.time ?: now
+        val grace = if (cr.enabledAtMillis > 0 && created < cr.enabledAtMillis && cr.graceUntilMillis != Long.MAX_VALUE) cr.graceUntilMillis else 0L
+        // تمديد النشر يبدأ من نهاية النشر الحالي (أو نهاية فترة السماح)
+        val start = if (pr.item.effect == "publish") maxOf(now, pubUntil, grace) else now
+        boostTarget.value = null
+        launchSafely("تعذّرت العملية. جرّب مرة ثانية.") {
+            repository.spendOnOffer(
+                uid = uid, balance = balance(), charge = !isAdmin.value, offerId = o.id, item = pr.item, days = pr.days,
+                cost = if (isAdmin.value) pr.full else pr.cost, disc = if (isAdmin.value) 0 else pr.disc, startMillis = start,
+                note = spendNote("${pr.item.name} — ${o.offerTitle}", if (isAdmin.value) 0 else pr.disc)
+            )
+            toast(if (pr.cost == 0L || isAdmin.value) "تم ✅" else "تم ✅ خصمنا ${pr.cost} نقطة")
+        }
+    }
+
     /**
      * العروض الظاهرة: لما يكون رصيد العروض مفعّل، العرض الجديد لازم له "نشر" مدفوع،
      * والتمييز المدفوع يخلي العرض مميّز (حلقة صفراء وأول الترتيب).
@@ -543,6 +685,7 @@ class MerchantViewModel(
         combine(repository.approvedOffers, userLocation, creditsConfig, repository.activeBoosts, nowMillis) { offers, loc, cr, boosts, now ->
             val byOffer = boosts.groupBy { it.offerId }
             val visible = offers.mapNotNull { o ->
+                if (o.draft) return@mapNotNull null // المسودات ما تظهر للناس
                 val bs = byOffer[o.id].orEmpty()
                 val created = o.createdAt?.toDate()?.time ?: 0L
                 val inGrace = cr.enabledAtMillis > 0L && created < cr.enabledAtMillis && now < cr.graceUntilMillis
@@ -967,7 +1110,7 @@ class MerchantViewModel(
 
     // ---------------- إدارة العروض ----------------
 
-    fun saveOffer(offer: RestaurantOffer) {
+    fun saveOffer(offer: RestaurantOffer, asDraft: Boolean = false) {
         val user = currentUser.value
         if (user == null) {
             toast("سجّل الدخول بحساب Google أولاً لإضافة عرض")
@@ -977,9 +1120,22 @@ class MerchantViewModel(
             toast("حسابك موقوف حالياً. تواصل مع إدارة حيّنا.")
             return
         }
-        if (offer.id.isBlank() && creditsConfig.value.enabled && !isAdmin.value) {
-            toast("النشر صار برصيد العروض: انشر عرضك من لوحة التاجر في موقع حيّنا 🌐")
-            return
+        // نشر جديد بالرصيد: لو ما يكفي ما نرفض — نعرض الحصري (لو يغطيه) أو نحفظه مسودة
+        val paid = offer.id.isBlank() && creditsConfig.value.enabled
+        val pubDays = if (paid) publishDaysOf(offer) else 0
+        if (paid && !isAdmin.value && !asDraft) {
+            val full = priceFor("publish", pubDays, false)
+            val ex = priceFor("publish", pubDays, true)
+            val mine = if (offer.exclusive) ex else full
+            if (full == null || mine == null) { toast("خدمة النشر موقفة حالياً. تواصل معنا."); return }
+            if (balance() < mine.cost) {
+                creditPrompt.value = CreditPrompt(
+                    kind = CreditPrompt.SHORT, offer = offer, days = pubDays, fullCost = full.cost, exclCost = ex?.cost ?: full.cost,
+                    myCost = mine.cost, balance = balance(),
+                    exclOk = !offer.exclusive && creditsConfig.value.rewardOn && ex != null && balance() >= ex.cost
+                )
+                return
+            }
         }
         val direct = canPublishDirectly
         if (!direct && offer.id.isBlank()) {
@@ -1000,25 +1156,28 @@ class MerchantViewModel(
                 val uploaded = sources.map { MediaUploader.uploadOfferMedia(getApplication(), it, isVideo) }
                 val cloudUrl = uploaded.firstOrNull() ?: throw MediaUploader.UploadException("يرجى إرفاق صورة أو فيديو للعرض.")
                 val isUpdate = offer.id.isNotBlank()
-                if (isUpdate) {
+                val fresh = offer.copy(
+                    merchantId = user.uid, mediaUri = cloudUrl, mediaUris = uploaded, isFeatured = false, isApproved = direct,
+                    reportsCount = 0, viewsCount = 0, directionsCount = 0, whatsappCount = 0
+                )
+                if (!isUpdate && asDraft) {
+                    repository.insertOffer(fresh.copy(draft = true))
+                } else if (!isUpdate && paid) {
+                    // العرض + خصم النشر في عملية وحدة
+                    val pr = priceFor("publish", pubDays, fresh.exclusive) ?: throw IllegalStateException("خدمة النشر موقفة")
+                    val start = fresh.startsAt?.toDate()?.time ?: System.currentTimeMillis()
+                    repository.spendOnOffer(
+                        uid = user.uid, balance = balance(), charge = !isAdmin.value, offerId = "", item = pr.item, days = pr.days,
+                        cost = if (isAdmin.value) pr.full else pr.cost, disc = if (isAdmin.value) 0 else pr.disc, startMillis = start,
+                        note = spendNote("📢 نشر: ${fresh.offerTitle}", pr.disc), offer = fresh
+                    )
+                } else if (isUpdate) {
                     // تعديل التاجر غير الموثوق يرجّع العرض للمراجعة
                     repository.updateOffer(
                         offer.copy(mediaUri = cloudUrl, mediaUris = uploaded, isApproved = if (direct) offer.isApproved else false)
                     )
                 } else {
-                    repository.insertOffer(
-                        offer.copy(
-                            merchantId = user.uid,
-                            mediaUri = cloudUrl,
-                            mediaUris = uploaded,
-                            isFeatured = false,
-                            isApproved = direct,
-                            reportsCount = 0,
-                            viewsCount = 0,
-                            directionsCount = 0,
-                            whatsappCount = 0
-                        )
-                    )
+                    repository.insertOffer(fresh)
                 }
                 // نحفظ بيانات المطعم عشان تتعبّى تلقائياً في العرض الجاي
                 val old = merchantProfile.value
@@ -1042,6 +1201,10 @@ class MerchantViewModel(
                 merchantProfile.value = profile
                 runCatching { repository.saveMerchantProfile(user.uid, profile) }
                 closeAddOfferSheet()
+                if (!isUpdate && asDraft) {
+                    creditPrompt.value = CreditPrompt(kind = CreditPrompt.SAVED, offer = fresh, balance = balance())
+                    return@launch
+                }
                 toast(
                     when {
                         !direct -> "وصل عرضك للمراجعة ⏳ بيظهر على الخريطة بعد الموافقة"
@@ -1342,6 +1505,7 @@ class MerchantViewModel(
     }
 
     companion object {
+        const val WALLET_LOADING = -1L
         const val INVITE_LOCK_DAYS = 5
         private const val TAG = "MerchantViewModel"
         /** عدد البلاغات اللي يختفي بعدها العرض تلقائياً لين يراجعه الأدمن. */

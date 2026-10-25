@@ -101,6 +101,12 @@ fun MerchantStoreScreen(
 ) {
     val context = LocalContext.current
     val currentRole by viewModel.currentRole.collectAsStateWithLifecycle()
+    // رصيد العروض
+    val creditsCfg by viewModel.creditsConfig.collectAsStateWithLifecycle()
+    val walletBal by viewModel.walletBalance.collectAsStateWithLifecycle()
+    val boostsAll by viewModel.activeBoostsAll.collectAsStateWithLifecycle()
+    val creditPrompt by viewModel.creditPrompt.collectAsStateWithLifecycle()
+    val boostTarget by viewModel.boostTarget.collectAsStateWithLifecycle()
     val allOffers by viewModel.allOffers.collectAsStateWithLifecycle()
     val filteredCustomerOffers by viewModel.filteredCustomerOffers.collectAsStateWithLifecycle()
 
@@ -727,8 +733,18 @@ fun MerchantStoreScreen(
                                 onManageBranches = { viewModel.openBranchesPage() },
                                 isSuspended = myStatus?.suspended == true,
                                 isTrusted = isAdmin || (myStatus?.trusted == true && myStatus?.suspended != true),
+                                credits = if (creditsCfg.enabled && isMerchantLoggedIn) com.example.ui.components.MerchantCredits(
+                                    balance = (walletBal ?: 0L).coerceAtLeast(0L),
+                                    items = creditsCfg.items.values.filter { it.active }.sortedBy { it.order },
+                                    chips = { o -> com.example.ui.components.paidChipsFor(o, boostsAll, nowMillis) },
+                                    onPublishDraft = { viewModel.openPublishDraft(it) },
+                                    onBoost = { viewModel.openBoost(it) }
+                                ) else null,
                                 modifier = Modifier.fillMaxSize()
                             )
+                            androidx.compose.runtime.LaunchedEffect(creditsCfg.enabled, walletBal, isMerchantLoggedIn) {
+                                if (isMerchantLoggedIn) viewModel.ensureWallet()
+                            }
                         }
                     }
 
@@ -887,9 +903,44 @@ fun MerchantStoreScreen(
                 aiEnabled = aiConfig.first,
                 isAutofilling = isAutofilling,
                 onAutofill = { uri, onResult -> viewModel.autofillFromImage(uri, onResult) },
-                categories = categories
+                categories = categories,
+                publish = if (creditsCfg.enabled) creditsCfg.items["publish"]?.takeIf { it.active }?.let { pub ->
+                    com.example.ui.components.PublishInfo(
+                        balance = (walletBal ?: 0L).coerceAtLeast(0L), price = pub.price, perDay = pub.unit == "day",
+                        rewardOn = creditsCfg.rewardOn, rewardPercent = creditsCfg.rewardPercent, isAdmin = isAdmin,
+                        cost = { d, ex -> viewModel.priceFor("publish", d, ex).let { p -> (p?.full ?: 0L) to (p?.cost ?: 0L) } }
+                    )
+                } else null
             )
           }
+        }
+
+        // رسائل الرصيد (ما يكفي / انحفظت المسودة / نشر مسودة)
+        creditPrompt?.let { pr ->
+            com.example.ui.components.CreditPromptDialog(
+                prompt = pr,
+                rewardOn = creditsCfg.rewardOn,
+                rewardPercent = creditsCfg.rewardPercent,
+                onMakeExclusive = { if (pr.kind == MerchantViewModel.CreditPrompt.DRAFT) viewModel.publishDraft(true) else viewModel.resolveShortfall(true) },
+                onSaveDraft = { viewModel.resolveShortfall(false) },
+                onPublish = { viewModel.publishDraft(false) },
+                onDismiss = { viewModel.dismissCreditPrompt() }
+            )
+        }
+        // شراء خدمة لعرض (تمديد / تمييز / إبراز)
+        boostTarget?.let { o ->
+            val spotHere = boostsAll.any { it.offerId == o.id && it.effect == "spotlight" && it.startsAt <= nowMillis && nowMillis < it.endsAt }
+            com.example.ui.components.BoostDialog(
+                offer = o,
+                balance = if (isAdmin) 999_999L else (walletBal ?: 0L).coerceAtLeast(0L),
+                items = creditsCfg.items.values.filter { it.active }.sortedBy { it.order },
+                priceOf = { id, d -> viewModel.priceFor(id, d, o.exclusive).let { p -> (p?.full ?: 0L) to (p?.cost ?: 0L) } },
+                spotUsed = viewModel.spotlightsInDistrict(o.district),
+                spotMax = creditsCfg.spotlightMax,
+                spotActiveHere = spotHere,
+                onBuy = { id, d -> viewModel.buyBoost(o, id, d) },
+                onDismiss = { viewModel.closeBoost() }
+            )
         }
 
         // صفحة مطعمي وفروعي (الشعار + الفروع)

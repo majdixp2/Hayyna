@@ -66,6 +66,8 @@ data class RestaurantOffer(
     val postType: String = "offer",
     // 💎 حصري لعملاء حيّنا (مجاني، يعلّمه التاجر)
     val exclusive: Boolean = false,
+    // 📝 مسودة: محفوظة بس ما تظهر للناس (لين ينشرها التاجر برصيده)
+    val draft: Boolean = false,
     // 🚀 مُبرز (يُحسب من الخدمات المدفوعة النشطة، ما يُحفظ في العرض)
     @get:com.google.firebase.firestore.Exclude
     val spotlight: Boolean = false,

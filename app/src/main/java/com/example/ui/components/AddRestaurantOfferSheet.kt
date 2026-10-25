@@ -98,9 +98,14 @@ fun AddRestaurantOfferSheet(
     aiEnabled: Boolean = false,
     isAutofilling: Boolean = false,
     onAutofill: (imageUri: String, onResult: (com.example.data.AiAutofill.Draft) -> Unit) -> Unit = { _, _ -> },
-    categories: List<String> = com.example.data.repository.RestaurantOfferRepository.DEFAULT_CATEGORIES
+    categories: List<String> = com.example.data.repository.RestaurantOfferRepository.DEFAULT_CATEGORIES,
+    // رصيد العروض (null = النشر مجاني/الرصيد مطفي)
+    publish: PublishInfo? = null
 ) {
     val isEditing = editingOffer != null
+    val paid = publish != null && !isEditing
+    // الحصري ما ينشال بعد ما انتشر بخصم (لما المكافأة شغّالة)
+    val exclLocked = editingOffer?.exclusive == true && publish?.rewardOn == true && publish.isAdmin.not()
     val profileBranches = profile?.branches.orEmpty()
     val hasBranches = profileBranches.isNotEmpty()
 
@@ -169,7 +174,7 @@ fun AddRestaurantOfferSheet(
     var isOpen24h by remember { mutableStateOf(startOpen != null && startOpen == startClose) }
 
     // ---------- المدة ----------
-    var expiryOptionIndex by remember { mutableStateOf(0) }
+    var expiryOptionIndex by remember { mutableStateOf(if (paid) 1 else 0) } // النشر بالرصيد يحتاج مدة
     // مدة مخصصة بالأيام (expiryOptionIndex = -1)
     var customDaysText by remember { mutableStateOf("") }
     var keepCurrentExpiry by remember { mutableStateOf(isEditing) }
@@ -239,6 +244,7 @@ fun AddRestaurantOfferSheet(
             )
         }
         errorMessage = when {
+            paid && !useTiers && newExpiry == null -> "اختر مدة العرض."
             restaurantName.isBlank() -> "يرجى كتابة اسم المتجر."
             offerTitle.isBlank() -> if (isNewProduct) "اكتب اسم المنتج." else "يرجى كتابة عنوان العرض."
             isNewProduct && price == null -> "اكتب سعر صحيح أو اتركه فاضي."
@@ -343,6 +349,8 @@ fun AddRestaurantOfferSheet(
                         .padding(top = 12.dp, bottom = 36.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    if (paid && publish != null && !publish.isAdmin) PublishBalanceBar(publish)
+
                     // ---------- الصور / الفيديو ----------
                     Card(
                         shape = RoundedCornerShape(12.dp),
@@ -497,7 +505,7 @@ fun AddRestaurantOfferSheet(
                                             keepCurrentExpiry = false
                                             val two = EXPIRY_OPTIONS.indexOfFirst { it.days == 14 }
                                             if (newKind) { if (two >= 0) expiryOptionIndex = two else { expiryOptionIndex = -1; customDaysText = "14" } }
-                                            else expiryOptionIndex = 0
+                                            else expiryOptionIndex = if (paid) 1 else 0
                                         }
                                     }
                                 },
@@ -751,8 +759,15 @@ fun AddRestaurantOfferSheet(
                         Text("🎉 عرض افتتاح (محل جديد)", fontSize = 13.sp)
                     }
                     if (ExclusiveBadge.label.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = exclusive, onCheckedChange = { exclusive = it })
-                        Text("${ExclusiveBadge.label} (لعملاء حيّنا بس)", fontSize = 13.sp)
+                        Checkbox(checked = exclusive, onCheckedChange = { exclusive = it }, enabled = !exclLocked)
+                        Column {
+                            Text("${ExclusiveBadge.label} (لعملاء حيّنا بس، يوري التطبيق عند الكاشير)", fontSize = 13.sp)
+                            if (publish?.rewardOn == true) Text(
+                                "🎁 " + if (publish.rewardPercent >= 100) "نشر العرض الحصري مجاني" else "خصم ${publish.rewardPercent}% على نشر العرض الحصري",
+                                fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF7C3AED)
+                            )
+                            if (exclLocked) Text("العرض انتشر كحصري، فما تقدر تشيل الحصري. لو تبيه لكل الناس احذفه وانشره من جديد.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
 
                     // ---------- المدة ----------
@@ -770,6 +785,7 @@ fun AddRestaurantOfferSheet(
                             }
                         }
                         items(EXPIRY_OPTIONS.size) { index ->
+                            if (paid && EXPIRY_OPTIONS[index].days == null) return@items // بدون انتهاء ما يصلح مع الرصيد
                             FilterChip(
                                 selected = !keepCurrentExpiry && expiryOptionIndex == index,
                                 onClick = {
@@ -802,6 +818,14 @@ fun AddRestaurantOfferSheet(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+                    }
+                    if (paid && publish != null) {
+                        val d = when {
+                            percentMode && tiered -> dayPercents.size
+                            expiryOptionIndex < 0 -> customDaysText.toIntOrNull()?.coerceIn(0, 90) ?: 0
+                            else -> EXPIRY_OPTIONS.getOrNull(expiryOptionIndex)?.days ?: 0
+                        }
+                        if (d > 0) PublishCostLine(publish, d, exclusive)
                     }
                     Text("بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

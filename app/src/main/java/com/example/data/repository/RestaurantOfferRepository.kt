@@ -406,7 +406,24 @@ class RestaurantOfferRepository(
             @Suppress("UNCHECKED_CAST")
             val ex = snap?.get("exclusive") as? Map<String, Any?> ?: emptyMap()
             trySend(
+                @Suppress("UNCHECKED_CAST")
+                val rw = ex["reward"] as? Map<String, Any?> ?: emptyMap()
+                @Suppress("UNCHECKED_CAST")
+                val items = (cr["items"] as? Map<String, Any?>)?.mapNotNull { (id, v) ->
+                    val m = v as? Map<String, Any?> ?: return@mapNotNull null
+                    CreditItem(
+                        id = id, name = m["name"] as? String ?: id, effect = m["effect"] as? String ?: "",
+                        unit = m["unit"] as? String ?: "fixed", price = (m["price"] as? Number)?.toLong() ?: 0L,
+                        days = (m["days"] as? Number)?.toInt() ?: 1, active = m["active"] as? Boolean ?: false,
+                        order = (m["order"] as? Number)?.toInt() ?: 0
+                    )
+                }?.associateBy { it.id } ?: CreditItem.DEFAULTS
                 CreditsConfig(
+                    items = items,
+                    welcome = (cr["welcome"] as? Number)?.toLong() ?: 0L,
+                    spotlightMax = (cr["spotlightMax"] as? Number)?.toInt() ?: 3,
+                    rewardOn = (rw["enabled"] as? Boolean ?: false) && (ex["enabled"] as? Boolean ?: true) && ((rw["percent"] as? Number)?.toInt() ?: 0) > 0,
+                    rewardPercent = ((rw["percent"] as? Number)?.toInt() ?: 0).coerceIn(0, 100),
                     enabled = cr["enabled"] as? Boolean ?: false,
                     enabledAtMillis = (cr["enabledAt"] as? Timestamp)?.toDate()?.time ?: 0L,
                     graceUntilMillis = (cr["graceUntil"] as? Timestamp)?.toDate()?.time ?: Long.MAX_VALUE,
@@ -425,6 +442,7 @@ class RestaurantOfferRepository(
             .addSnapshotListener { snap, _ ->
                 trySend(snap?.documents.orEmpty().map { d ->
                     Boost(
+                        merchantId = d.getString("merchantId").orEmpty(),
                         offerId = d.getString("offerId").orEmpty(),
                         effect = d.getString("effect").orEmpty(),
                         startsAt = d.getTimestamp("startsAt")?.toDate()?.time ?: 0L,
@@ -710,6 +728,7 @@ class RestaurantOfferRepository(
             "grandOpening" to grandOpening,
             "postType" to (if (postType == "new") "new" else "offer"),
             "exclusive" to exclusive,
+            "draft" to draft,
             "tags" to tags.take(12),
             "delivery" to delivery,
             "deliveryFee" to deliveryFee,
@@ -727,6 +746,56 @@ class RestaurantOfferRepository(
             "branches" to branches.take(50).map { it.toMap() },
             "createdAt" to createdAtValue
         )
+
+    // ================= رصيد العروض (المحفظة) =================
+    // الشراء برّا التطبيق؛ هنا نعرض الرصيد ونصرفه بس (نفس قواعد Firestore للويب).
+
+    /** رصيد التاجر (null = ما عنده محفظة للحين). */
+    fun walletBalance(uid: String): Flow<Long?> = callbackFlow {
+        val l = db.collection("wallets").document(uid).addSnapshotListener { s, _ ->
+            trySend(if (s != null && s.exists()) (s.getLong("balance") ?: 0L) else null)
+        }
+        awaitClose { l.remove() }
+    }
+
+    /** أول ما يتفعّل الرصيد: محفظة جديدة (مع هدية الترحيب لو فيه). */
+    suspend fun createWelcomeWallet(uid: String, welcome: Long) {
+        val b = db.batch()
+        b.set(db.collection("wallets").document(uid), hashMapOf("balance" to welcome, "lastOp" to hashMapOf("kind" to "welcome", "ref" to ""), "updatedAt" to FieldValue.serverTimestamp()))
+        if (welcome > 0) b.set(db.collection("wallets").document(uid).collection("tx").document(),
+            hashMapOf("kind" to "welcome", "points" to welcome, "note" to "🎁 هدية الترحيب من حيّنا", "ref" to "", "at" to FieldValue.serverTimestamp()))
+        b.commit().await()
+    }
+
+    /**
+     * عملية صرف وحدة: (إنشاء/تحديث العرض) + سجل الخدمة + خصم الرصيد — يا تصير كلها يا ولا شي.
+     * offer: عرض جديد يُنشأ بنفس العملية. offerUpdate: تحديث حقول عرض موجود (مثل نشر مسودة).
+     */
+    suspend fun spendOnOffer(
+        uid: String, balance: Long, charge: Boolean, offerId: String, item: CreditItem, days: Int, cost: Long, disc: Int,
+        startMillis: Long, note: String, offer: RestaurantOffer? = null, offerUpdate: Map<String, Any?>? = null
+    ): String {
+        val b = db.batch()
+        val offerRef = if (offerId.isNotBlank()) offersCollection.document(offerId) else offersCollection.document()
+        if (offer != null) b.set(offerRef, offer.toFirestoreMap(offerRef.id, FieldValue.serverTimestamp()))
+        if (offerUpdate != null) b.update(offerRef, offerUpdate)
+        val boostRef = db.collection("boosts").document()
+        val start = maxOf(System.currentTimeMillis(), startMillis)
+        val boost = hashMapOf<String, Any?>(
+            "id" to boostRef.id, "merchantId" to uid, "offerId" to offerRef.id, "item" to item.id, "effect" to item.effect,
+            "days" to days.toLong(), "cost" to cost, "createdAt" to FieldValue.serverTimestamp(),
+            "startsAt" to Timestamp(java.util.Date(start)), "endsAt" to Timestamp(java.util.Date(start + days * 86_400_000L))
+        )
+        if (disc > 0) boost["disc"] = disc.toLong()
+        b.set(boostRef, boost)
+        if (charge && cost > 0) {
+            val w = db.collection("wallets").document(uid)
+            b.set(w, hashMapOf("balance" to balance - cost, "lastOp" to hashMapOf("kind" to "spend", "ref" to boostRef.id), "updatedAt" to FieldValue.serverTimestamp()))
+            b.set(w.collection("tx").document(), hashMapOf("kind" to "spend", "points" to -cost, "note" to note.take(120), "ref" to boostRef.id, "at" to FieldValue.serverTimestamp()))
+        }
+        b.commit().await()
+        return offerRef.id
+    }
 
     suspend fun insertOffer(offer: RestaurantOffer): String {
         val docRef = if (offer.id.isNotBlank()) offersCollection.document(offer.id) else offersCollection.document()
@@ -902,6 +971,12 @@ class RestaurantOfferRepository(
 data class UserProfile(val role: String?, val name: String, val phone: String)
 
 data class CreditsConfig(
+    val items: Map<String, CreditItem> = CreditItem.DEFAULTS,
+    val welcome: Long = 0L,
+    val spotlightMax: Int = 3,
+    // 🎁 مكافأة الحصري: خصم على «النشر» بس للعروض الحصرية (100 = مجاني)
+    val rewardOn: Boolean = false,
+    val rewardPercent: Int = 0,
     val enabled: Boolean = false,
     val enabledAtMillis: Long = 0L,
     // العروض المنشورة قبل التشغيل مجانية لين هالوقت
@@ -911,7 +986,24 @@ data class CreditsConfig(
     val exclusiveIcon: String = "💎"
 )
 
-data class Boost(val offerId: String, val effect: String, val startsAt: Long, val endsAt: Long)
+data class Boost(val offerId: String, val effect: String, val startsAt: Long, val endsAt: Long, val merchantId: String = "")
+
+/** خدمة مدفوعة (من إعدادات الأدمن): effect = publish / feature / listTop / spotlight */
+data class CreditItem(
+    val id: String, val name: String, val effect: String, val unit: String, val price: Long, val days: Int,
+    val active: Boolean, val order: Int = 0
+) {
+    fun baseCost(d: Int): Long = if (unit == "day") price * d else price
+    fun daysFor(d: Int): Int = if (unit == "day") d else days
+    companion object {
+        val DEFAULTS = listOf(
+            CreditItem("publish", "📢 نشر عرض", "publish", "day", 3, 1, true, 0),
+            CreditItem("feature", "✨ تمييز 3 أيام", "feature", "fixed", 10, 3, true, 1),
+            CreditItem("boost", "🚀 إبراز أسبوع", "spotlight", "fixed", 25, 7, true, 2),
+            CreditItem("listtop", "📌 إعلان بارز في صفحة العروض", "listTop", "fixed", 40, 7, false, 3)
+        ).associateBy { it.id }
+    }
+}
 
 data class PoiConfig(
     val showGooglePoi: Boolean = true,

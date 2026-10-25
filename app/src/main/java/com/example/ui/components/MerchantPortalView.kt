@@ -104,6 +104,7 @@ fun MerchantPortalView(
     currentRole: String = com.example.ui.MerchantViewModel.ROLE_CUSTOMER,
     onSaveProfile: (name: String, phone: String, role: String) -> Unit = { _, _, _ -> },
     roleResolved: Boolean = true,
+    credits: MerchantCredits? = null,
     modifier: Modifier = Modifier
 ) {
     var editProfile by remember { mutableStateOf(false) }
@@ -173,6 +174,7 @@ fun MerchantPortalView(
             isVerified = isVerified,
             verifyStatus = verifyStatus,
             onOpenVerify = onOpenVerify,
+            credits = credits,
             modifier = modifier
         )
     }
@@ -465,12 +467,13 @@ private fun MerchantDashboard(
     isVerified: Boolean,
     verifyStatus: String?,
     onOpenVerify: () -> Unit,
+    credits: MerchantCredits? = null,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
     var confirmDeleteAccount by remember { mutableStateOf(false) }
     var offerPendingDelete by remember { mutableStateOf<RestaurantOffer?>(null) }
-    val activeCount = offers.count { !OfferTime.isExpired(it, nowMillis) }
+    val activeCount = offers.count { !it.draft && !OfferTime.isExpired(it, nowMillis) }
 
     LazyColumn(
         modifier = modifier
@@ -615,6 +618,8 @@ private fun MerchantDashboard(
             }
         }
 
+        if (credits != null) item { WalletCard(credits.balance, credits.items) }
+
         item {
             Text(
                 text = "عروضك (${offers.size})",
@@ -647,6 +652,7 @@ private fun MerchantDashboard(
                 MerchantOfferRow(
                     offer = offer,
                     nowMillis = nowMillis,
+                    credits = credits,
                     onClick = { onOfferClick(offer) },
                     onEdit = { onEditOffer(offer) },
                     onDelete = { offerPendingDelete = offer }
@@ -713,7 +719,8 @@ private fun MerchantOfferRow(
     nowMillis: Long,
     onClick: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    credits: MerchantCredits? = null
 ) {
     val expired = OfferTime.isExpired(offer, nowMillis)
     Card(
@@ -739,7 +746,10 @@ private fun MerchantOfferRow(
                     overflow = TextOverflow.Ellipsis,
                     color = if (expired) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (offer.draft) Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFFF4E0)) {
+                    Text("📝 مسودة — بانتظار الرصيد", color = Color(0xFF8A5A00), fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                } else Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (!offer.isApproved || offer.reportsCount >= com.example.ui.MerchantViewModel.AUTO_HIDE_REPORTS) {
                         Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFFF4E0)) {
                             Text(
@@ -775,11 +785,21 @@ private fun MerchantOfferRow(
                         }
                     }
                 }
+                val chips = if (offer.draft) emptyList() else credits?.chips?.invoke(offer).orEmpty()
+                if (chips.isNotEmpty()) Text(chips.joinToString("  •  "), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF8A5A00))
+                if (offer.draft && credits != null) androidx.compose.material3.Button(
+                    onClick = { credits.onPublishDraft(offer) },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                ) { Text("📢 انشر الحين", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                 Text(
                     text = "👁 ${offer.viewsCount}   🧭 ${offer.directionsCount}   💬 ${offer.whatsappCount}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            if (credits != null && !offer.draft && !expired) androidx.compose.material3.IconButton(onClick = { credits.onBoost(offer) }) {
+                Text("🚀", fontSize = 18.sp)
             }
             androidx.compose.material3.IconButton(onClick = onEdit) {
                 Icon(Icons.Default.Edit, contentDescription = "تعديل العرض", tint = CalmSagePrimary)
