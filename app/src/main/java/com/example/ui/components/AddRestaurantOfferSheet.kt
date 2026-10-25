@@ -70,7 +70,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Branch
-import com.example.data.model.LocationPresets
 import com.example.data.model.MediaType
 import com.example.data.model.MerchantProfile
 import com.example.data.model.OfferPricing

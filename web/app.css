@@ -134,7 +134,6 @@ h1.title { margin: 0; font-size: 21px; line-height: 1.4; font-weight: 800; }
 .mini div { padding: 8px; font-size: 13px; font-weight: 700; }
 .mini small { display: block; color: var(--green); font-weight: 800; margin-top: 2px; }
 .menu-img { flex: none; width: 120px; height: 160px; border-radius: 10px; object-fit: cover; border: 1px solid var(--line); }
-.app-promo { background: var(--card); border: 1px dashed var(--line); border-radius: 12px; padding: 12px; font-size: 13px; color: var(--muted); text-align: center; }
 
 .viewer { position: fixed; inset: 0; z-index: 1200; background: rgba(0,0,0,.92); display: flex; align-items: center; justify-content: center; }
 .viewer img { max-width: 100%; max-height: 100%; }
@@ -358,9 +357,6 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .fav-empty { display: flex; gap: 12px; align-items: center; background: var(--card); border: 1.5px dashed var(--line); border-radius: 16px; padding: 14px; }
 .fav-empty span { font-size: 30px; }
 .fav-empty small { color: var(--muted); }
-.invite-card { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 16px; border-radius: 18px; background: linear-gradient(135deg, #FFF4E0, #FDE7C8); }
-.invite-card div { flex: 1; }
-.invite-card small { color: var(--amber); }
 .invite-btn { border: 0; background: var(--ink); color: #fff; font: inherit; font-weight: 800; font-size: 14px; border-radius: 12px; padding: 10px 14px; white-space: nowrap; }
 .menu { margin-top: 18px; background: var(--card); border-radius: 18px; overflow: hidden; border: 1px solid var(--line); }
 .menu-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 14px; border: 0; border-bottom: 1px solid var(--line); background: none; font: inherit; color: var(--ink); text-align: right; text-decoration: none; }
@@ -442,7 +438,6 @@ textarea.input { resize: vertical; line-height: 1.6; }
 }
 :root[data-theme="dark"] .poi-locked { background: #222B27; color: #A9B5AF; border-color: #36413C; }
 :root[data-theme="dark"] .poi-locked.mine { background: var(--green-soft); color: #8FD3B0; border-color: #2E5A45; }
-:root[data-theme="dark"] .invite-card { background: linear-gradient(135deg, #3A2E14, #4A3A18); }
 :root[data-theme="dark"] .kind-btn.on.new { background: #2A1F45; }
 :root[data-theme="dark"] .cust-hero { background: linear-gradient(160deg, #1F4D39 0%, #142E23 100%); }
 :root[data-theme="dark"] .mk .ring { border-color: #4B5651; }

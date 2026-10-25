@@ -5,7 +5,6 @@
 let LANG = "ar";
 try { LANG = localStorage.getItem("hayyna_lang") || "ar"; } catch {}
 export const lang = () => LANG;
-export const isEn = () => LANG === "en";
 
 // عناصر فيها محتوى التاجر: ما نترجمها
 const SKIP = ".nt, .desc:not(.tr), .nm, .title, .store-row span, .mname, .amb-row b, .ch-main b, .au-main b, .b-name, .about, .otitle, .sname, script, style, textarea";

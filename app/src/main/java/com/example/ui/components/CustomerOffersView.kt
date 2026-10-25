@@ -47,7 +47,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.model.LocationPresets
 import com.example.data.model.RestaurantOffer
 import com.example.ui.theme.CalmSagePrimary
 

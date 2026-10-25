@@ -5,7 +5,7 @@ import {
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, deleteUser
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
-  getFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, addDoc, deleteDoc, increment, serverTimestamp, Timestamp
+  getFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, getDocs, addDoc, deleteDoc, increment, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
 import * as X from "./logic.js";
@@ -802,24 +802,22 @@ function openProfileEdit() {
   };
 }
 
-async function setRole(role) {
-  try {
-    await setDoc(doc(db, "users", state.user.uid), { role, updatedAt: serverTimestamp() }, { merge: true });
-    state.role = role; toast(role === "merchant" ? "صار حسابك حساب تاجر 🏪" : "رجعنا حسابك لحساب أهل الحي 🏡"); renderAll();
-  } catch { toast("تعذّر التغيير"); }
-}
-
 function confirmDeleteAccount() {
   showSheet(`<div class="pad"><div class="section-title">حذف الحساب؟</div>
-    <p class="desc">بننحذف بياناتك (الاسم، الجوال، المفضلة) وتسجيل دخولك. ${state.role === "merchant" ? "عروضك وصفحة متجرك تنحذف بعد من خلال فريق حيّنا خلال أيام." : ""}</p>
+    <p class="desc">بننحذف بياناتك (الاسم، الجوال، المفضلة) وتسجيل دخولك. ${state.role === "merchant" ? "وتنحذف معها كل عروضك وصفحة متجرك وإحصائياتها، وما تقدر تسترجعها." : ""}</p>
     <div class="row2"><button class="btn call" id="daNo">إلغاء</button><button class="btn danger" id="daYes">احذف حسابي</button></div></div>`);
   $("daNo").onclick = hideSheet;
   $("daYes").onclick = async () => {
     const u = auth.currentUser; if (!u) return;
     try {
+      if (state.role === "merchant") {
+        // نفس التطبيق: نحذف عروض التاجر وصفحة متجره وملفه مباشرة
+        const mine = await getDocs(query(collection(db, "offers"), where("merchantId", "==", u.uid))).catch(() => null);
+        for (const d of mine?.docs || []) await deleteDoc(d.ref).catch(() => {});
+        await deleteDoc(doc(db, "stores", u.uid)).catch(() => {});
+        await deleteDoc(doc(db, "merchants", u.uid)).catch(() => {});
+      }
       await deleteDoc(doc(db, "users", u.uid)).catch(() => {});
-      if (state.role === "merchant") await addDoc(collection(db, "feedback"), { uid: u.uid, userName: (state.profile?.name || "").slice(0, 100), role: "merchant", type: "أخرى",
-        message: "طلب حذف حساب التاجر وبياناته (عروض + صفحة المتجر)", screenshotUrl: "", contact: (u.email || "").slice(0, 100), appVersion: "web", device: "", status: "new", reply: "", replySeen: false, createdAt: serverTimestamp() }).catch(() => {});
       await deleteUser(u);
       state.favs = new Set(); saveFavsLocal(); hideSheet(); toast("انحذف حسابك. نتمنى نشوفك مرة ثانية 🌿", true);
     } catch (e) {

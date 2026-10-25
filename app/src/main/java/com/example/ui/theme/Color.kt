@@ -10,7 +10,6 @@ val SoftBorderColor = Color(0xFFE6E0D6)
 
 // Calm Sage Green (Primary - reassuring, fresh & serene)
 val CalmSagePrimary = Color(0xFF2D6A4F)
-val CalmSageLight = Color(0xFF40916C)
 val CalmSageContainer = Color(0xFFE8F5E9)
 val OnCalmSageContainer = Color(0xFF1B4332)
 
@@ -27,7 +26,5 @@ val OnCalmSlateBlueContainer = Color(0xFF1D3557)
 // Text Colors (High legibility, soft on eyes)
 val DarkTextPrimary = Color(0xFF262A33)
 val MutedTextSecondary = Color(0xFF6B7280)
-val SoftHighlightRed = Color(0xFFE05A47)
-val ActiveOfferBadge = Color(0xFF2E7D32)
 val MapPinRed = Color(0xFFE05A47)
 

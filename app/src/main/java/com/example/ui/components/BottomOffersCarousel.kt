@@ -222,7 +222,6 @@ fun SelectedRestaurantOfferCard(
                         mediaUri = offer.mediaUri,
                         mediaType = offer.mediaType,
                         isPromotionalVideo = offer.isPromotionalVideo,
-                        promotionalBadge = "",
                         autoPlayVideo = false,
                         modifier = Modifier.fillMaxSize()
                     )

@@ -76,7 +76,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.data.model.LocationPresets
 import com.example.data.model.MediaType
 import com.example.data.model.RestaurantOffer
 import com.example.ui.components.AddRestaurantOfferSheet

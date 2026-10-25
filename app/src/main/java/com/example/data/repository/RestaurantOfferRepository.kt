@@ -221,9 +221,6 @@ class RestaurantOfferRepository(
 
     private val usersCollection = db.collection("users")
 
-    suspend fun getUserRole(uid: String): String? =
-        usersCollection.document(uid).get().await().getString("role")
-
     suspend fun setUserRole(uid: String, role: String) {
         usersCollection.document(uid).set(
             hashMapOf("role" to role, "updatedAt" to FieldValue.serverTimestamp())

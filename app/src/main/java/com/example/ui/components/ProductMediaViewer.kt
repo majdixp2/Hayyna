@@ -6,7 +6,6 @@ import android.widget.VideoView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -45,7 +44,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,7 +58,6 @@ fun ProductMediaViewer(
     mediaType: MediaType,
     modifier: Modifier = Modifier,
     isPromotionalVideo: Boolean = false,
-    promotionalBadge: String = "",
     autoPlayVideo: Boolean = false,
     contentScale: ContentScale = ContentScale.Crop
 ) {
@@ -68,24 +65,6 @@ fun ProductMediaViewer(
     var isVideoPlaying by remember { mutableStateOf(autoPlayVideo) }
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
     var hasVideoError by remember { mutableStateOf(false) }
-
-    // Map common drawable resource names
-    val drawableResId = remember(mediaUri) {
-        when (mediaUri) {
-            "cafe_arabica_offer_1791863237123" -> com.example.R.drawable.cafe_arabica_offer_1791863237123
-            "restaurant_burger_offer_1791823697805" -> com.example.R.drawable.restaurant_burger_offer_1791823697805
-            "restaurant_pizza_offer_1791823722379" -> com.example.R.drawable.restaurant_pizza_offer_1791823722379
-            "restaurant_grill_offer_1791823746852" -> com.example.R.drawable.restaurant_grill_offer_1791823746852
-            "merchant_store_banner_1791821178163" -> com.example.R.drawable.merchant_store_banner_1791821178163
-            "sample_product_watch_1791821194030" -> com.example.R.drawable.sample_product_watch_1791821194030
-            "sample_product_perfume_1791821210881" -> com.example.R.drawable.sample_product_perfume_1791821210881
-            "sample_product_coffee_1791821388210" -> com.example.R.drawable.sample_product_coffee_1791821388210
-            else -> {
-                val resId = context.resources.getIdentifier(mediaUri, "drawable", context.packageName)
-                if (resId != 0) resId else null
-            }
-        }
-    }
 
     Box(
         modifier = modifier
@@ -227,15 +206,7 @@ fun ProductMediaViewer(
                 }
             }
         } else {
-            // Image Display: Check if resource ID or Coil URI
-            if (drawableResId != null) {
-                Image(
-                    painter = painterResource(id = drawableResId),
-                    contentDescription = "صورة المنتج",
-                    contentScale = contentScale,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else if (mediaUri.isNotBlank()) {
+            if (mediaUri.isNotBlank()) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(mediaUri)
@@ -260,25 +231,6 @@ fun ProductMediaViewer(
             }
         }
 
-        // Promotional badge at top-right
-        if (promotionalBadge.isNotBlank()) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                shadowElevation = 2.dp,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-            ) {
-                Text(
-                    text = promotionalBadge,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
-        }
     }
 }
 

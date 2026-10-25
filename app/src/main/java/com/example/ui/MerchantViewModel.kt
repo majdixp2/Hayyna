@@ -16,7 +16,6 @@ import com.example.data.MediaUploader
 import com.example.data.GoogleSignInHelper
 import com.example.data.OfferTracker
 import com.example.data.UserLocationManager
-import com.example.data.model.LocationPresets
 import com.example.data.model.MediaType
 import com.example.data.model.OfferTime
 import com.example.data.model.RestaurantOffer
@@ -153,9 +152,6 @@ class MerchantViewModel(
 
     /** صفحة المتجر المفتوحة للعميل. */
     val openStore = MutableStateFlow<com.example.data.model.StoreProfile?>(null)
-
-    fun storeFor(merchantId: String): com.example.data.model.StoreProfile? =
-        approvedStores.value.firstOrNull { it.uid == merchantId }
 
     fun openStorePage(store: com.example.data.model.StoreProfile) {
         activeDetailOffer.value = null
