@@ -409,6 +409,7 @@ class RestaurantOfferRepository(
                 CreditsConfig(
                     enabled = cr["enabled"] as? Boolean ?: false,
                     enabledAtMillis = (cr["enabledAt"] as? Timestamp)?.toDate()?.time ?: 0L,
+                    graceUntilMillis = (cr["graceUntil"] as? Timestamp)?.toDate()?.time ?: Long.MAX_VALUE,
                     exclusiveEnabled = ex["enabled"] as? Boolean ?: true,
                     exclusiveLabel = (ex["label"] as? String)?.takeIf { it.isNotBlank() } ?: "حصري لحيّنا",
                     exclusiveIcon = (ex["icon"] as? String)?.takeIf { it.isNotBlank() } ?: "💎"
@@ -890,6 +891,8 @@ data class UserProfile(val role: String?, val name: String, val phone: String)
 data class CreditsConfig(
     val enabled: Boolean = false,
     val enabledAtMillis: Long = 0L,
+    // العروض المنشورة قبل التشغيل مجانية لين هالوقت
+    val graceUntilMillis: Long = Long.MAX_VALUE,
     val exclusiveEnabled: Boolean = true,
     val exclusiveLabel: String = "حصري لحيّنا",
     val exclusiveIcon: String = "💎"

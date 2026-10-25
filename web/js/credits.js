@@ -18,7 +18,8 @@ export const DEFAULT_PACKS = [{ points: 50, price: 50 }, { points: 100, price: 9
 
 export const creditsOf = (config) => {
   const c = config?.credits || {};
-  return { enabled: !!c.enabled, enabledAt: c.enabledAt || null, welcome: c.welcome || 0, items: c.items || DEFAULT_ITEMS, packs: c.packs || DEFAULT_PACKS };
+  return { enabled: !!c.enabled, enabledAt: c.enabledAt || null, graceUntil: c.graceUntil || null, graceDays: c.graceDays ?? 14,
+    welcome: c.welcome || 0, items: c.items || DEFAULT_ITEMS, packs: c.packs || DEFAULT_PACKS };
 };
 export const itemList = (items) => Object.entries(items || {}).map(([id, it]) => ({ id, ...it })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 export const costOf = (it, days) => it.unit === "day" ? it.price * days : it.price;
@@ -40,10 +41,16 @@ export function activeEffects(boosts, offerId, now = Date.now()) {
   return out;
 }
 
-/** هل العرض مدفوع النشر؟ (لما يكون الرصيد مفعّل: العروض الجديدة لازم لها نشر مدفوع) */
+/** عرض منشور قبل تشغيل الرصيد: مجاني لين نهاية فترة السماح (0 = مو منها). */
+export function graceEnd(o, credits) {
+  const since = ms(credits.enabledAt);
+  if (!credits.enabled || !since || ms(o.createdAt) >= since) return 0;
+  return ms(credits.graceUntil) || Infinity; // بدون تاريخ سماح (إعداد قديم) = مجاني
+}
+
+/** هل العرض ظاهر؟ (لما يكون الرصيد مفعّل: لازم نشر مدفوع، أو فترة سماح للعروض القديمة) */
 export function isPaidUp(o, boosts, credits, now = Date.now()) {
   if (!credits.enabled) return true;
-  const since = ms(credits.enabledAt);
-  if (!since || ms(o.createdAt) < since) return true; // عروض قبل تفعيل الرصيد: مجانية
+  if (graceEnd(o, credits) > now) return true;
   return activeEffects(boosts, o.id, now).publishUntil > now;
 }

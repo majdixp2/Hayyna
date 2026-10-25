@@ -324,6 +324,9 @@ function credits() {
     <h2 id="cr-status">💰 نظام رصيد العروض</h2>
     <div class="card">
       <label class="switch"><input type="checkbox" id="crOn" ${cr.enabled ? "checked" : ""}> <b>${cr.enabled ? "مفعّل — النشر الجديد يحتاج رصيد" : "موقف — النشر مجاني للجميع"}</b></label>
+      <div class="row" style="align-items:center;margin-top:8px"><span>⏳ فترة السماح للعروض المنشورة قبل التشغيل</span>
+        <select id="crGrace">${[0, 7, 14, 30].map((d) => `<option value="${d}" ${cr.graceDays === d ? "selected" : ""}>${d ? d + " يوم" : "بدون سماح"}</option>`).join("")}</select>
+        ${cr.enabled && cr.graceUntil ? `<span class="pill">${cr.graceUntil.toMillis() > Date.now() ? `السماح لين ${new Date(cr.graceUntil.toMillis()).toLocaleDateString("ar-SA-u-ca-gregory")}` : "انتهى السماح"}</span>` : ""}</div>
       <p class="muted">كل مرة تشغّله: العروض المنشورة قبلها تبقى ظاهرة بدون رصيد. تقدر تشغّله للتجربة وتوقفه بعدها بدون ما يأثر.</p>
       <div class="row" style="align-items:center;margin-top:8px"><span>🎁 هدية ترحيب لكل تاجر جديد</span>
         <input type="number" id="crWelcome" min="0" max="1000" value="${cr.welcome}" style="width:90px"> نقطة
@@ -522,11 +525,15 @@ function bind() {
   c.querySelectorAll("[data-itdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف الخدمة؟ (المشتريات السابقة تبقى)")) { itemsDraft().splice(+b.dataset.itdel, 1); render(); } }));
   c.querySelectorAll("[data-pk]").forEach((x) => (x.oninput = () => { packsDraft()[+x.dataset.pk][x.dataset.k] = Math.max(1, parseInt(x.value, 10) || 1); }));
   c.querySelectorAll("[data-pkdel]").forEach((b) => (b.onclick = () => { packsDraft().splice(+b.dataset.pkdel, 1); render(); }));
+  const crGrace = $("crGrace"); if (crGrace) crGrace.onchange = () => { if (!state.config.credits?.enabled) run(() => updateDoc(doc(db, "config", "app"), { "credits.graceDays": parseInt(crGrace.value, 10) || 0 }), "تم ✅"); else toast("المدة الجديدة تنطبق لما تشغّل الرصيد المرة الجاية"); };
   const crOn = $("crOn"); if (crOn) crOn.onchange = () => run(async () => {
-    if (crOn.checked && !confirm("تفعيل الرصيد؟ أي عرض جديد بعدها يحتاج رصيد عشان يظهر.")) { crOn.checked = false; return; }
+    if (crOn.checked && !confirm(`تفعيل الرصيد؟ أي عرض جديد يحتاج رصيد، والعروض الحالية مجانية ${$("crGrace").value === "0" ? "تنتهي الحين" : `${$("crGrace").value} يوم`} وبعدها تحتاج تمديد.`)) { crOn.checked = false; return; }
     const cur = state.config.credits || {};
-    // كل تشغيل يبدأ من جديد: العروض المنشورة قبل هاللحظة تبقى مجانية
-    await updateDoc(doc(db, "config", "app"), { "credits.enabled": crOn.checked, ...(crOn.checked ? { "credits.enabledAt": serverTimestamp() } : {}), ...(cur.items ? {} : { "credits.items": DEFAULT_ITEMS }) });
+    // كل تشغيل يبدأ من جديد: العروض المنشورة قبل هاللحظة مجانية لين نهاية فترة السماح
+    const grace = parseInt($("crGrace").value, 10) || 0;
+    await updateDoc(doc(db, "config", "app"), { "credits.enabled": crOn.checked, "credits.graceDays": grace,
+      ...(crOn.checked ? { "credits.enabledAt": serverTimestamp(), "credits.graceUntil": Timestamp.fromMillis(Date.now() + grace * 864e5) } : {}),
+      ...(cur.items ? {} : { "credits.items": DEFAULT_ITEMS }) });
   }, crOn.checked ? "تم تفعيل الرصيد ✅" : "تم إيقاف الرصيد");
   c.querySelectorAll("[data-copyb]").forEach((b) => (b.onclick = async () => { const list = unusedOf(b.dataset.copyb).map((x) => x.id).join("\n"); try { await navigator.clipboard.writeText(list); toast(`نسخنا ${unusedOf(b.dataset.copyb).length} كود ✅`); } catch { prompt("انسخ:", list); } }));
   c.querySelectorAll("[data-csvb]").forEach((b) => (b.onclick = () => { const list = unusedOf(b.dataset.csvb).map((x) => x.id).join("\n"); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([list], { type: "text/plain" })); a.download = `hayyna-codes-${b.dataset.csvb}.txt`; a.click(); }));

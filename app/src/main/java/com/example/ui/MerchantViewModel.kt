@@ -531,7 +531,8 @@ class MerchantViewModel(
             val visible = offers.mapNotNull { o ->
                 val bs = byOffer[o.id].orEmpty()
                 val created = o.createdAt?.toDate()?.time ?: 0L
-                val paidUp = !cr.enabled || cr.enabledAtMillis == 0L || created < cr.enabledAtMillis ||
+                val inGrace = cr.enabledAtMillis > 0L && created < cr.enabledAtMillis && now < cr.graceUntilMillis
+                val paidUp = !cr.enabled || cr.enabledAtMillis == 0L || inGrace ||
                     bs.any { it.effect == "publish" && it.endsAt > now }
                 if (!paidUp) return@mapNotNull null
                 val featured = bs.any { it.effect == "feature" && it.startsAt <= now && now < it.endsAt }

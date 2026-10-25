@@ -6,7 +6,7 @@ import { MAPS_WEB_KEY } from "../config.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
-import { creditsOf, itemList, costOf, activeEffects, isPaidUp, exclusiveOf, EFFECTS } from "./credits.js";
+import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS } from "./credits.js";
 
 const { esc, cld, thumb, priceLabel, districtLabel, money } = X;
 const DAILY_LIMIT = 3;
@@ -108,6 +108,8 @@ async function ensureWallet() {
 }
 function walletCard() {
   if (!cr().enabled && !m.wallet) return "";
+  const now = Date.now(), inGrace = m.offers.filter((o) => { const g = graceEnd(o, cr()); return g > now && g !== Infinity && !X.isExpired(o, now) && activeEffects(m.boosts, o.id, now).publishUntil <= now; });
+  const graceNote = inGrace.length ? `<div class="hint-box">🕐 عندك ${inGrace.length} ${inGrace.length === 1 ? "عرض قديم مجاني" : "عروض قديمة مجانية"} لين ${fmtDate(graceEnd(inGrace[0], cr()))}. بعدها تحتاج تمديد بالرصيد من زر 🚀 عشان تبقى ظاهرة.</div>` : "";
   const store = state.config.credits?.storeUrl;
   return `<div class="wallet-card">
     <div class="wc-top"><div><small>💰 رصيد العروض</small><b>${bal()}</b><small>نقطة</small></div>
@@ -116,15 +118,17 @@ function walletCard() {
       <button class="btn call" id="wRedeem">🔑 شحن بكود</button>
       ${store ? `<a class="btn call" href="${esc(store)}" target="_blank" rel="noopener">🛒 اشترِ رصيد</a>` : ""}
       <button class="btn ghost" id="wHistory">📜 الحركات</button>
-    </div></div>`;
+    </div></div>${graceNote}`;
 }
 function paidChips(o) {
   if (!cr().enabled && !m.boosts.length) return "";
   const now = Date.now(), ef = activeEffects(m.boosts, o.id, now), out = [];
   if (ef.feature) out.push(`<span class="pill feat">✨ مميّز</span>`);
   if (ef.listTop) out.push(`<span class="pill feat">📌 بارز</span>`);
-  if (o.isApproved && !X.isExpired(o, now) && !isPaidUp({ ...o, id: o.id }, m.boosts, cr(), now)) out.push(`<span class="pill urgent">⚠️ غير منشور — يحتاج رصيد</span>`);
+  const g = graceEnd(o, cr());
+  if (o.isApproved && !X.isExpired(o, now) && !isPaidUp({ ...o, id: o.id }, m.boosts, cr(), now)) out.push(`<span class="pill urgent">⚠️ غير منشور — مدّده بـ🚀</span>`);
   else if (ef.publishUntil > now) out.push(`<span class="pill">📢 منشور لين ${fmtDate(ef.publishUntil)}</span>`);
+  else if (g > now && g !== Infinity) out.push(`<span class="pill urgent">🕐 مجاني لين ${fmtDate(g)} — بعدها يحتاج رصيد</span>`);
   return out.join("");
 }
 function openRedeem() {
@@ -195,8 +199,9 @@ function openBoost(o) {
   $("sheetBody").querySelectorAll("[data-buy]").forEach((b) => b.onclick = async () => {
     const id = b.dataset.buy, it = cr().items[id];
     const days = it.unit === "day" ? +($("sheetBody").querySelector(`[data-bd="${id}"]`)?.value || 1) : it.days;
-    // التمديد يبدأ من نهاية النشر الحالي
-    const start = it.effect === "publish" ? Math.max(now, ef.publishUntil) : now;
+    // التمديد يبدأ من نهاية النشر الحالي (أو نهاية فترة السماح للعروض القديمة)
+    const g = graceEnd(o, cr());
+    const start = it.effect === "publish" ? Math.max(now, ef.publishUntil, g === Infinity ? 0 : g) : now;
     const wb = writeBatch(db), cost = addSpend(wb, { item: id, offerId: o.id, days, startsAt: start, note: `${it.name} — ${o.offerTitle}` });
     if (cost == null) return $("bErr").textContent = `رصيدك ما يكفي (تحتاج ${costOf(it, days)} نقطة). اشحن رصيدك أول.`;
     if (!confirm(`تأكيد: ${it.name} بـ ${cost} نقطة؟`)) return;
