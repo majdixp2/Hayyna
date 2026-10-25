@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import com.example.data.model.priceLabel
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -305,7 +306,9 @@ fun RestaurantOfferCard(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "الحي: ${offer.district} • ${offer.region}",
+                                // بدون نقطة فاضية لو الحي/المنطقة ناقصة
+                                text = listOf(offer.district, offer.region).map { it.trim() }.filter { it.isNotBlank() }.distinct()
+                                    .joinToString(" • ").let { if (it.isBlank()) "موقع المحل على خرائط Google" else "الحي: $it" },
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Medium
@@ -335,12 +338,13 @@ fun RestaurantOfferCard(
                         openDirectionsInGoogleMaps(context, offer.latitude, offer.longitude)
                         },
                         modifier = Modifier
-                            .weight(1.1f)
+                            .weight(1f)
                             .testTag("directions_btn_${offer.id}"),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = CalmSagePrimary
                         ),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Directions,
@@ -349,9 +353,11 @@ fun RestaurantOfferCard(
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = "التوجه للمحل 🚗",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            text = "التوجه",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
 
@@ -362,7 +368,8 @@ fun RestaurantOfferCard(
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("map_view_btn_${offer.id}"),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Map,
@@ -372,10 +379,12 @@ fun RestaurantOfferCard(
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = "على الخريطة 🗺️",
-                                fontSize = 11.sp,
+                                text = "الخريطة",
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = CalmSagePrimary
+                                color = CalmSagePrimary,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -386,12 +395,15 @@ fun RestaurantOfferCard(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("view_offer_btn_${offer.id}"),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                     ) {
                         Text(
-                            text = if (offer.mediaType == MediaType.VIDEO) "مشاهدة الفيديو 🎬" else "تفاصيل العرض",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+                            text = if (offer.mediaType == MediaType.VIDEO) "الفيديو 🎬" else "التفاصيل",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
