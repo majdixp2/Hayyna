@@ -36,10 +36,15 @@ const thumbOf = (o) => {
 const isExpired = (o) => o.expiresAt && o.expiresAt.toMillis && o.expiresAt.toMillis() < Date.now();
 const toast = (msg) => {
   const t = $("toast"); t.textContent = msg; t.classList.remove("hidden");
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add("hidden"), 2800);
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add("hidden"), /خطأ/.test(msg) ? 8000 : 2800);
 };
-const run = async (fn, okMsg) => {
-  try { await fn(); if (okMsg) toast(okMsg); } catch (e) { console.error(e); toast("صار خطأ: " + (e.message || e)); }
+const run = async (fn, okMsg, label = "") => {
+  try { await fn(); if (okMsg) toast(okMsg); }
+  catch (e) {
+    console.error(label, e);
+    const perm = e.code === "permission-denied" || /permission/i.test(e.message || "");
+    toast(`صار خطأ${label ? ` في «${label}»` : ""}: ${perm ? `ما عندك صلاحية (${auth.currentUser?.email || "؟"})` : (e.message || e)}`);
+  }
 };
 
 // ---------------- الدخول ----------------
@@ -807,7 +812,7 @@ function bind() {
       const r = await fn();
       if (r === false) return;
       if (desc) await audit(...desc);
-    }, ["approve", "trust", "suspendOffer", "suspendUid", "verifyOk", "verifyNo"].includes(act) ? null : "تم ✅");
+    }, ["approve", "trust", "suspendOffer", "suspendUid", "verifyOk", "verifyNo"].includes(act) ? null : "تم ✅", b.textContent.trim().slice(0, 30));
   }));
 }
 
