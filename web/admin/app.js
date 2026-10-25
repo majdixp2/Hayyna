@@ -324,7 +324,7 @@ function credits() {
     <h2 id="cr-status">💰 نظام رصيد العروض</h2>
     <div class="card">
       <label class="switch"><input type="checkbox" id="crOn" ${cr.enabled ? "checked" : ""}> <b>${cr.enabled ? "مفعّل — النشر الجديد يحتاج رصيد" : "موقف — النشر مجاني للجميع"}</b></label>
-      <p class="muted">العروض المنشورة قبل التفعيل تبقى ظاهرة بدون رصيد. شغّله بعد ما يجهز متجر سلة والأكواد.</p>
+      <p class="muted">كل مرة تشغّله: العروض المنشورة قبلها تبقى ظاهرة بدون رصيد. تقدر تشغّله للتجربة وتوقفه بعدها بدون ما يأثر.</p>
       <div class="row" style="align-items:center;margin-top:8px"><span>🎁 هدية ترحيب لكل تاجر جديد</span>
         <input type="number" id="crWelcome" min="0" max="1000" value="${cr.welcome}" style="width:90px"> نقطة
         <button class="btn primary" data-act="saveWelcome">حفظ</button></div>
@@ -525,7 +525,8 @@ function bind() {
   const crOn = $("crOn"); if (crOn) crOn.onchange = () => run(async () => {
     if (crOn.checked && !confirm("تفعيل الرصيد؟ أي عرض جديد بعدها يحتاج رصيد عشان يظهر.")) { crOn.checked = false; return; }
     const cur = state.config.credits || {};
-    await updateDoc(doc(db, "config", "app"), { "credits.enabled": crOn.checked, ...(crOn.checked && !cur.enabledAt ? { "credits.enabledAt": serverTimestamp() } : {}), ...(cur.items ? {} : { "credits.items": DEFAULT_ITEMS }) });
+    // كل تشغيل يبدأ من جديد: العروض المنشورة قبل هاللحظة تبقى مجانية
+    await updateDoc(doc(db, "config", "app"), { "credits.enabled": crOn.checked, ...(crOn.checked ? { "credits.enabledAt": serverTimestamp() } : {}), ...(cur.items ? {} : { "credits.items": DEFAULT_ITEMS }) });
   }, crOn.checked ? "تم تفعيل الرصيد ✅" : "تم إيقاف الرصيد");
   c.querySelectorAll("[data-copyb]").forEach((b) => (b.onclick = async () => { const list = unusedOf(b.dataset.copyb).map((x) => x.id).join("\n"); try { await navigator.clipboard.writeText(list); toast(`نسخنا ${unusedOf(b.dataset.copyb).length} كود ✅`); } catch { prompt("انسخ:", list); } }));
   c.querySelectorAll("[data-csvb]").forEach((b) => (b.onclick = () => { const list = unusedOf(b.dataset.csvb).map((x) => x.id).join("\n"); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([list], { type: "text/plain" })); a.download = `hayyna-codes-${b.dataset.csvb}.txt`; a.click(); }));
