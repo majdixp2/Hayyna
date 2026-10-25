@@ -106,3 +106,29 @@ fun StoreLogo(
         )
     }
 }
+
+/** شارات العرض كرقائق تحت العنوان (بدل ما تغطي الصورة). skipDiscount: لعرض النسبة (السعر نفسه هو الخصم). */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun OfferBadgeChips(offer: RestaurantOffer, skipDiscount: Boolean = false, modifier: Modifier = Modifier) {
+    val parts = offer.displayBadge.split(" • ").filter { it.isNotBlank() && !(skipDiscount && it.startsWith("خصم")) }
+    if (parts.isEmpty()) return
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+        modifier = modifier
+    ) {
+        parts.forEach { p ->
+            val (bg, fg) = when {
+                p.startsWith("🚀") -> Color(0xFF1F2937) to Color(0xFFFFD166)
+                p == ExclusiveBadge.label -> Color(0xFFEDE4FF) to Color(0xFF6D28D9)
+                p.startsWith("✨") -> Color(0xFFE7F6EC) to Color(0xFF15803D)
+                else -> Color(0xFFFFF4E0) to Color(0xFF8A5A00)
+            }
+            Surface(shape = RoundedCornerShape(8.dp), color = bg) {
+                Text(p, color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+            }
+        }
+    }
+}

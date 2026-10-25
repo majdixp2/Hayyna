@@ -204,7 +204,7 @@ const D = {
   "الفيديو كبير، الحد 95 ميجا": "Video too large, max 95 MB", "تعذّر رفع الملف": "Couldn't upload the file", "عرض متاح لجميع العملاء.": "Offer available to all customers.",
   "منتج جديد متوفر الحين.": "New product available now.", "عروض) للحسابات الجديدة. جرّب بكرة 🙏": "offers) for new accounts. Try tomorrow 🙏", "وصلت للحد اليومي (": "Daily limit reached (",
   // التصنيفات الافتراضية
-  "مطاعم 🍔": "Restaurants 🍔", "مقاهي وحلويات ☕": "Cafés & sweets ☕", "سوبرماركت وبقالة 🛒": "Supermarkets 🛒", "ملابس وأزياء 👕": "Fashion 👕",
+  "مطاعم 🍽️": "Restaurants 🍽️", "مطاعم 🍔": "Restaurants 🍽️", "مقاهي وحلويات ☕": "Cafés & sweets ☕", "سوبرماركت وبقالة 🛒": "Supermarkets 🛒", "ملابس وأزياء 👕": "Fashion 👕",
   "خياطة ومشاغل 🧵": "Tailoring 🧵", "جوالات وإلكترونيات 📱": "Phones & electronics 📱", "عطور وتجميل 💄": "Perfume & beauty 💄", "نظارات وبصريات 👓": "Optics 👓",
   "حلاقة وصالونات 💈": "Barbers & salons 💈", "خدمات أخرى 🧰": "Other services 🧰",
   // التواريخ

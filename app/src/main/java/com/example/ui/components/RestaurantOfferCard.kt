@@ -84,7 +84,6 @@ fun RestaurantOfferCard(
                     mediaUri = offer.mediaUri,
                     mediaType = offer.mediaType,
                     isPromotionalVideo = offer.isPromotionalVideo,
-                    promotionalBadge = offer.displayBadge,
                     autoPlayVideo = false,
                     modifier = Modifier.fillMaxWidth().height(180.dp)
                 )
@@ -198,6 +197,8 @@ fun RestaurantOfferCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                // الشارات تحت العنوان (مو فوق الصورة)
+                OfferBadgeChips(offer, skipDiscount = com.example.data.model.OfferPricing.isPercentOnly(offer), modifier = Modifier.padding(top = 4.dp))
                 androidx.compose.foundation.layout.Row(
                     horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(top = 4.dp)

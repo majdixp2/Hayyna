@@ -183,7 +183,6 @@ fun RestaurantOfferDetailSheet(
                         ProductMediaViewer(
                             mediaUri = gallery[page],
                             mediaType = MediaType.IMAGE,
-                            promotionalBadge = if (page == 0) offer.displayBadge else "",
                             // الصورة كاملة بدون قص، والضغط يفتحها بملء الشاشة مع تكبير
                             contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                             modifier = Modifier.fillMaxSize().clickable { zoomIndex = page }
@@ -212,7 +211,6 @@ fun RestaurantOfferDetailSheet(
                         mediaUri = offer.mediaUri,
                         mediaType = offer.mediaType,
                         isPromotionalVideo = offer.isPromotionalVideo,
-                        promotionalBadge = offer.displayBadge,
                         autoPlayVideo = offer.mediaType == MediaType.VIDEO,
                         contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                         modifier = Modifier.fillMaxSize().then(
@@ -301,7 +299,7 @@ fun RestaurantOfferDetailSheet(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f, fill = false)
+                    maxLines = 2
                 )
 
                 if (offer.originalPrice != null && offer.originalPrice > offer.price) {
@@ -314,28 +312,9 @@ fun RestaurantOfferDetailSheet(
                     )
                 }
 
-                // عرض النسبة: السعر نفسه هو الخصم، فما نكرر الشارة (نخلي "افتتاح" بس)
-                val priceBadge = if (com.example.data.model.OfferPricing.isPercentOnly(offer)) {
-                    if (offer.grandOpening) "🎉 افتتاح" else ""
-                } else offer.displayBadge
-                if (priceBadge.isNotBlank()) {
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Text(
-                            text = priceBadge,
-                            maxLines = 1,
-                            softWrap = false,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
             }
+            // الشارات في سطر لحالها تحت السعر (عرض النسبة: السعر نفسه هو الخصم، فما نكررها)
+            OfferBadgeChips(offer, skipDiscount = com.example.data.model.OfferPricing.isPercentOnly(offer), modifier = Modifier.padding(top = 8.dp))
 
             // تفاصيل الخصم: متدرّج / يبدأ متى / افتتاح
             run {
