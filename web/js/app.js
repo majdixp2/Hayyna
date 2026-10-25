@@ -901,7 +901,7 @@ export function setTab(t, fromPop) {
   state.tab = t;
   document.querySelectorAll(".tab").forEach((s) => s.classList.toggle("on", s.id === "tab-" + t));
   document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
-  if (t === "map") setTimeout(() => map?.resize(), 50);
+  if (t === "map") { setTimeout(() => map?.resize(), 50); setTimeout(() => state.loaded && maybeSpotlight(filtered()), 400); } // بطاقة "قريب منك" لما يرجع للخريطة
   if (t === "account") renderAccount();
   try { sessionStorage.setItem("hayyna_tab", t); } catch {}
 }

@@ -718,6 +718,12 @@ function bind() {
     const it = itemsDraft()[+x.dataset.it], k = x.dataset.k;
     it[k] = x.type === "checkbox" ? x.checked : (k === "price" || k === "days") ? Math.max(1, parseInt(x.value, 10) || 1) : x.value;
     if (k === "unit" || k === "effect") render();
+    // تغيّرت المدة: نحدّث المدة المكتوبة في اسم الخدمة (مثل «إبراز أسبوع» ← «إبراز يوم») عشان ما يتناقض الاسم مع المدة
+    if (k === "days" && it.unit !== "day") {
+      const n = it.days, dur = n === 1 ? "يوم" : n === 2 ? "يومين" : n === 7 ? "أسبوع" : n === 14 ? "أسبوعين" : n === 30 ? "شهر" : n <= 10 ? `${n} أيام` : `${n} يوم`;
+      const re = /\d+\s*(?:يوم|أيام|ايام)|يومين|أسبوعين|اسبوعين|أسبوع|اسبوع|شهرين|شهر|يوم/;
+      if (re.test(it.name)) { it.name = it.name.replace(re, dur); const nm = c.querySelector(`[data-it="${x.dataset.it}"][data-k="name"]`); if (nm) nm.value = it.name; }
+    }
   }));
   c.querySelectorAll("[data-itup]").forEach((b) => (b.onclick = () => { const d = itemsDraft(), i = +b.dataset.itup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
   c.querySelectorAll("[data-itdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف الخدمة؟ (المشتريات السابقة تبقى)")) { itemsDraft().splice(+b.dataset.itdel, 1); render(); } }));
