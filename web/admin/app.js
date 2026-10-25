@@ -331,9 +331,9 @@ function credits() {
       <div class="row" style="align-items:center;margin-top:8px"><span>🎁 هدية ترحيب لكل تاجر جديد</span>
         <input type="number" id="crWelcome" min="0" max="1000" value="${cr.welcome}" style="width:90px"> نقطة
         <button class="btn primary" data-act="saveWelcome">حفظ</button></div>
-      <div class="row" style="align-items:center;margin-top:8px"><span>🛒 رابط متجر سلة (يظهر للتاجر في الويب فقط)</span>
-        <input type="text" id="crStore" value="${esc(state.config.credits?.storeUrl || "")}" placeholder="https://..." style="flex:1">
-        <button class="btn primary" data-act="saveStore">حفظ</button></div>
+      <div style="margin-top:12px"><div>🛒 رابط متجر سلة <span class="muted">(يظهر للتاجر في الويب فقط، زر «اشترِ رصيد»)</span></div>
+        <div class="row" style="align-items:center;margin-top:6px"><input type="url" id="crStore" dir="ltr" value="${esc(state.config.credits?.storeUrl || "")}" placeholder="https://salla.sa/..." style="flex:1;min-width:0">
+        <button class="btn primary" data-act="saveStore">حفظ</button></div></div>
       <div class="stats" style="margin-top:12px">
         <div class="card stat"><div class="v">${state.wallets.length}</div><div class="t">محافظ تجار</div></div>
         <div class="card stat"><div class="v">${total}</div><div class="t">نقاط في أرصدة التجار</div></div>
