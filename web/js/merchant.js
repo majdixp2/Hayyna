@@ -6,7 +6,7 @@ import { MAPS_WEB_KEY } from "../config.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
-import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS } from "./credits.js";
+import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict } from "./credits.js";
 
 const { esc, cld, thumb, priceLabel, districtLabel, money } = X;
 const DAILY_LIMIT = 3;
@@ -187,14 +187,16 @@ function openBoost(o) {
   if (!o) return;
   const items = itemList(cr().items).filter((it) => it.active);
   const now = Date.now(), ef = activeEffects(m.boosts, o.id, now);
+  const spotUsed = spotlightsInDistrict(state.boosts || [], state.offers, o.district, now), spotMax = cr().spotlightMax;
   showSheet(`<div class="pad"><div class="section-title">🚀 ${esc(o.offerTitle)}</div>
     <p class="desc tr">رصيدك: <b>${bal()}</b> نقطة</p>
     <div class="boost-list">${items.map((it) => {
-      const isPub = it.effect === "publish";
-      return `<div class="boost-item"><div><b>${esc(it.name)}</b><small>${esc(EFFECTS[it.effect]?.hint || "")}${isPub && ef.publishUntil > now ? ` • منشور لين ${fmtDate(ef.publishUntil)}` : ""}</small></div>
+      const isPub = it.effect === "publish", isSpot = it.effect === "spotlight", full = isSpot && !ef.spotlight && spotUsed >= spotMax;
+      return `<div class="boost-item${isSpot ? " spot" : ""}"><div><b>${esc(it.name)}</b><small>${esc(EFFECTS[it.effect]?.hint || "")}${isPub && ef.publishUntil > now ? ` • منشور لين ${fmtDate(ef.publishUntil)}` : ""}</small>
+        ${isSpot ? `<small class="spot-left">${full ? `⛔ الأماكن في ${esc(o.district || "حيّك")} ممتلئة (${spotUsed}/${spotMax})، جرّب بعد كم يوم` : `باقي ${spotMax - spotUsed} من ${spotMax} أماكن في ${esc(o.district || "حيّك")}`}</small>` : ""}</div>
         ${it.unit === "day" ? `<select class="input bdays" data-bd="${it.id}">${[1, 3, 7, 14, 30].map((d) => `<option value="${d}">${d} ${d === 1 ? "يوم" : "أيام"} • ${it.price * d} نقطة</option>`).join("")}</select>`
           : `<span class="bprice">${it.price} نقطة • ${it.days} ${it.days === 1 ? "يوم" : "أيام"}</span>`}
-        <button class="btn dir" data-buy="${it.id}">${isPub ? "تمديد النشر" : "اشترِ"}</button></div>`; }).join("")}</div>
+        <button class="btn dir" data-buy="${it.id}" ${full ? "disabled" : ""}>${isPub ? "تمديد النشر" : "اشترِ"}</button></div>`; }).join("")}</div>
     <div id="bErr" class="err"></div></div>`);
   $("sheetBody").querySelectorAll("[data-buy]").forEach((b) => b.onclick = async () => {
     const id = b.dataset.buy, it = cr().items[id];

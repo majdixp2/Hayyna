@@ -140,6 +140,8 @@ const isFresh = (o, now = Date.now()) => { const t = X.ms(o.startsAt) || X.ms(o.
 // الخدمات المدفوعة (تمييز / بارز) + شارة الحصري
 const isFeat = (o) => !!o.isFeatured || activeEffects(state.boosts, o.id).feature;
 const isListTop = (o) => activeEffects(state.boosts, o.id).listTop;
+const isSpot = (o) => activeEffects(state.boosts, o.id).spotlight;
+const spotPill = (o) => isSpot(o) ? `<span class="pill spot">🚀 مُبرز</span>` : "";
 const exclBadge = (o, cls = "") => { const ex = exclusiveOf(state.config); return o.exclusive && ex.enabled ? `<span class="xbadge ${cls}" style="background:${esc(ex.color)}">${esc(ex.icon)} ${esc(ex.label)}</span>` : ""; };
 function filtered({ ignoreQuery = false } = {}) {
   const now = Date.now(), q = ignoreQuery ? "" : norm(state.q), catKey = state.cat.replace(/[^\p{L}\s]/gu, "").trim();
@@ -155,7 +157,7 @@ function filtered({ ignoreQuery = false } = {}) {
       ...branchesOf(o).flatMap((b) => [b.district, b.landmark, b.name])];
     return hay.some((h) => norm(h).includes(q));
   }).map((o) => ({ o, ...nearestBranch(o) }));
-  const feat = (a, b) => (isFeat(b.o) ? 1 : 0) - (isFeat(a.o) ? 1 : 0);
+  const feat = (a, b) => ((isSpot(b.o) ? 2 : 0) + (isFeat(b.o) ? 1 : 0)) - ((isSpot(a.o) ? 2 : 0) + (isFeat(a.o) ? 1 : 0));
   if (state.sort === "cheap") list.sort((a, b) => feat(a, b) || ((a.o.price > 0 ? a.o.price : 1e9) - (b.o.price > 0 ? b.o.price : 1e9)));
   else if (state.sort === "discount") list.sort((a, b) => feat(a, b) || effectivePercent(b.o) - effectivePercent(a.o));
   else if (state.sort === "new") list.sort((a, b) => feat(a, b) || (X.ms(b.o.createdAt) || 0) - (X.ms(a.o.createdAt) || 0));
@@ -217,7 +219,7 @@ function markerHtml(o, extra, on) {
   const bd = badge(o);
   const logo = o.logoUrl ? `<img class="lg" src="${esc(cld(o.logoUrl, 80))}" alt="">` : "";
   const ex = exclusiveOf(state.config);
-  return `<div class="mk${on ? " on" : ""}${isFeat(o) ? " feat" : ""}${o.postType === "new" ? " isnew" : ""}">${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
+  return `<div class="mk${on ? " on" : ""}${isFeat(o) ? " feat" : ""}${isSpot(o) ? " spot" : ""}${o.postType === "new" ? " isnew" : ""}">${isSpot(o) && !on ? `<span class="mk-name">🚀 ${esc(o.restaurantName)}</span>` : ""}${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
     + (extra > 0 ? `<span class="more">+${extra}</span>` : "")
     + (bd ? `<span class="pct${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : "") + `</div>`;
 }
@@ -234,7 +236,7 @@ function renderMap(list) {
   groups.forEach(({ b, items: arr }) => {
     arr.sort((x, y) => (isFeat(y) ? 1 : 0) - (isFeat(x) ? 1 : 0) || effectivePercent(y) - effectivePercent(x));
     const top = arr[0], on = state.selected === top.id;
-    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : isFeat(top) ? 500 : 10,
+    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : isSpot(top) ? 700 : isFeat(top) ? 500 : 10,
       onClick: () => { state.selected = top.id; renderAll(); scrollCardIntoView(top.id); if (arr.length > 1) openGroup(arr); } });
   });
   map.setMarkers(items);
@@ -268,7 +270,7 @@ function carouselCard({ o, b, d }) {
       <div class="title">${esc(o.offerTitle)}</div>
       <div class="price">${esc(priceLabel(o))}${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)}</s>` : ""}</div>
       <div class="meta">${esc(meta)}</div>
-      <div class="pills">${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+      <div class="pills">${spotPill(o)}${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
     </div></div>`;
 }
 function listCard(o) {
@@ -281,12 +283,42 @@ function listCard(o) {
       <div class="title">${esc(o.offerTitle)}</div>
       <div class="price">${esc(priceLabel(o, true))}${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)}</s>` : ""}</div>
       <div class="meta">${esc([districtLabel(b.district || o.district), distText(d), deliveryText(o) || ""].filter(Boolean).join(" • "))}</div>
-      <div class="pills">${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+      <div class="pills">${spotPill(o)}${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
     </div></div>`;
 }
 function scrollCardIntoView(id) {
   const el = document.querySelector(`#carousel .card[data-id="${CSS.escape(id)}"]`);
   if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+}
+
+// ---------------- 🚀 بطاقة «عرض مُبرز قريب منك» (مرة باليوم) ----------------
+let spotShown = false;
+function maybeSpotlight(list) {
+  if (spotShown || !state.me || !state.loaded || state.view || location.pathname !== "/" || state.tab !== "map") return;
+  if (!$("sheet").classList.contains("hidden") || !$("page").classList.contains("hidden")) return;
+  const today = new Date().toISOString().slice(0, 10);
+  let last = ""; try { last = localStorage.getItem("hayyna_spot_day") || ""; } catch {}
+  if (last === today) { spotShown = true; return; }
+  const near = list.filter(({ o, d }) => isSpot(o) && d != null && d <= 3);
+  if (!near.length) return;
+  spotShown = true;
+  try { localStorage.setItem("hayyna_spot_day", today); } catch {}
+  const { o, d } = near[Math.floor(Math.random() * near.length)];
+  setTimeout(() => {
+    if (!$("sheet").classList.contains("hidden")) return;
+    showSheet(`<div class="spot-card">
+      <div class="spot-head">🔥 عرض مُبرز قريب منك</div>
+      <div class="spot-img"><img src="${esc(thumb(o, 700))}" alt="">${badge(o) ? `<span class="badge${badge(o).isNew ? " new" : ""}">${esc(badge(o).t)}</span>` : ""}</div>
+      <div class="pad">
+        <div class="store-row">${o.logoUrl ? `<img class="logo" src="${esc(cld(o.logoUrl, 60))}" alt="">` : ""}<span class="nt">${esc(o.restaurantName)}</span></div>
+        <div class="title">${esc(o.offerTitle)}</div>
+        <div class="price">${esc(priceLabel(o, true))}</div>
+        <div class="meta">${esc([districtLabel(o.district), distText(d)].filter(Boolean).join(" • "))}</div>
+        <div style="margin-top:12px;display:grid;grid-template-columns:1fr 2fr;gap:8px"><button class="btn call" id="spLater">لاحقاً</button><button class="btn dir" id="spGo">شوف العرض</button></div>
+      </div></div>`);
+    $("spLater").onclick = hideSheet;
+    $("spGo").onclick = () => { hideSheet(); setTimeout(() => openOffer(o.id, true), 60); };
+  }, 1200);
 }
 
 // ---------------- الرسم ----------------
@@ -306,6 +338,7 @@ export function renderAll() {
   $("filterDot").classList.toggle("hidden", !(state.openOnly || state.sort !== "near" || state.fresh || state.kind !== "all"));
   $("placeLabel").textContent = state.browse ? state.browse.name : "حولي";
   renderScope(list.length);
+  maybeSpotlight(list);
   // قائمة العروض
   $("sortbar").innerHTML = [["near", "📍 الأقرب"], ["discount", "🔥 أكبر خصم"], ["cheap", "💰 الأرخص"], ["new", "🆕 الأحدث"]]
     .map(([k, l]) => `<button class="chip${state.sort === k ? " on" : ""}" data-sort="${k}">${l}</button>`).join("")

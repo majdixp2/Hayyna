@@ -58,6 +58,7 @@ const D = {
   "اضغط رجوع مرة ثانية للخروج من حيّنا": "Press back again to exit Hayyna",
   // البطاقات وتفاصيل العرض
   "مفتوح": "Open", "مغلق": "Closed", "● مفتوح": "● Open", "● مغلق": "● Closed", "مفتوح 24 ساعة": "Open 24 hours", "يومياً": "Daily",
+  "🚀 مُبرز": "🚀 Spotlight", "🔥 عرض مُبرز قريب منك": "🔥 Spotlight offer near you", "شوف العرض": "See offer", "لاحقاً": "Later",
   "✨ جديد": "✨ New", "✨ منتج جديد": "✨ New item", "توصيل مجاني": "Free delivery", "توصيل": "Delivery", "• للطلبات فوق": "• min order",
   "• مجاني فوق": "• free over", "على جميع الأصناف": "on all items", "خصم": "Discount", "انتهى العرض": "Offer ended",
   "🧭 الاتجاهات إلى المحل": "🧭 Directions to the shop", "اتجاهات": "Directions", "💬 واتساب": "💬 WhatsApp", "واتساب": "WhatsApp",

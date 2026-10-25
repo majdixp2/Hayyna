@@ -504,3 +504,19 @@ textarea.input { resize: vertical; line-height: 1.6; }
   [dir="ltr"] .car-arrow.prev { right: auto; left: 8px; } [dir="ltr"] .car-arrow.next { left: auto; right: 8px; }
   .car-arrow.hidden { display: none; }
 }
+
+.boost-item.spot { border: 2px solid #FFD166; background: linear-gradient(135deg, rgba(255,209,102,.12), transparent); }
+.spot-left { color: var(--amber) !important; font-weight: 700; }
+
+/* 🚀 الإبراز */
+.mk-name { position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); white-space: nowrap; background: #1F2937; color: #FFD166; font-size: 11px; font-weight: 800;
+  border-radius: 8px; padding: 2px 8px; border: 1.5px solid #FFD166; box-shadow: 0 2px 8px rgba(0,0,0,.25); max-width: 160px; overflow: hidden; text-overflow: ellipsis; z-index: 3; }
+.mk.spot .ring { width: 62px; height: 62px; }
+.pill.spot { background: #1F2937; color: #FFD166; }
+.spot-card .spot-head { background: linear-gradient(135deg, #1F2937, #374151); color: #FFD166; font-weight: 800; text-align: center; padding: 12px; font-size: 16px; border-radius: 22px 22px 0 0; }
+.spot-card .spot-img { position: relative; height: 220px; background: #eee; }
+.spot-card .spot-img img { width: 100%; height: 100%; object-fit: cover; }
+.spot-card .spot-img .badge { position: absolute; top: 10px; right: 10px; background: var(--red); color: #fff; font-weight: 800; border-radius: 10px; padding: 3px 9px; }
+.spot-card .title { font-weight: 800; font-size: 18px; margin: 6px 0; }
+.spot-card .price { color: var(--green); font-weight: 800; font-size: 17px; }
+.spot-card .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }

@@ -549,8 +549,10 @@ class MerchantViewModel(
                 val paidUp = !cr.enabled || cr.enabledAtMillis == 0L || inGrace ||
                     bs.any { it.effect == "publish" && it.endsAt > now }
                 if (!paidUp) return@mapNotNull null
-                val featured = bs.any { it.effect == "feature" && it.startsAt <= now && now < it.endsAt }
-                if (featured && !o.isFeatured) o.copy(isFeatured = true) else o
+                val active = bs.filter { it.startsAt <= now && now < it.endsAt }
+                val spot = active.any { it.effect == "spotlight" }
+                val featured = spot || active.any { it.effect == "feature" }
+                if ((featured && !o.isFeatured) || spot) o.copy(isFeatured = o.isFeatured || featured, spotlight = spot) else o
             }
             withDistance(visible, loc)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -672,7 +674,7 @@ class MerchantViewModel(
                 }
             } else filtered.sortedBy { it.distanceKm }
         }
-        sorted.sortedByDescending { it.isFeatured }
+        sorted.sortedByDescending { it.isFeatured }.sortedByDescending { it.spotlight }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ---------------- نطاق العروض: حيّك / حولك 5 كم / كل الأحياء ----------------

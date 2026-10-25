@@ -66,6 +66,9 @@ data class RestaurantOffer(
     val postType: String = "offer",
     // 💎 حصري لعملاء حيّنا (مجاني، يعلّمه التاجر)
     val exclusive: Boolean = false,
+    // 🚀 مُبرز (يُحسب من الخدمات المدفوعة النشطة، ما يُحفظ في العرض)
+    @get:com.google.firebase.firestore.Exclude
+    val spotlight: Boolean = false,
     // وسوم الأصناف للبحث: شاورما، برجر، بروست
     val tags: List<String> = emptyList(),
     // التوصيل (نسخة من ملف المتجر)

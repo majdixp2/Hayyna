@@ -211,7 +211,7 @@ fun FullScreenRestaurantMap(
             .values
             .map { group ->
                 group.sortedWith(
-                    compareByDescending<RestaurantOffer> { it.isFeatured }
+                    compareByDescending<RestaurantOffer> { it.spotlight }.thenByDescending { it.isFeatured }
                         .thenByDescending { com.example.data.model.OfferPricing.effectivePercent(it) }
                 )
             }
@@ -521,7 +521,7 @@ data class OfferClusterItem(
     override fun getPosition(): LatLng = LatLng(offer.latitude, offer.longitude)
     override fun getTitle(): String? = offer.restaurantName
     override fun getSnippet(): String? = offer.offerTitle
-    override fun getZIndex(): Float? = if (isSelected) 2f else if (offer.isFeatured) 1f else 0f
+    override fun getZIndex(): Float? = if (isSelected) 3f else if (offer.spotlight) 2f else if (offer.isFeatured) 1f else 0f
 }
 
 private suspend fun loadMarkerBitmap(context: Context, url: String): ImageBitmap? = try {
@@ -590,16 +590,17 @@ fun OfferCircleMarker(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(bottom = 4.dp)
     ) {
-        if (isSelected) {
+        if (isSelected || offer.spotlight) {
+            // 🚀 المُبرز: اسم المحل ظاهر دايم فوق علامته
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = CalmSagePrimary,
+                color = if (isSelected) CalmSagePrimary else Color(0xFF1F2937),
                 shadowElevation = 6.dp,
-                border = BorderStroke(1.5.dp, Color.White)
+                border = BorderStroke(1.5.dp, if (isSelected) Color.White else Color(0xFFFFD166))
             ) {
                 Text(
-                    text = offer.restaurantName,
-                    color = Color.White,
+                    text = if (!isSelected) "🚀 ${offer.restaurantName}" else offer.restaurantName,
+                    color = if (isSelected) Color.White else Color(0xFFFFD166),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,

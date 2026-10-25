@@ -210,6 +210,12 @@ fun MerchantStoreScreen(
                     AppRole.CUSTOMER_MAP -> {
                         // 1. FULL SCREEN MAP LIKE GOOGLE MAPS (الأساس الخريطة كاملة)
                         Box(modifier = Modifier.fillMaxSize()) {
+                            // 🚀 عرض مُبرز قريب (مرة باليوم)
+                            com.example.ui.components.SpotlightWelcome(
+                                offers = filteredCustomerOffers,
+                                hasLocation = viewModel.userLocation.collectAsStateWithLifecycle().value != null,
+                                onOpen = { viewModel.openOfferDetail(it) }
+                            )
                             // BASE LAYER: Full Screen Map
                             FullScreenRestaurantMap(
                                 offers = filteredCustomerOffers,

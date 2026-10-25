@@ -406,6 +406,8 @@ function describe(act, id, b, o) {
     saveCats: () => ["تعديل التصنيفات", "settings", {}, catDraft().map((x) => x.name).filter(Boolean).join("، ")],
     savePoi: () => ["تعديل رسالة الدعوة", "settings", {}],
     saveExcl: () => ["تعديل شارة الحصري", "settings", {}, `${$("exIcon")?.value} ${$("exLabel")?.value} • ${$("exOn")?.checked ? "مفعّلة" : "موقفة"}`],
+    saveSpot: () => ["تعديل حد الإبراز في الحي", "credits", {}, `${$("crSpot")?.value} لكل حي`],
+    fixSpot: () => ["تحويل خدمة الإبراز لنوع 🚀 إبراز", "credits", {}],
     saveWelcome: () => ["تعديل هدية الترحيب", "credits", {}, `${$("crWelcome")?.value} نقطة`],
     saveStore: () => ["تعديل رابط متجر سلة", "credits", {}, $("crStore")?.value],
     saveItems: () => ["تعديل أسعار الخدمات", "credits", {}, itemsDraft().map((x) => `${x.name}: ${x.price}${x.unit === "day" ? "/يوم" : ""}${x.active ? "" : " (موقفة)"}`).join(" • ")],
@@ -481,6 +483,10 @@ function credits() {
         <select id="crGrace">${[0, 7, 14, 30].map((d) => `<option value="${d}" ${cr.graceDays === d ? "selected" : ""}>${d ? d + " يوم" : "بدون سماح"}</option>`).join("")}</select>
         ${cr.enabled && cr.graceUntil ? `<span class="pill">${cr.graceUntil.toMillis() > Date.now() ? `السماح لين ${new Date(cr.graceUntil.toMillis()).toLocaleDateString("ar-SA-u-ca-gregory")}` : "انتهى السماح"}</span>` : ""}</div>
       <p class="muted">كل مرة تشغّله: العروض المنشورة قبلها تبقى ظاهرة بدون رصيد. تقدر تشغّله للتجربة وتوقفه بعدها بدون ما يأثر.</p>
+      <div class="row" style="align-items:center;margin-top:8px"><span>🚀 أقصى عدد «إبراز» في نفس الحي بنفس الوقت</span>
+        <input type="number" id="crSpot" min="1" max="20" value="${cr.spotlightMax}" style="width:70px">
+        <button class="btn primary" data-act="saveSpot">حفظ</button></div>
+      ${itemList(cr.items).some((x) => /إبراز/.test(x.name) && x.effect !== "spotlight") ? `<div class="note" style="margin-top:8px">⚠️ خدمة «إبراز» عندك نوعها «تمييز» (نفس الشي). <button class="btn" data-act="fixSpot">حوّلها لنوع 🚀 إبراز</button></div>` : ""}
       <div class="row" style="align-items:center;margin-top:8px"><span>🎁 هدية ترحيب لكل تاجر جديد</span>
         <input type="number" id="crWelcome" min="0" max="1000" value="${cr.welcome}" style="width:90px"> نقطة
         <button class="btn primary" data-act="saveWelcome">حفظ</button></div>
@@ -768,6 +774,12 @@ function bind() {
           for (const sd of (await getDocs(query(collection(db, "stores"), where("category", "==", x.orig)))).docs) await updateDoc(sd.ref, { category: x.name });
         }
         state.catDraft = null; if (moved) toast(`تحدّث ${moved} عرض للاسم الجديد`);
+      },
+      saveSpot: () => updateDoc(doc(db, "config", "app"), { "credits.spotlightMax": Math.min(20, Math.max(1, parseInt($("crSpot").value, 10) || 3)) }),
+      fixSpot: async () => {
+        const items = { ...creditsOf(state.config).items };
+        Object.keys(items).forEach((k) => { if (/إبراز/.test(items[k].name)) items[k] = { ...items[k], effect: "spotlight" }; });
+        await updateDoc(doc(db, "config", "app"), { "credits.items": items }); state.itemsDraft = null;
       },
       saveWelcome: () => updateDoc(doc(db, "config", "app"), { "credits.welcome": Math.max(0, parseInt($("crWelcome").value, 10) || 0) }),
       saveStore: () => updateDoc(doc(db, "config", "app"), { "credits.storeUrl": $("crStore").value.trim().slice(0, 300) }),
