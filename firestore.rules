@@ -63,6 +63,7 @@ service cloud.firestore {
         && (!('grandOpening' in data) || data.grandOpening is bool)
         && (!('postType' in data) || data.postType in ['offer', 'new'])
         && (!('exclusive' in data) || data.exclusive is bool)
+        && (!('draft' in data) || data.draft is bool)
         && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12))
         && (!('delivery' in data) || data.delivery is bool)
         && (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5))
@@ -292,16 +293,36 @@ service cloud.firestore {
           && getAfter(walletPath(request.auth.uid)).data.lastOp.ref == code);
     }
 
+    // مكافأة الحصري: خصم (1-100%) على «النشر» بس، للعروض الحصرية، لما يشغّلها الأدمن
+    function exclCfg() {
+      return get(/databases/$(database)/documents/config/app).data.get('exclusive', {});
+    }
+    function exclDiscountOk(it, d, base) {
+      let r = exclCfg().get('reward', {});
+      let pct = r.get('percent', 0);
+      return it.effect == 'publish'
+        && exclCfg().get('enabled', true) == true
+        && r.get('enabled', false) == true
+        && pct is int && pct >= 1 && pct <= 100
+        && getAfter(/databases/$(database)/documents/offers/$(d.offerId)).data.get('exclusive', false) == true
+        && d.get('disc', 0) == pct
+        // السعر بعد الخصم مقرّب لفوق: cost = ceil(base × (100 - pct) / 100)
+        && d.cost * 100 >= base * (100 - pct)
+        && (d.cost - 1) * 100 < base * (100 - pct);
+    }
+    function exclRewardOn() {
+      return exclCfg().get('reward', {}).get('enabled', false) == true;
+    }
     // خدمات مدفوعة (نشر / تمييز / إعلان بارز): السعر من إعدادات الأدمن، والخصم من المحفظة بنفس العملية
     function boostOk(d) {
       let it = creditsCfg().get('items', {}).get(d.item, null);
+      let base = it == null ? 0 : (it.unit == 'day' ? it.price * d.days : it.price);
       return it != null && it.get('active', false) == true
         && d.effect == it.effect
         && d.days is int && d.days >= 1 && d.days <= 90
-        && d.cost is int && d.cost > 0
-        && (it.unit == 'day'
-            ? d.cost == it.price * d.days
-            : (d.cost == it.price && d.days == it.days))
+        && (it.unit == 'day' || d.days == it.days)
+        && d.cost is int && d.cost >= 0
+        && ((d.cost == base && d.cost > 0 && !('disc' in d)) || exclDiscountOk(it, d, base))
         && d.createdAt == request.time
         && d.startsAt is timestamp && d.endsAt is timestamp
         && d.startsAt >= request.time - duration.value(1, 'h')
@@ -309,13 +330,14 @@ service cloud.firestore {
         && d.endsAt > d.startsAt
         && d.endsAt <= d.startsAt + duration.value(d.days, 'd') + duration.value(1, 'h')
         && getAfter(/databases/$(database)/documents/offers/$(d.offerId)).data.merchantId == request.auth.uid
-        && getAfter(walletPath(request.auth.uid)).data.lastOp.ref == d.id;
+        // مجاني (حصري 100%) ما يلمس المحفظة، غيره لازم الخصم بنفس العملية
+        && (d.cost == 0 || getAfter(walletPath(request.auth.uid)).data.lastOp.ref == d.id);
     }
     match /boosts/{boostId} {
       allow read: if true;
       allow create: if isAdmin()
         || (isAuthenticated()
-          && request.resource.data.keys().hasOnly(['id', 'merchantId', 'offerId', 'item', 'effect', 'days', 'cost', 'createdAt', 'startsAt', 'endsAt'])
+          && request.resource.data.keys().hasOnly(['id', 'merchantId', 'offerId', 'item', 'effect', 'days', 'cost', 'disc', 'createdAt', 'startsAt', 'endsAt'])
           && request.resource.data.id == boostId
           && request.resource.data.merchantId == request.auth.uid
           && request.resource.data.offerId is string
@@ -422,6 +444,8 @@ service cloud.firestore {
         (isAuthenticated()
           && resource.data.merchantId == request.auth.uid
           && keepsProtectedFields()
+          // لما مكافأة الحصري شغّالة: التاجر ما يشيل الحصري بعد النشر (الأدمن بس)
+          && (resource.data.get('exclusive', false) != true || request.resource.data.get('exclusive', false) == true || !exclRewardOn())
           && !isSuspended(request.auth.uid)
           && approvalAllowed(request.auth.uid)
           && isValidOffer(request.resource.data))

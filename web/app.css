@@ -520,3 +520,17 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .spot-card .title { font-weight: 800; font-size: 18px; margin: 6px 0; }
 .spot-card .price { color: var(--green); font-weight: 800; font-size: 17px; }
 .spot-card .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+/* رصيد العروض داخل نموذج النشر + مكافأة الحصري + المسودات */
+.bal-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; font-size: 13px; margin-bottom: 10px; }
+.bal-bar b { color: var(--green); font-size: 15px; }
+.bal-bar.low { border-color: #F2C27A; background: var(--amber-bg); color: var(--amber); }
+.bal-bar.low b { color: var(--amber); }
+.bb-excl { color: #7C3AED; font-weight: 800; }
+.excl-reward { display: block; color: #7C3AED; font-weight: 800; font-size: 12px; margin-top: 2px; }
+.excl-offer { background: rgba(124, 58, 237, .08); border: 1px solid rgba(124, 58, 237, .3); border-radius: 14px; padding: 12px; margin: 10px 0; line-height: 1.7; font-size: 14px; }
+.excl-offer p { margin: 4px 0; }
+.excl-offer small { display: block; color: var(--muted); margin-bottom: 8px; }
+.excl-offer .btn { background: #7C3AED; }
+.mrow.draft { flex-wrap: wrap; border-style: dashed; border-color: #F2C27A; }
+.mrow.draft .pub-now { flex-basis: 100%; order: 5; margin: 2px 0 0; }

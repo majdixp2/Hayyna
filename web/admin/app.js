@@ -7,7 +7,7 @@ import {
   getFirestore, collection, doc, onSnapshot, query, where, orderBy, limit,
   updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
-import { EFFECTS, creditsOf, itemList, exclusiveOf, DEFAULT_ITEMS } from "/js/credits.js";
+import { EFFECTS, creditsOf, itemList, exclusiveOf, DEFAULT_ITEMS, rewardOf } from "/js/credits.js";
 import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS } from "../config.js";
 
 const app = initializeApp(firebaseConfig);
@@ -190,6 +190,7 @@ const actions = {
   approveStore: (uid) => updateDoc(doc(db, "stores", uid), { approved: true }),
   feature: (o) => updateDoc(doc(db, "offers", o.id), { isFeatured: !o.isFeatured }),
   toggleApproved: (o) => updateDoc(doc(db, "offers", o.id), { isApproved: !o.isApproved }),
+  async unexcl(o) { if (!confirm(`شيل «الحصري» عن «${o.offerTitle}»؟\n(الشارة بس، بدون خصم من رصيد التاجر)`)) return false; await updateDoc(doc(db, "offers", o.id), { exclusive: false }); },
   reply: (id, reply) => updateDoc(doc(db, "feedback", id), { reply, status: "done", replySeen: !reply }),
   fbStatus: (id, status) => updateDoc(doc(db, "feedback", id), { status }),
   async deleteFb(id) { if (!confirm("حذف الرسالة؟")) return false; await deleteDoc(doc(db, "feedback", id)); },
@@ -209,7 +210,7 @@ const actions = {
 // ---------------- الواجهة ----------------
 function computed() {
   const suspendedIds = new Set(state.statuses.filter((s) => s.suspended).map((s) => s.uid));
-  const pending = state.offers.filter((o) => !o.isApproved && !suspendedIds.has(o.merchantId));
+  const pending = state.offers.filter((o) => !o.isApproved && !o.draft && !suspendedIds.has(o.merchantId)); // المسودة تنراجع لما ينشرها التاجر
   const hidden = state.offers.filter((o) => o.isApproved && (o.reportsCount || 0) >= AUTO_HIDE_REPORTS);
   const hiddenIds = new Set(hidden.map((o) => o.id));
   const otherReports = {};
@@ -392,6 +393,7 @@ function describe(act, id, b, o) {
     unsuspend: () => ["إلغاء إيقاف تاجر", "merchants", uidT(id)],
     feature: () => ["تبديل تمييز عرض", "review", offerT(o), o ? (o.isFeatured ? "أُلغي التمييز" : "صار مميّز ⭐") : ""],
     toggleApproved: () => ["تبديل حالة عرض", "review", offerT(o), o ? (o.isApproved ? "أُوقف" : "تفعّل") : ""],
+    unexcl: () => ["شيل الحصري عن عرض", "review", offerT(o), "العرض مو حصري فعلاً — انشالت الشارة (بدون خصم من الرصيد)"],
     reply: () => ["رد على رسالة", "messages", fbT, ($("reply_" + id)?.value || "").slice(0, 600)],
     progress: () => ["رسالة قيد المتابعة", "messages", fbT],
     done: () => ["إنهاء رسالة", "messages", fbT],
@@ -405,7 +407,7 @@ function describe(act, id, b, o) {
     saveModel: () => ["تغيير نموذج الذكاء الاصطناعي", "settings", {}, $("aiModel")?.value],
     saveCats: () => ["تعديل التصنيفات", "settings", {}, catDraft().map((x) => x.name).filter(Boolean).join("، ")],
     savePoi: () => ["تعديل رسالة الدعوة", "settings", {}],
-    saveExcl: () => ["تعديل شارة الحصري", "settings", {}, `${$("exIcon")?.value} ${$("exLabel")?.value} • ${$("exOn")?.checked ? "مفعّلة" : "موقفة"}`],
+    saveExcl: () => ["تعديل شارة الحصري", "settings", {}, `${$("exIcon")?.value} ${$("exLabel")?.value} • ${$("exOn")?.checked ? "مفعّلة" : "موقفة"} • المكافأة: ${$("exRw")?.checked ? `${$("exPct")?.value}%` : "مطفية"}`],
     saveSpot: () => ["تعديل حد الإبراز في الحي", "credits", {}, `${$("crSpot")?.value} لكل حي`],
     fixSpot: () => ["تحويل خدمة الإبراز لنوع 🚀 إبراز", "credits", {}],
     saveWelcome: () => ["تعديل هدية الترحيب", "credits", {}, `${$("crWelcome")?.value} نقطة`],
@@ -584,16 +586,18 @@ function offers() {
   const q = state.offerQuery.trim().toLowerCase();
   const list = state.offers.filter((o) =>
     (!q || [o.restaurantName, o.offerTitle, o.district].some((v) => (v || "").toLowerCase().includes(q))) &&
-    ({ "نشط": o.isApproved && !isExpired(o), "بانتظار المراجعة": !o.isApproved, "منتهي": isExpired(o), "مميز ⭐": o.isFeatured }[state.offerFilter] ?? true)
+    ({ "نشط": o.isApproved && !o.draft && !isExpired(o), "بانتظار المراجعة": !o.isApproved && !o.draft, "منتهي": isExpired(o), "مميز ⭐": o.isFeatured, "💎 حصري": o.exclusive, "📝 مسودات": o.draft }[state.offerFilter] ?? true)
   ).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
   return `<input type="text" id="offerQuery" placeholder="ابحث باسم المتجر أو العرض أو الحي…" value="${esc(state.offerQuery)}">
-    <div class="chips">${["الكل", "نشط", "بانتظار المراجعة", "منتهي", "مميز ⭐"].map((t) => `<button class="chip ${state.offerFilter === t ? "on" : ""}" data-ofilter="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+    <div class="chips">${["الكل", "نشط", "بانتظار المراجعة", "منتهي", "مميز ⭐", "💎 حصري", "📝 مسودات"].map((t) => `<button class="chip ${state.offerFilter === t ? "on" : ""}" data-ofilter="${esc(t)}">${esc(t)}</button>`).join("")}</div>
     <p class="muted">${list.length} عرض</p>
     <div class="grid">${list.map((o) => offerCard(o,
       `<div style="margin-top:6px"><span class="pill ${o.isApproved ? "" : "off"}">${o.isApproved ? "نشط" : "معلق"}</span>
-       ${isExpired(o) ? `<span class="pill off">منتهي</span>` : ""} ${o.isFeatured ? `<span class="pill">مميز ⭐</span>` : ""}</div>`,
+       ${isExpired(o) ? `<span class="pill off">منتهي</span>` : ""} ${o.isFeatured ? `<span class="pill">مميز ⭐</span>` : ""}
+       ${o.exclusive ? `<span class="pill" style="background:#EDE4FF;color:#6D28D9">💎 حصري</span>` : ""} ${o.draft ? `<span class="pill off">📝 مسودة (بانتظار رصيد التاجر)</span>` : ""}</div>`,
       `<button class="btn" data-act="feature" data-id="${o.id}">${o.isFeatured ? "إلغاء التمييز" : "⭐ تمييز"}</button>
        <button class="btn" data-act="toggleApproved" data-id="${o.id}">${o.isApproved ? "إيقاف" : "تفعيل"}</button>
+       ${o.exclusive ? `<button class="btn" data-act="unexcl" data-id="${o.id}" title="لو العرض مو حصري فعلاً">💎 شيل الحصري</button>` : ""}
        <button class="btn danger" data-act="deleteOffer" data-id="${o.id}">حذف</button>`)).join("")}</div>`;
 }
 
@@ -606,7 +610,7 @@ function catDraft() {
 function settings() {
   const cfg = state.config;
   const cats = catDraft();
-  const ex = exclusiveOf(cfg);
+  const ex = exclusiveOf(cfg), rw = { enabled: !!cfg.exclusive?.reward?.enabled, percent: cfg.exclusive?.reward?.percent ?? 100 };
   const COLORS = ["#7C3AED", "#2D6A4F", "#E05A47", "#2563EB", "#B7791F", "#111827"];
   return jumpNav([["st-cats", "التصنيفات"], ["st-excl", "شارة الحصري"], ["st-support", "الدعم"], ["st-ai", "التعبئة الذكية"], ["st-verify", "التوثيق"], ["st-poi", "محلات Google"]]) + `<h2 id="st-excl">💎 شارة «حصري لحيّنا»</h2>
     <div class="card">
@@ -616,6 +620,13 @@ function settings() {
         <span>الأيقونة</span><input type="text" id="exIcon" value="${esc(ex.icon)}" maxlength="4" style="width:60px">
         <span>اللون</span>${COLORS.map((c) => `<button class="swatch${ex.color === c ? " on" : ""}" data-excolor="${c}" style="background:${c}"></button>`).join("")}
         <span class="xbadge" id="exPrev" style="background:${esc(ex.color)}">${esc(ex.icon)} ${esc(ex.label)}</span></div>
+      <div class="reward-box">
+        <label class="switch"><input type="checkbox" id="exRw" ${rw.enabled ? "checked" : ""}> 🎁 مكافأة الحصري: خصم على <b>نشر</b> العروض الحصرية</label>
+        <div class="row" style="align-items:center;margin-top:6px;flex-wrap:wrap"><span>نسبة الخصم</span>
+          <input type="number" id="exPct" min="1" max="100" value="${esc(rw.percent)}" style="width:90px"> <span>%</span>
+          ${[25, 50, 100].map((p) => `<button class="chip" data-expct="${p}">${p === 100 ? "مجاني (100%)" : p + "%"}</button>`).join("")}</div>
+        <p class="muted" style="margin:6px 0 0">${rewardOf(cfg).on ? `شغّالة الحين: ${rewardOf(cfg).free ? "نشر الحصري مجاني" : `خصم ${rewardOf(cfg).percent}%`}` : "مطفية: الشارة موجودة بدون خصم"}. الخصم على النشر بس (التمييز والإبراز بسعرهم)، ويُحسب وقت الشراء — لو طفيتها اللي اشتروا ما يتأثرون. لما تكون شغّالة، التاجر ما يقدر يشيل الحصري عن عرضه بعد النشر.</p>
+      </div>
       <div class="actions"><button class="btn primary" data-act="saveExcl">حفظ</button></div>
     </div>
     <h2 id="st-cats">🏷️ تصنيفات المتاجر</h2>
@@ -734,6 +745,7 @@ function bind() {
     await audit("تعديل رصيد تاجر", "credits", uidT(uid), `${delta > 0 ? "+" : ""}${delta} نقطة${$("adjn_" + uid).value.trim() ? " • " + $("adjn_" + uid).value.trim() : ""}`);
   }, "تم تعديل الرصيد ✅")));
   // ---- شارة الحصري ----
+  c.querySelectorAll("[data-expct]").forEach((b) => (b.onclick = () => { $("exPct").value = b.dataset.expct; $("exRw").checked = true; }));
   c.querySelectorAll("[data-excolor]").forEach((b) => (b.onclick = () => { c.querySelectorAll("[data-excolor]").forEach((x) => x.classList.toggle("on", x === b)); $("exPrev").style.background = b.dataset.excolor; }));
   ["exLabel", "exIcon"].forEach((id) => { const el = $(id); if (el) el.oninput = () => { $("exPrev").textContent = `${$("exIcon").value} ${$("exLabel").value}`; }; });
   c.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => {
@@ -752,6 +764,7 @@ function bind() {
       unsuspend: () => actions.unsuspend(statusOf(id)),
       feature: () => actions.feature(o),
       toggleApproved: () => actions.toggleApproved(o),
+      unexcl: () => actions.unexcl(o),
       reply: async () => { await actions.reply(id, $("reply_" + id).value.trim()); delete state.drafts[id]; },
       progress: () => actions.fbStatus(id, "in_progress"),
       done: () => actions.fbStatus(id, "done"),
@@ -805,7 +818,12 @@ function bind() {
         }
         await loadCodes();
       },
-      saveExcl: () => actions.saveConfig({ exclusive: { enabled: $("exOn").checked, label: $("exLabel").value.trim().slice(0, 20) || "حصري لحيّنا", icon: $("exIcon").value.trim().slice(0, 4) || "💎", color: $("content").querySelector("[data-excolor].on")?.dataset.excolor || "#7C3AED" } }),
+      saveExcl: () => {
+        const pct = Math.round(+$("exPct").value);
+        if (!(pct >= 1 && pct <= 100)) { toast("نسبة الخصم من 1 إلى 100"); return false; }
+        return actions.saveConfig({ exclusive: { enabled: $("exOn").checked, label: $("exLabel").value.trim().slice(0, 20) || "حصري لحيّنا", icon: $("exIcon").value.trim().slice(0, 4) || "💎", color: $("content").querySelector("[data-excolor].on")?.dataset.excolor || "#7C3AED",
+          reward: { enabled: $("exRw").checked, percent: pct } } });
+      },
       staffAdd: async () => {
         const email = $("stEmail").value.trim().toLowerCase(), name = $("stName").value.trim().slice(0, 60);
         const perms = PERMS.map(([k]) => k).filter((k) => $("content").querySelector(`[data-newperm="${k}"]`)?.checked);

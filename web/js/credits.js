@@ -28,6 +28,15 @@ export const costOf = (it, days) => it.unit === "day" ? it.price * days : it.pri
 export const EXCLUSIVE_DEFAULT = { enabled: true, label: "حصري لحيّنا", icon: "💎", color: "#7C3AED" };
 export const exclusiveOf = (config) => ({ ...EXCLUSIVE_DEFAULT, ...(config?.exclusive || {}) });
 
+/** مكافأة الحصري: خصم على «النشر» بس للعروض الحصرية (100% = مجاني). يتحكم فيه الأدمن. */
+export const rewardOf = (config) => {
+  const r = config?.exclusive?.reward || {}, pct = Math.max(0, Math.min(100, Math.round(+r.percent || 0)));
+  return { on: !!r.enabled && exclusiveOf(config).enabled && pct > 0, percent: pct, free: pct >= 100 };
+};
+/** السعر بعد خصم الحصري (يقرّب لفوق عشان يبقى رقم صحيح) */
+export const discounted = (cost, pct) => Math.ceil((cost * (100 - pct)) / 100);
+export const rewardText = (rw) => rw.free ? "نشره مجاني 🎁" : `خصم ${rw.percent}% على نشره 🎁`;
+
 const ms = (t) => (t && t.toMillis ? t.toMillis() : (typeof t === "number" ? t : 0));
 
 /** خدمات العرض النشطة الحين من قائمة boosts. */

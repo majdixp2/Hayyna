@@ -6,13 +6,14 @@ import { MAPS_WEB_KEY } from "../config.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
-import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict } from "./credits.js";
+import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict, rewardOf, discounted, rewardText } from "./credits.js";
 
 const { esc, cld, thumb, priceLabel, districtLabel, money } = X;
 const DAILY_LIMIT = 3;
 const m = { uid: null, profile: null, status: null, offers: [], unsubs: [], root: null, ctx: null, wallet: undefined, boosts: [] };
 const cr = () => creditsOf(state.config);
 const bal = () => m.wallet?.balance || 0;
+const rw = () => rewardOf(state.config);
 const fmtDate = (t) => { const d = new Date(t); return `${d.getDate()}/${d.getMonth() + 1}`; };
 
 const canPublishDirectly = () => m.ctx?.isAdmin || (m.status?.trusted === true && m.status?.suspended !== true);
@@ -39,7 +40,7 @@ function draw() {
   if (m.profile === undefined || m.status === undefined) { root.innerHTML = `<div class="spinner"></div>`; return; }
   const p = m.profile || {}, st = m.status || {}, now = Date.now();
   const hasStore = (p.branches || []).length > 0;
-  const active = m.offers.filter((o) => o.isApproved && !X.isExpired(o, now));
+  const active = m.offers.filter((o) => o.isApproved && !o.draft && !X.isExpired(o, now));
   const sum = (k) => m.offers.reduce((a, o) => a + (o[k] || 0), 0);
   const banner = st.suspended ? `<div class="banner red">⛔ حسابك موقوف حالياً. تواصل مع إدارة حيّنا.</div>`
     : canPublishDirectly() ? `<div class="banner green">✅ حسابك موثوق — عروضك تنشر مباشرة</div>`
@@ -73,6 +74,7 @@ function draw() {
   $("mContact").onclick = m.ctx.contact;
   $("wRedeem")?.addEventListener("click", openRedeem);
   $("wHistory")?.addEventListener("click", openHistory);
+  root.querySelectorAll("[data-pub]").forEach((b) => b.onclick = () => publishDraft(m.offers.find((o) => o.id === b.dataset.pub)));
   root.querySelectorAll("[data-boost]").forEach((b) => b.onclick = () => openBoost(m.offers.find((o) => o.id === b.dataset.boost)));
   root.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => openOfferForm(m.offers.find((o) => o.id === b.dataset.edit)));
   root.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => confirmDelete(m.offers.find((o) => o.id === b.dataset.del)));
@@ -81,13 +83,14 @@ function draw() {
 
 function offerRow(o) {
   const now = Date.now(), exp = X.isExpired(o, now), hidden = (o.reportsCount || 0) >= 3;
-  const chip = !o.isApproved ? `<span class="pill">⏳ بانتظار المراجعة</span>` : hidden ? `<span class="pill urgent">🚩 مخفي للمراجعة</span>`
+  const chip = o.draft ? `<span class="pill urgent">📝 مسودة — بانتظار الرصيد</span>` : !o.isApproved ? `<span class="pill">⏳ بانتظار المراجعة</span>` : hidden ? `<span class="pill urgent">🚩 مخفي للمراجعة</span>`
     : exp ? `<span class="pill closed">منتهي</span>` : (() => { const r = X.remainingText(o, now); return r ? `<span class="pill ${r.cls}">${esc(r.t)}</span>` : `<span class="pill open">نشط</span>`; })();
-  return `<div class="mrow${exp ? " dim" : ""}">
+  return `<div class="mrow${exp ? " dim" : ""}${o.draft ? " draft" : ""}">
     <img src="${esc(thumb(o, 160))}" alt="" data-view="${esc(o.id)}">
     <div class="mr-main" data-view="${esc(o.id)}"><b>${esc(o.offerTitle)}</b><div class="price">${esc(priceLabel(o))}</div>
-      <div class="pills">${chip}${paidChips(o)}<span class="pill closed">👁 ${o.viewsCount || 0}</span></div></div>
-    <div class="mr-act">${cr().enabled && !exp ? `<button class="icon-btn" data-boost="${esc(o.id)}" aria-label="تمييز">🚀</button>` : ""}<button class="icon-btn" data-edit="${esc(o.id)}" aria-label="تعديل">✎</button><button class="icon-btn" data-del="${esc(o.id)}" aria-label="حذف">🗑</button></div>
+      <div class="pills">${chip}${o.draft ? "" : paidChips(o)}<span class="pill closed">👁 ${o.viewsCount || 0}</span></div></div>
+    ${o.draft ? `<button class="btn dir pub-now" data-pub="${esc(o.id)}">📢 انشر الحين</button>` : ""}
+    <div class="mr-act">${cr().enabled && !exp && !o.draft ? `<button class="icon-btn" data-boost="${esc(o.id)}" aria-label="تمييز">🚀</button>` : ""}<button class="icon-btn" data-edit="${esc(o.id)}" aria-label="تعديل">✎</button><button class="icon-btn" data-del="${esc(o.id)}" aria-label="حذف">🗑</button></div>
   </div>`;
 }
 
@@ -167,17 +170,24 @@ async function openHistory() {
       : `<div class="empty-inline">ما فيه حركات للحين</div>`}</div>`);
 }
 /** يجهّز عملية صرف (خدمة + خصم) داخل batch. يرجّع null لو الرصيد ما يكفي. */
-function addSpend(wb, { item, offerId, days, startsAt, note }) {
+/** تكلفة الخدمة على هالعرض (النشر عليه خصم لو العرض حصري ومكافأة الحصري شغّالة) */
+function priceFor(item, days, excl) {
   const it = { ...cr().items[item], id: item };
   const d = it.unit === "day" ? days : (it.days || 1);
-  const cost = costOf(it, d);
+  const full = costOf(it, d), r = rw();
+  const disc = it.effect === "publish" && excl && r.on ? r.percent : 0;
+  return { it, d, full, cost: disc ? discounted(full, disc) : full, disc };
+}
+function addSpend(wb, { item, offerId, days, startsAt, note, excl = false }) {
+  const { it, d, cost, disc } = priceFor(item, days, excl);
   const admin = !!m.ctx?.isAdmin;
   if (!admin && bal() < cost) return null;
   const ref = doc(collection(db, "boosts"));
   const start = Math.max(Date.now(), startsAt || 0);
-  wb.set(ref, { id: ref.id, merchantId: m.uid, offerId, item, effect: it.effect, days: d, cost, createdAt: serverTimestamp(),
+  wb.set(ref, { id: ref.id, merchantId: m.uid, offerId, item, effect: it.effect, days: d, cost, ...(disc ? { disc } : {}), createdAt: serverTimestamp(),
     startsAt: Timestamp.fromMillis(start), endsAt: Timestamp.fromMillis(start + d * X.DAY) });
-  if (!admin) {
+  if (disc) note = `${note || it.name} (💎 ${disc >= 100 ? "مجاني" : `خصم ${disc}%`})`;
+  if (!admin && cost > 0) {
     wb.set(doc(db, "wallets", m.uid), { balance: bal() - cost, lastOp: { kind: "spend", ref: ref.id }, updatedAt: serverTimestamp() });
     wb.set(doc(collection(db, "wallets", m.uid, "tx")), { kind: "spend", points: -cost, note: (note || it.name).slice(0, 120), ref: ref.id, at: serverTimestamp() });
   }
@@ -194,7 +204,7 @@ function openBoost(o) {
       const isPub = it.effect === "publish", isSpot = it.effect === "spotlight", full = isSpot && !ef.spotlight && spotUsed >= spotMax;
       return `<div class="boost-item${isSpot ? " spot" : ""}"><div><b>${esc(it.name)}</b><small>${esc(EFFECTS[it.effect]?.hint || "")}${isPub && ef.publishUntil > now ? ` • منشور لين ${fmtDate(ef.publishUntil)}` : ""}</small>
         ${isSpot ? `<small class="spot-left">${full ? `⛔ الأماكن في ${esc(o.district || "حيّك")} ممتلئة (${spotUsed}/${spotMax})، جرّب بعد كم يوم` : `باقي ${spotMax - spotUsed} من ${spotMax} أماكن في ${esc(o.district || "حيّك")}`}</small>` : ""}</div>
-        ${it.unit === "day" ? `<select class="input bdays" data-bd="${it.id}">${[1, 3, 7, 14, 30].map((d) => `<option value="${d}">${d} ${d === 1 ? "يوم" : "أيام"} • ${it.price * d} نقطة</option>`).join("")}</select>`
+        ${it.unit === "day" ? `<select class="input bdays" data-bd="${it.id}">${[1, 3, 7, 14, 30].map((d) => { const pr = priceFor(it.id, d, !!o.exclusive); return `<option value="${d}">${d} ${d === 1 ? "يوم" : "أيام"} • ${pr.disc ? (pr.cost ? `${pr.cost} نقطة بدل ${pr.full} 💎` : "مجاني 💎") : `${pr.full} نقطة`}</option>`; }).join("")}</select>`
           : `<span class="bprice">${it.price} نقطة • ${it.days} ${it.days === 1 ? "يوم" : "أيام"}</span>`}
         <button class="btn dir" data-buy="${it.id}" ${full ? "disabled" : ""}>${isPub ? "تمديد النشر" : "اشترِ"}</button></div>`; }).join("")}</div>
     <div id="bErr" class="err"></div></div>`);
@@ -204,13 +214,57 @@ function openBoost(o) {
     // التمديد يبدأ من نهاية النشر الحالي (أو نهاية فترة السماح للعروض القديمة)
     const g = graceEnd(o, cr());
     const start = it.effect === "publish" ? Math.max(now, ef.publishUntil, g === Infinity ? 0 : g) : now;
-    const wb = writeBatch(db), cost = addSpend(wb, { item: id, offerId: o.id, days, startsAt: start, note: `${it.name} — ${o.offerTitle}` });
-    if (cost == null) return $("bErr").textContent = `رصيدك ما يكفي (تحتاج ${costOf(it, days)} نقطة). اشحن رصيدك أول.`;
-    if (!confirm(`تأكيد: ${it.name} بـ ${cost} نقطة؟`)) return;
+    const wb = writeBatch(db), cost = addSpend(wb, { item: id, offerId: o.id, days, startsAt: start, note: `${it.name} — ${o.offerTitle}`, excl: !!o.exclusive });
+    if (cost == null) return $("bErr").textContent = `رصيدك ما يكفي (تحتاج ${priceFor(id, days, !!o.exclusive).cost} نقطة). اشحن رصيدك أول.`;
+    if (!confirm(cost === 0 ? `تأكيد: ${it.name} (مجاني لأن عرضك حصري 💎)؟` : `تأكيد: ${it.name} بـ ${cost} نقطة؟`)) return;
     b.disabled = true;
-    try { await wb.commit(); hideSheet(); toast(`تم ✅ خصمنا ${cost} نقطة`, true); }
+    try { await wb.commit(); hideSheet(); toast(cost ? `تم ✅ خصمنا ${cost} نقطة` : "تم ✅ مجاناً لأن عرضك حصري 💎", true); }
     catch (e) { console.error(e); b.disabled = false; $("bErr").textContent = "تعذّرت العملية. حدّث الصفحة وجرّب مرة ثانية."; }
   });
+}
+
+// =================== المسودات (العرض محفوظ، ينتظر الرصيد) ===================
+function draftSaved(excl) {
+  const r = rw(), exl = exclusiveOf(state.config), store = state.config.credits?.storeUrl;
+  showSheet(`<div class="pad"><div class="section-title">انحفظ عرضك ✅</div>
+    <p class="desc tr">يتنشر بضغطة وحدة أول ما يصير عندك رصيد. تلقاه في «حسابي» تحت «عروضي» وعليه زر <b>📢 انشر الحين</b>.</p>
+    ${r.on && !excl ? `<div class="excl-offer"><b>💡 ترى ${esc(exl.icon)} ${esc(exl.label)} ${r.free ? "نشره مجاني" : `نشره بخصم ${r.percent}%`}</b><p>لو عرضك لعملاء حيّنا بس، اضغط «انشر الحين» واختر «خلّه حصري».</p></div>` : ""}
+    <div class="row2"><button class="btn call" id="dsRedeem">🔑 شحن بكود</button>${store ? `<a class="btn call" href="${esc(store)}" target="_blank" rel="noopener">🛒 اشترِ رصيد</a>` : `<button class="btn dir" id="dsOk">تمام</button>`}</div></div>`);
+  $("dsRedeem").onclick = openRedeem;
+  $("dsOk")?.addEventListener("click", hideSheet);
+}
+function publishDraft(o) {
+  if (!o) return;
+  const now = Date.now(), DAY = X.DAY, tiers = (o.dailyPercents || []).length, st = X.ms(o.startsAt);
+  const oldBase = st || X.ms(o.createdAt) || now;
+  const days = Math.min(90, tiers || (o.expiresAt ? Math.max(1, Math.round((X.ms(o.expiresAt) - oldBase) / DAY)) : 7));
+  const start = st && st > now ? st : now;
+  const expiry = tiers ? X.midnight(start) + tiers * DAY : start + days * DAY;
+  const full = priceFor("publish", days, false), ex = priceFor("publish", days, true), r = rw(), exl = exclusiveOf(state.config);
+  const mine = o.exclusive ? ex : full, admin = !!m.ctx?.isAdmin;
+  const canPay = admin || bal() >= mine.cost, exclOk = !o.exclusive && r.on && bal() >= ex.cost && ex.cost < full.cost;
+  const store = state.config.credits?.storeUrl;
+  const label = (p) => p.cost ? `بـ ${p.cost} نقطة` : "مجاناً";
+  showSheet(`<div class="pad"><div class="section-title">📢 ${esc(o.offerTitle)}</div>
+    <p class="desc tr">المدة: <b>${days} ${days === 1 ? "يوم" : "أيام"}</b> تبدأ ${start > now ? `من ${fmtDate(start)}` : "الحين"} • رصيدك <b>${bal()}</b> نقطة</p>
+    ${canPay ? `<button class="btn dir big" id="pdGo">📢 انشره ${admin ? "" : label(mine)}</button>` : `<div class="hint-box">رصيدك ما يكفي: النشر يحتاج <b>${mine.cost}</b> نقطة.</div>`}
+    ${exclOk ? `<div class="excl-offer"><b>${canPay ? "أو وفّر 👇" : "بس عندنا لك حل 👇"}</b><p>خلّه <b>${esc(exl.icon)} ${esc(exl.label)}</b> وانشره ${ex.cost ? `بـ <b>${ex.cost}</b> نقطة بدل ${full.cost}` : "<b>مجاناً</b>"}.</p>
+      <small>الحصري يعني العرض لعملاء حيّنا بس، يوري التطبيق عند الكاشير.</small>
+      <button class="btn dir big" id="pdExcl">${esc(exl.icon)} خلّه حصري وانشره ${label(ex)}</button></div>` : ""}
+    ${!canPay ? `<div class="row2"><button class="btn call" id="pdRedeem">🔑 شحن بكود</button>${store ? `<a class="btn call" href="${esc(store)}" target="_blank" rel="noopener">🛒 اشترِ رصيد</a>` : ""}</div>` : ""}
+    <div id="pdErr" class="err"></div></div>`);
+  const go = async (excl, btn) => {
+    const wb = writeBatch(db);
+    wb.update(doc(db, "offers", o.id), { draft: false, exclusive: excl, startsAt: Timestamp.fromMillis(start), expiresAt: Timestamp.fromMillis(expiry) });
+    const cost = addSpend(wb, { item: "publish", offerId: o.id, days, startsAt: start, note: `📢 نشر: ${o.offerTitle}`, excl });
+    if (cost == null) return $("pdErr").textContent = "رصيدك ما يكفي.";
+    btn.disabled = true;
+    try { await wb.commit(); hideSheet(); toast(!o.isApproved ? "انرسل للمراجعة ⏳ بيظهر بعد الموافقة" : cost ? `تم نشر العرض ✅ خصمنا ${cost} نقطة` : "تم نشر العرض ✅ مجاناً 💎", true); }
+    catch (e) { console.error(e); btn.disabled = false; $("pdErr").textContent = "تعذّر النشر. حدّث الصفحة وجرّب مرة ثانية."; }
+  };
+  $("pdGo")?.addEventListener("click", (ev) => go(!!o.exclusive, ev.currentTarget));
+  $("pdExcl")?.addEventListener("click", (ev) => go(true, ev.currentTarget));
+  $("pdRedeem")?.addEventListener("click", openRedeem);
 }
 
 function confirmDelete(o) {
@@ -442,6 +496,7 @@ export async function openOfferForm(editing) {
     kind: e?.postType === "new" ? "new" : "offer", exclusive: !!e?.exclusive,
   };
   const paid = cr().enabled && !e; // النشر الجديد بالرصيد
+  const exclLocked = !!e?.exclusive && rw().on && !m.ctx?.isAdmin; // الحصري ما ينشال بعد ما انتشر بخصم
   if (paid && f.durIdx === 0) f.durIdx = 3; // بدون انتهاء ما يصلح مع الرصيد
   const pubItem = cr().items.publish || { price: 0, unit: "day" };
   const daysOf = () => {
@@ -456,7 +511,9 @@ export async function openOfferForm(editing) {
   const render = () => {
     const isNew = f.kind === "new";
     if (isNew) f.percentMode = false;
+    const pr = paid ? priceFor("publish", Math.max(1, daysOf()), f.exclusive) : null, r = rw();
     $("pageBody").innerHTML = `<div class="form">
+      ${paid && !m.ctx?.isAdmin ? `<div class="bal-bar${bal() < (pr?.cost || 0) ? " low" : ""}"><span>💰 رصيدك: <b>${bal()}</b> نقطة</span><span>📢 النشر: ${pubItem.price} ${pubItem.unit === "day" ? "نقاط باليوم" : "نقاط"}</span>${r.on ? `<span class="bb-excl">💎 الحصري: ${r.free ? "نشره مجاني" : `خصم ${r.percent}%`}</span>` : ""}</div>` : ""}
       <div class="kind-row">
         <button class="kind-btn${!isNew ? " on" : ""}" data-kind="offer"><b>🔥 عرض</b><small>خصم أو سعر خاص</small></button>
         <button class="kind-btn new${isNew ? " on" : ""}" data-kind="new"><b>✨ جديدنا</b><small>صنف أو منتج جديد</small></button>
@@ -486,13 +543,14 @@ export async function openOfferForm(editing) {
       <div class="section-title">🔜 متى يبدأ؟</div>
       <div class="row2"><button class="chip${!f.start ? " on" : ""}" id="oNow">الحين</button><input type="date" id="oStart" class="input" value="${startStr()}"></div>
       ${isNew ? "" : `<label class="switch-row"><span>🎉 عرض افتتاح (محل جديد)</span><input type="checkbox" id="oOpen" ${f.opening ? "checked" : ""}></label>`}
-      ${exclusiveOf(state.config).enabled ? `<label class="switch-row"><span>${esc(exclusiveOf(state.config).icon)} ${esc(exclusiveOf(state.config).label)} <small class="hint">(العرض متاح لعملاء حيّنا بس)</small></span><input type="checkbox" id="oExcl" ${f.exclusive ? "checked" : ""}></label>` : ""}
+      ${exclusiveOf(state.config).enabled ? `<label class="switch-row"><span>${esc(exclusiveOf(state.config).icon)} ${esc(exclusiveOf(state.config).label)} <small class="hint">(العرض لعملاء حيّنا بس، يوري التطبيق عند الكاشير)</small>${r.on && cr().enabled ? `<small class="excl-reward">🎁 ${r.free ? "نشر العرض الحصري مجاني" : `خصم ${r.percent}% على نشر العرض الحصري`}</small>` : ""}</span><input type="checkbox" id="oExcl" ${f.exclusive ? "checked" : ""} ${exclLocked ? "disabled" : ""}></label>
+        ${exclLocked ? `<small class="hint">💎 العرض انتشر كحصري، فما تقدر تشيل الحصري. لو تبيه لكل الناس احذفه وانشره من جديد.</small>` : ""}` : ""}
       ${cr().enabled && e ? `<div class="hint-box">⏰ لتمديد مدة العرض أو تمييزه استخدم زر 🚀 في قائمة عروضك.</div>` : f.percentMode && f.tiered ? "" : `<div class="section-title">⏰ ${isNew ? "كم يظهر كـ «جديد»؟" : "مدة العرض"}</div><div class="chips wrap">
         ${e ? `<button class="chip${f.keepExpiry ? " on" : ""}" data-dur="keep">بدون تغيير (${esc(X.remainingText(e)?.t || "بدون انتهاء")})</button>` : ""}
         ${X.DURATIONS.map((d, i) => paid && !d.days ? "" : `<button class="chip${!f.keepExpiry && f.durIdx === i ? " on" : ""}" data-dur="${i}">${d.label}</button>`).join("")}
         <button class="chip${!f.keepExpiry && f.durIdx === -1 ? " on" : ""}" data-dur="-1">✎ عدد أيام</button></div>
         ${!f.keepExpiry && f.durIdx === -1 ? `<input id="oDays" class="input" inputmode="numeric" maxlength="2" value="${esc(f.customDays)}" placeholder="كم يوم؟ مثال: 2">` : ""}`}
-      ${paid ? `<div class="cost-line" id="oCost">💰 تكلفة النشر: <b>${daysOf()} ${daysOf() === 1 ? "يوم" : "أيام"} × ${pubItem.price} = ${costOf(pubItem, daysOf())} نقطة</b> • رصيدك ${bal()}${bal() < costOf(pubItem, daysOf()) ? ` <span class="err">— ما يكفي، اشحن رصيدك</span>` : ""}</div>` : ""}
+      ${paid ? `<div class="cost-line" id="oCost">💰 تكلفة النشر: <b>${pr.disc ? (pr.cost ? `<s>${pr.full}</s> ${pr.cost} نقطة 💎` : `<s>${pr.full}</s> مجاني 💎`) : `${daysOf()} ${daysOf() === 1 ? "يوم" : "أيام"} × ${pubItem.price} = ${pr.full} نقطة`}</b>${m.ctx?.isAdmin ? "" : ` • رصيدك ${bal()}${bal() < pr.cost ? ` <span class="err">— ما يكفي، بس لا تشيل هم: نحفظ عرضك مسودة</span>` : ""}`}</div>` : ""}
       <small class="hint">بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة. ✨ التعبئة الذكية من الصورة متاحة في تطبيق أندرويد.</small>
     </div>`;
     const set = (id, k) => { const el = $(id); if (el) el.oninput = (ev) => { f[k] = ev.target.value; dirty = true; }; };
@@ -513,7 +571,7 @@ export async function openOfferForm(editing) {
     $("oNow").onclick = () => { f.start = null; render(); };
     $("oStart").onchange = (ev) => { if (!ev.target.value) { f.start = null; } else { const [y, mo, d] = ev.target.value.split("-").map(Number); f.start = new Date(y, mo - 1, d).getTime(); } render(); };
     $("oOpen")?.addEventListener("change", (ev) => { f.opening = ev.target.checked; });
-    $("oExcl")?.addEventListener("change", (ev) => { f.exclusive = ev.target.checked; dirty = true; });
+    $("oExcl")?.addEventListener("change", (ev) => { f.exclusive = ev.target.checked; dirty = true; if (paid) render(); });
     body.querySelectorAll("[data-kind]").forEach((b) => b.onclick = () => {
       if (f.kind === b.dataset.kind) return;
       f.kind = b.dataset.kind; dirty = true;
@@ -528,6 +586,22 @@ export async function openOfferForm(editing) {
   openPage(e ? "تعديل العرض" : "عرض جديد", "", `<div id="oErr" class="err"></div><button class="btn dir big" id="oSave">${e ? "حفظ التعديلات ✓" : "انشر العرض ✨"}</button>`,
     () => (dirty && !saving ? confirm("المعلومات اللي كتبتها بتضيع. تطلع؟") : true));
   render();
+  let asDraft = false;
+  // رصيد ما يكفي: نقترح الحصري (لو مكافأته تغطي) أو نحفظه مسودة — التاجر ما يخسر اللي كتبه
+  const shortfall = (days) => {
+    const full = priceFor("publish", days, false), ex = priceFor("publish", days, true), r = rw();
+    const exclOk = r.on && !f.exclusive && bal() >= ex.cost;
+    const exl = exclusiveOf(state.config);
+    showSheet(`<div class="pad"><div class="section-title">رصيدك ما يكفي 🙁</div>
+      <p class="desc tr">نشر العرض يحتاج <b>${(f.exclusive ? ex : full).cost}</b> نقطة، ورصيدك <b>${bal()}</b>.</p>
+      ${exclOk ? `<div class="excl-offer"><b>بس عندنا لك حل 👇</b><p>خلّ عرضك <b>${esc(exl.icon)} ${esc(exl.label)}</b> وانشره ${ex.cost ? `بـ <b>${ex.cost}</b> نقطة بدل ${full.cost}` : "<b>مجاناً</b>"} الحين.</p>
+        <small>الحصري يعني العرض لعملاء حيّنا بس، يوري التطبيق عند الكاشير.</small>
+        <button class="btn dir big" id="sfExcl">${esc(exl.icon)} خلّه حصري وانشره ${ex.cost ? `بـ ${ex.cost} نقطة` : "مجاناً"}</button></div>` : ""}
+      <button class="btn ${exclOk ? "call" : "dir big"}" id="sfDraft">📝 احفظه مسودة لين أشحن</button>
+      <small class="hint">المسودة ما تظهر للناس، وتنشرها بضغطة وحدة من «حسابي» أول ما يصير عندك رصيد.</small></div>`);
+    $("sfExcl")?.addEventListener("click", () => { hideSheet(); f.exclusive = true; render(); $("oSave").onclick(); });
+    $("sfDraft").onclick = () => { hideSheet(); asDraft = true; $("oSave").onclick(); };
+  };
   $("oSave").onclick = async () => {
     const err = (t) => { $("oErr").textContent = t; return null; };
     const now = Date.now(), DAY = X.DAY;
@@ -554,10 +628,11 @@ export async function openOfferForm(editing) {
     if (expiry != null && expiry <= now) return err("حسب التاريخ والمدة العرض منتهي، عدّل البداية أو المدة.");
     const direct = canPublishDirectly();
     const pubDays = paid ? (useTiers ? steps.length : Math.max(1, Math.round(((expiry || 0) - base) / DAY))) : 0;
-    if (paid && !m.ctx?.isAdmin && bal() < costOf(pubItem, pubDays)) return err(`رصيدك ما يكفي للنشر (تحتاج ${costOf(pubItem, pubDays)} نقطة، رصيدك ${bal()}). اشحن رصيدك من لوحة التاجر.`);
     if (!e && !direct && m.offers.filter((o) => (X.ms(o.createdAt) || 0) > now - DAY).length >= DAILY_LIMIT)
       return err(`وصلت للحد اليومي (${DAILY_LIMIT} عروض) للحسابات الجديدة. جرّب بكرة 🙏`);
-    saving = true; $("oSave").disabled = true; $("oSave").textContent = "جاري رفع العرض…"; err("");
+    // الرصيد ما يكفي: ما نرفض أبداً — نعرض الحصري (لو يكفي له) أو نحفظه مسودة
+    if (paid && !m.ctx?.isAdmin && !asDraft && bal() < priceFor("publish", pubDays, f.exclusive).cost) return shortfall(pubDays);
+    saving = true; $("oSave").disabled = true; $("oSave").textContent = asDraft ? "جاري حفظ المسودة…" : "جاري رفع العرض…"; err("");
     try {
       const urls = []; for (const it of f.media) urls.push(it.file ? await uploadImage(it.file) : it.url);
       const primary = branches[0];
@@ -584,19 +659,21 @@ export async function openOfferForm(editing) {
         const ref = doc(collection(db, "offers"));
         const offerDoc = { ...data, id: ref.id, merchantId: state.user.uid, isApproved: direct, isFeatured: false,
           viewsCount: 0, directionsCount: 0, whatsappCount: 0, reportsCount: 0, createdAt: serverTimestamp() };
-        if (paid) {
+        if (asDraft) await setDoc(ref, { ...offerDoc, draft: true });
+        else if (paid) {
           // العرض + خصم النشر في عملية وحدة: يا يصيرون كلهم يا ولا شي
           const wb = writeBatch(db);
           wb.set(ref, offerDoc);
-          if (addSpend(wb, { item: "publish", offerId: ref.id, days: pubDays, startsAt: base, note: `📢 نشر: ${data.offerTitle}` }) == null) throw Object.assign(new Error("balance"), { code: "balance" });
+          if (addSpend(wb, { item: "publish", offerId: ref.id, days: pubDays, startsAt: base, note: `📢 نشر: ${data.offerTitle}`, excl: data.exclusive }) == null) throw Object.assign(new Error("balance"), { code: "balance" });
           await wb.commit();
         } else await setDoc(ref, offerDoc);
       }
       await setDoc(doc(db, "merchants", state.user.uid), { delivery: data.delivery, deliveryFee: data.deliveryFee, deliveryMinOrder: data.deliveryMinOrder, deliveryFreeOver: data.deliveryFreeOver }, { merge: true }).catch(() => {});
       saving = false; dirty = false; closePage(false);
+      if (asDraft) { draftSaved(data.exclusive); return; }
       toast(!direct ? "وصل للمراجعة ⏳ بيظهر على الخريطة بعد الموافقة" : e ? "تم حفظ التعديلات ✅" : isNew ? "تم نشر منتجك الجديد ✨" : "تم نشر العرض ✅", true);
     } catch (ex) {
-      console.error(ex); saving = false; $("oSave").disabled = false; $("oSave").textContent = e ? "حفظ التعديلات ✓" : "انشر العرض ✨";
+      console.error(ex); saving = false; asDraft = false; $("oSave").disabled = false; $("oSave").textContent = e ? "حفظ التعديلات ✓" : "انشر العرض ✨";
       err(ex.code === "balance" ? "رصيدك ما يكفي للنشر. اشحن رصيدك من لوحة التاجر."
         : ex.code === "permission-denied" ? (paid ? "رفض النشر: تأكد من رصيدك وحدّث الصفحة، أو تواصل معنا." : "رفض النشر (صلاحيات). تأكد إن حسابك مو موقوف أو تواصل معنا.")
         : (ex.message || "تعذّر النشر"));

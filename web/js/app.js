@@ -1146,7 +1146,7 @@ onSnapshot(query(collection(db, "boosts"), where("endsAt", ">", Timestamp.now())
   state.boosts = snap.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.loaded) renderAll();
 }, () => {});
 onSnapshot(query(collection(db, "offers"), where("isApproved", "==", true)), (snap) => {
-  state.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+  state.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((o) => !o.draft); // المسودات ما تظهر للناس
   const first = !state.loaded; state.loaded = true;
   renderAll(); if (first) route();
 }, (e) => { console.error(e); toast("تعذّر تحميل العروض، حدّث الصفحة"); });
