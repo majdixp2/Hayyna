@@ -72,7 +72,7 @@ val RestaurantOffer.displayBadge: String
         val now = System.currentTimeMillis()
         val pct = com.example.data.model.OfferPricing.effectivePercent(this, now)
         val parts = buildList {
-            if (spotlight) add("🚀 مُبرز")
+            if (spotlight) add("🚀 عرض سوبر")
             if (exclusive && ExclusiveBadge.label.isNotBlank()) add(ExclusiveBadge.label)
             if (postType == "new") add("✨ جديد")
             if (grandOpening) add("🎉 افتتاح")

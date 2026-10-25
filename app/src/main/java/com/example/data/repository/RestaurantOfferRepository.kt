@@ -999,7 +999,7 @@ data class CreditItem(
         val DEFAULTS = listOf(
             CreditItem("publish", "📢 نشر عرض", "publish", "day", 3, 1, true, 0),
             CreditItem("feature", "✨ تمييز 3 أيام", "feature", "fixed", 10, 3, true, 1),
-            CreditItem("boost", "🚀 إبراز أسبوع", "spotlight", "fixed", 25, 7, true, 2),
+            CreditItem("boost", "🚀 عرض سوبر أسبوع", "spotlight", "fixed", 25, 7, true, 2),
             CreditItem("listtop", "📌 إعلان بارز في صفحة العروض", "listTop", "fixed", 40, 7, false, 3)
         ).associateBy { it.id }
     }

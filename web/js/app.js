@@ -141,7 +141,7 @@ const isFresh = (o, now = Date.now()) => { const t = X.ms(o.startsAt) || X.ms(o.
 const isFeat = (o) => !!o.isFeatured || activeEffects(state.boosts, o.id).feature;
 const isListTop = (o) => activeEffects(state.boosts, o.id).listTop;
 const isSpot = (o) => activeEffects(state.boosts, o.id).spotlight;
-const spotPill = (o) => isSpot(o) ? `<span class="pill spot">🚀 مُبرز</span>` : "";
+const spotPill = (o) => isSpot(o) ? `<span class="pill spot">🚀 عرض سوبر</span>` : "";
 const exclBadge = (o, cls = "") => { const ex = exclusiveOf(state.config); return o.exclusive && ex.enabled ? `<span class="xbadge ${cls}" style="background:${esc(ex.color)}">${esc(ex.icon)} ${esc(ex.label)}</span>` : ""; };
 function filtered({ ignoreQuery = false } = {}) {
   const now = Date.now(), q = ignoreQuery ? "" : norm(state.q), catKey = state.cat.replace(/[^\p{L}\s]/gu, "").trim();
@@ -291,7 +291,7 @@ function scrollCardIntoView(id) {
   if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
 }
 
-// ---------------- 🚀 بطاقة «عرض مُبرز قريب منك» (مرة باليوم) ----------------
+// ---------------- 🚀 بطاقة «عرض سوبر قريب منك» (مرة باليوم) ----------------
 let spotShown = false;
 // للتجربة: رابط فيه ?spot=1 يتجاهل قيد "مرة باليوم"
 const SPOT_TEST = new URLSearchParams(location.search).has("spot");
@@ -309,7 +309,7 @@ function maybeSpotlight(list) {
   setTimeout(() => {
     if (!$("sheet").classList.contains("hidden")) return;
     showSheet(`<div class="spot-card">
-      <div class="spot-head">🔥 عرض مُبرز قريب منك</div>
+      <div class="spot-head">🚀 عرض سوبر قريب منك</div>
       <div class="spot-img"><img src="${esc(thumb(o, 700))}" alt="">${badge(o) ? `<span class="badge${badge(o).isNew ? " new" : ""}">${esc(badge(o).t)}</span>` : ""}</div>
       <div class="pad">
         <div class="store-row">${o.logoUrl ? `<img class="logo" src="${esc(cld(o.logoUrl, 60))}" alt="">` : ""}<span class="nt">${esc(o.restaurantName)}</span></div>

@@ -291,7 +291,7 @@ private fun effectHint(effect: String) = when (effect) {
     "publish" -> "العرض يظهر على الخريطة وفي القائمة طوال المدة"
     "feature" -> "حلقة صفراء مع وميض، ويطلع أول في الترتيب"
     "listTop" -> "يتثبّت فوق قائمة العروض في «إعلانات بارزة»"
-    "spotlight" -> "كل مزايا التمييز + اسم المحل ظاهر دايم على الخريطة، وبطاقة «عرض مُبرز قريب منك» لأهل الحي"
+    "spotlight" -> "كل مزايا التمييز + اسم المحل ظاهر دايم على الخريطة، وبطاقة «عرض سوبر قريب منك» لأهل الحي"
     else -> ""
 }
 
@@ -299,7 +299,7 @@ private fun effectHint(effect: String) = when (effect) {
 fun paidChipsFor(offer: RestaurantOffer, boosts: List<com.example.data.repository.Boost>, now: Long): List<String> {
     val mine = boosts.filter { it.offerId == offer.id }
     val out = mutableListOf<String>()
-    if (mine.any { it.effect == "spotlight" && it.startsAt <= now && now < it.endsAt }) out += "🚀 مُبرز"
+    if (mine.any { it.effect == "spotlight" && it.startsAt <= now && now < it.endsAt }) out += "🚀 عرض سوبر"
     else if (mine.any { it.effect == "feature" && it.startsAt <= now && now < it.endsAt }) out += "✨ مميّز"
     if (mine.any { it.effect == "listTop" && it.startsAt <= now && now < it.endsAt }) out += "📌 بارز"
     mine.filter { it.effect == "publish" }.maxOfOrNull { it.endsAt }?.let {

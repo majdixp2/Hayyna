@@ -37,7 +37,7 @@ import com.example.data.model.priceLabel
 import com.example.ui.theme.CalmSagePrimary
 
 /**
- * 🚀 «عرض مُبرز قريب منك»: مرة وحدة باليوم، لما يكون فيه عرض مُبرز في حدود 3 كم.
+ * 🚀 «عرض سوبر قريب منك»: مرة وحدة باليوم، لما يكون فيه عرض مُبرز في حدود 3 كم.
  */
 @Composable
 fun SpotlightWelcome(offers: List<RestaurantOffer>, hasLocation: Boolean, onOpen: (RestaurantOffer) -> Unit) {
@@ -66,7 +66,7 @@ fun SpotlightWelcome(offers: List<RestaurantOffer>, hasLocation: Boolean, onOpen
             Column {
                 Box(Modifier.fillMaxWidth().background(Color(0xFF1F2937))) {
                     Text(
-                        "🔥 عرض مُبرز قريب منك",
+                        "🚀 عرض سوبر قريب منك",
                         color = Color(0xFFFFD166), fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
                     )
