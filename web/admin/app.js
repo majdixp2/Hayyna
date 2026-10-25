@@ -18,6 +18,7 @@ const db = getFirestore(app, FIRESTORE_DB_ID);
 const state = {
   tab: localStorage.getItem("hayyna_admin_tab") || "home",
   offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [], referrals: [], names: {}, wallets: [], codes: null, itemsDraft: null, packsDraft: null,
+  me: null, staff: [], log: [], logArea: "الكل", logQuery: "", logActor: "الكل", verifHist: [],
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
 };
 const unsubs = [];
@@ -44,19 +45,38 @@ const run = async (fn, okMsg) => {
 // ---------------- الدخول ----------------
 $("loginBtn").onclick = () => run(() => signInWithPopup(auth, new GoogleAuthProvider()));
 
-onAuthStateChanged(auth, (user) => {
+// ---------------- الصلاحيات ----------------
+// المالك (ADMIN_EMAILS) يقدر كل شي. الموظف: staff/{email} فيه perms
+export const PERMS = [
+  ["review", "📝 مراجعة العروض", "اعتماد العروض وحذفها والبلاغات"],
+  ["verify", "🛡️ التوثيق", "قبول ورفض طلبات توثيق المتاجر"],
+  ["messages", "📨 الرسائل", "قراءة رسائل التواصل والرد عليها"],
+  ["merchants", "🏪 إدارة التجار", "الإيقاف، صفحات المتاجر، الإحالات، محلات Google"],
+  ["credits", "💰 الرصيد", "الأكواد وتعديل أرصدة التجار"],
+];
+const can = (p) => !!state.me && (state.me.owner || state.me.perms.has(p));
+const canStores = () => can("review") || can("verify") || can("merchants");
+
+onAuthStateChanged(auth, async (user) => {
   unsubs.splice(0).forEach((u) => u());
   if (!user) {
+    state.me = null;
     $("login").classList.remove("hidden"); $("app").classList.add("hidden"); $("user").innerHTML = "";
     return;
   }
-  if (!ADMIN_EMAILS.includes(user.email)) {
-    $("loginError").textContent = "هذا الحساب مو حساب أدمن.";
-    signOut(auth);
-    return;
+  const email = (user.email || "").toLowerCase();
+  if (ADMIN_EMAILS.includes(email)) state.me = { owner: true, perms: new Set(PERMS.map(([k]) => k)), email, uid: user.uid, name: "المالك" };
+  else {
+    let st = null; try { const d = await getDoc(doc(db, "staff", email)); st = d.exists() ? d.data() : null; } catch {}
+    if (!st || !st.active) {
+      $("loginError").textContent = st ? "حسابك في الفريق موقوف حالياً. تواصل مع المالك." : "هذا الحساب ما عنده صلاحية دخول لوحة الإدارة.";
+      signOut(auth); return;
+    }
+    state.me = { owner: false, perms: new Set(st.perms || []), email, uid: user.uid, name: st.name || email };
+    if (!TABS.some(([k]) => k === state.tab && tabAllowed(k))) state.tab = "home";
   }
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
-  $("user").innerHTML = `<span>${esc(user.email)}</span><button class="btn" id="logout">خروج</button>`;
+  $("user").innerHTML = `<span>${esc(user.email)}${state.me.owner ? "" : ` <span class="pill">موظف</span>`}</span><button class="btn" id="logout">خروج</button>`;
   $("logout").onclick = () => signOut(auth);
   listen();
   render();
@@ -65,16 +85,30 @@ onAuthStateChanged(auth, (user) => {
 // ---------------- الاستماع للبيانات ----------------
 function listen() {
   const parse = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  unsubs.push(onSnapshot(collection(db, "offers"), (s) => { state.offers = parse(s); render(); }, console.error));
-  unsubs.push(onSnapshot(query(collection(db, "reports"), orderBy("createdAt", "desc"), limit(200)), (s) => { state.reports = parse(s); render(); }, console.error));
-  unsubs.push(onSnapshot(collection(db, "merchantStatus"), (s) => { state.statuses = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
-  unsubs.push(onSnapshot(query(collection(db, "stores"), where("approved", "==", false)), (s) => { state.pendingStores = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
-  unsubs.push(onSnapshot(query(collection(db, "feedback"), orderBy("createdAt", "desc"), limit(300)), (s) => { state.feedback = parse(s); render(); }, console.error));
-  unsubs.push(onSnapshot(query(collection(db, "poiInterest"), orderBy("taps", "desc"), limit(50)), (s) => { state.poi = parse(s); render(); }, console.error));
-  unsubs.push(onSnapshot(query(collection(db, "verificationRequests"), where("status", "==", "pending")), (s) => { state.verifs = parse(s).map((x) => ({ ...x, uid: x.id })); render(); }, console.error));
-  unsubs.push(onSnapshot(collection(db, "referrals"), (s) => { state.referrals = parse(s).map((x) => ({ ...x, storeUid: x.id })); loadNames(); render(); }, console.error));
-  unsubs.push(onSnapshot(collection(db, "wallets"), (s) => { state.wallets = parse(s); render(); }, console.error));
-  unsubs.push(onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; render(); }, console.error));
+  const sub = (q, fn) => unsubs.push(onSnapshot(q, (sn) => { fn(sn); render(); }, (e) => console.warn("listen", e.code)));
+  if (can("review")) {
+    sub(collection(db, "offers"), (sn) => { state.offers = parse(sn); });
+    sub(query(collection(db, "reports"), orderBy("createdAt", "desc"), limit(200)), (sn) => { state.reports = parse(sn); });
+  }
+  if (canStores()) {
+    sub(collection(db, "merchantStatus"), (sn) => { state.statuses = parse(sn).map((x) => ({ ...x, uid: x.id })); });
+    sub(query(collection(db, "stores"), where("approved", "==", false)), (sn) => { state.pendingStores = parse(sn).map((x) => ({ ...x, uid: x.id })); });
+  }
+  if (can("messages")) sub(query(collection(db, "feedback"), orderBy("createdAt", "desc"), limit(300)), (sn) => { state.feedback = parse(sn); });
+  if (can("merchants")) {
+    sub(query(collection(db, "poiInterest"), orderBy("taps", "desc"), limit(50)), (sn) => { state.poi = parse(sn); });
+    sub(collection(db, "referrals"), (sn) => { state.referrals = parse(sn).map((x) => ({ ...x, storeUid: x.id })); loadNames(); });
+  }
+  if (can("verify")) {
+    sub(query(collection(db, "verificationRequests"), where("status", "==", "pending")), (sn) => { state.verifs = parse(sn).map((x) => ({ ...x, uid: x.id })); });
+    sub(query(collection(db, "verificationRequests"), where("status", "in", ["approved", "rejected"])), (sn) => { state.verifHist = parse(sn).map((x) => ({ ...x, uid: x.id })); });
+  }
+  if (can("credits")) sub(collection(db, "wallets"), (sn) => { state.wallets = parse(sn); });
+  sub(doc(db, "config", "app"), (sn) => { state.config = sn.data() || {}; });
+  // السجل: المالك يشوف الكل، والموظف عملياته (الترتيب على الجهاز)
+  sub(state.me.owner ? query(collection(db, "adminLog"), orderBy("at", "desc"), limit(400)) : query(collection(db, "adminLog"), where("actor", "==", state.me.email)),
+    (sn) => { state.log = parse(sn).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0)); });
+  if (state.me.owner) sub(collection(db, "staff"), (sn) => { state.staff = parse(sn); });
 }
 
 // أسماء أصحاب الدعوات (من users)
@@ -93,6 +127,20 @@ function refInfo(r) {
   const hasOffer = state.offers.some((o) => o.merchantId === r.storeUid && o.isApproved);
   return { joined, hasOffer, canVerified: joined && !r.verifiedPts, canOffer: hasOffer && !r.offerPts };
 }
+
+// ---------------- سجل العمليات ----------------
+const AREAS = { review: "📝 العروض", verify: "🛡️ التوثيق", merchants: "🏪 التجار", messages: "📨 الرسائل", credits: "💰 الرصيد", settings: "⚙️ الإعدادات", team: "👥 الفريق" };
+async function audit(action, area, target = {}, details = "") {
+  try {
+    await addDoc(collection(db, "adminLog"), {
+      at: serverTimestamp(), actor: state.me.email, actorUid: state.me.uid, action: String(action).slice(0, 60), area,
+      targetType: target.type || "", targetId: String(target.id || "").slice(0, 120), targetName: String(target.name || "").slice(0, 200),
+      details: String(details || "").slice(0, 1500), thumb: String(target.thumb || "").slice(0, 500), source: "web",
+    });
+  } catch (e) { console.warn("audit", e); }
+}
+const offerT = (o) => o ? { type: "offer", id: o.id, name: `${o.offerTitle} — ${o.restaurantName}`, thumb: thumbOf(o) } : {};
+const uidT = (uid, name) => ({ type: "merchant", id: uid || "", name: name || statusOf(uid)?.name || state.names[uid] || String(uid || "").slice(0, 8) });
 
 // ---------------- أوامر الإدارة (نفس منطق التطبيق) ----------------
 const statusOf = (uid) => state.statuses.find((s) => s.uid === uid);
@@ -119,7 +167,7 @@ const actions = {
     toast(`صار ${o.restaurantName} موثوق ✅`);
   },
   async suspend(uid, name) {
-    if (!confirm(`إيقاف ${name}؟ بتختفي كل عروضه وما يقدر ينشر.`)) return;
+    if (!confirm(`إيقاف ${name}؟ بتختفي كل عروضه وما يقدر ينشر.`)) return false;
     await setStatus(uid, { trusted: false, suspended: true, name });
     const docs = (await getDocs(query(collection(db, "offers"), where("merchantId", "==", uid)))).docs;
     for (const d of docs) await updateDoc(d.ref, { isApproved: false }).catch(() => {});
@@ -132,20 +180,20 @@ const actions = {
     await updateDoc(doc(db, "offers", o.id), { reportsCount: 0 });
     for (const r of state.reports.filter((r) => r.offerId === o.id)) await deleteDoc(doc(db, "reports", r.id));
   },
-  async deleteOffer(id) { if (confirm("حذف العرض نهائياً؟")) await deleteDoc(doc(db, "offers", id)); },
+  async deleteOffer(id) { if (!confirm("حذف العرض نهائياً؟")) return false; await deleteDoc(doc(db, "offers", id)); },
   dismissReport: (id) => deleteDoc(doc(db, "reports", id)),
   approveStore: (uid) => updateDoc(doc(db, "stores", uid), { approved: true }),
   feature: (o) => updateDoc(doc(db, "offers", o.id), { isFeatured: !o.isFeatured }),
   toggleApproved: (o) => updateDoc(doc(db, "offers", o.id), { isApproved: !o.isApproved }),
   reply: (id, reply) => updateDoc(doc(db, "feedback", id), { reply, status: "done", replySeen: !reply }),
   fbStatus: (id, status) => updateDoc(doc(db, "feedback", id), { status }),
-  async deleteFb(id) { if (confirm("حذف الرسالة؟")) await deleteDoc(doc(db, "feedback", id)); },
+  async deleteFb(id) { if (!confirm("حذف الرسالة؟")) return false; await deleteDoc(doc(db, "feedback", id)); },
   awardRef: (uid, field) => updateDoc(doc(db, "referrals", uid), { [field]: field === "verifiedPts" ? PTS.verified : PTS.offer, [field.replace("Pts", "At")]: serverTimestamp() }),
-  async removeRef(uid) { if (confirm("حذف الإحالة؟ (لو كانت وهمية) — بتنحذف نقاطها")) await deleteDoc(doc(db, "referrals", uid)); },
+  async removeRef(uid) { if (!confirm("حذف الإحالة؟ (لو كانت وهمية) — بتنحذف نقاطها")) return false; await deleteDoc(doc(db, "referrals", uid)); },
   saveConfig: (data) => setDoc(doc(db, "config", "app"), data, { merge: true }),
   async verify(uid, ok, reason) {
     const v = state.verifs.find((x) => x.uid === uid);
-    await updateDoc(doc(db, "verificationRequests", uid), { status: ok ? "approved" : "rejected", rejectReason: reason || "" });
+    await updateDoc(doc(db, "verificationRequests", uid), { status: ok ? "approved" : "rejected", rejectReason: reason || "", decidedAt: serverTimestamp(), decidedBy: state.me.email });
     const sref = doc(db, "stores", uid);
     if ((await getDoc(sref)).exists()) await updateDoc(sref, ok ? { verified: true, approved: true } : { verified: false });
     if (ok) await setStatus(uid, { trusted: true, suspended: false, verified: true, name: v?.storeName || "" });
@@ -169,20 +217,26 @@ function computed() {
 
 const TABS = [
   ["home", "🏠 الرئيسية"], ["review", "⏳ المراجعة"], ["stores", "🏪 المتاجر"],
-  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["credits", "💰 الرصيد"], ["settings", "⚙️ الإعدادات"],
+  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["credits", "💰 الرصيد"],
+  ["log", "📜 السجل"], ["team", "👥 الفريق"], ["settings", "⚙️ الإعدادات"],
 ];
+function tabAllowed(k) {
+  return ({ home: true, log: true, review: can("review"), offers: can("review"), stores: canStores(), messages: can("messages"),
+    refs: can("merchants"), credits: can("credits"), team: !!state.me?.owner, settings: !!state.me?.owner })[k];
+}
 
 function render() {
   if ($("app").classList.contains("hidden")) return;
   const c = computed();
   const badges = { review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs, refs: c.refAwards };
-  $("tabs").innerHTML = TABS.map(([k, t]) =>
+  if (!tabAllowed(state.tab)) state.tab = "home";
+  $("tabs").innerHTML = TABS.filter(([k]) => tabAllowed(k)).map(([k, t]) =>
     `<button class="tab ${state.tab === k ? "active" : ""}" data-tab="${k}">${t}${badges[k] ? `<span class="badge">${badges[k]}</span>` : ""}</button>`
   ).join("");
   $("tabs").querySelectorAll(".tab").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; localStorage.setItem("hayyna_admin_tab", state.tab); render(); }));
   const focused = document.activeElement?.id;
   const caret = document.activeElement?.selectionStart;
-  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, settings }[state.tab] || home)(c);
+  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, settings, log: logPage, team }[state.tab] || home)(c);
   bind();
   if (focused && $(focused)) { $(focused).focus(); try { $(focused).setSelectionRange(caret, caret); } catch {} }
 }
@@ -212,7 +266,11 @@ function home(c) {
     ["🛡️ طلبات توثيق", state.verifs.length, "stores"],
     ["📨 رسائل جديدة", c.newMsgs, "messages"],
     ["🎁 نقاط إحالة تنتظر اعتمادك", c.refAwards, "refs"],
-  ].filter((t) => t[1] > 0);
+  ].filter((t) => t[1] > 0 && tabAllowed(t[2]));
+  if (!state.me.owner) return `<h2>أهلاً ${esc(state.me.name)} 👋</h2>
+    <p class="muted">صلاحياتك: ${PERMS.filter(([k]) => can(k)).map(([, l]) => l).join(" • ")}</p>
+    <h2>يحتاج انتباهك</h2>${todo.length ? `<div class="grid">${todo.map(([l, n, t]) => `<button class="card todo" data-go="${t}">${l}<b>${n} ›</b></button>`).join("")}</div>` : `<p class="muted">كل شي تمام ✅</p>`}
+    <p class="muted">كل عملية تسويها تنحفظ في «📜 السجل» باسمك.</p>`;
   const active = state.offers.filter((o) => o.isApproved && !isExpired(o)).length;
   const stat = (t, v) => `<div class="card stat"><div class="v">${v}</div><div class="t">${t}</div></div>`;
   return `<h2>يحتاج انتباهك</h2>
@@ -264,7 +322,12 @@ function stores(c) {
       <input type="text" id="reason_${v.uid}" placeholder="سبب الرفض (لو بترفض)">
       <div class="actions"><button class="btn primary" data-act="verifyOk" data-id="${v.uid}">✓ وثّق</button>
       <button class="btn danger" data-act="verifyNo" data-id="${v.uid}">رفض</button></div></div>`).join("")}</div>`;
-  return verifHtml + `<h2>${c.pendingStores.length ? `🏪 صفحات تنتظر الموافقة (${c.pendingStores.length})` : "صفحات تنتظر الموافقة: لا يوجد ✅"}</h2>
+  const hist = can("verify") ? `<details class="card" style="margin-top:10px"><summary>📁 طلبات التوثيق السابقة (${state.verifHist.length})</summary>
+      ${state.verifHist.length ? `<table class="tbl"><thead><tr><th>المتجر</th><th>القرار</th><th>السبب</th><th>متى / مين</th></tr></thead><tbody>
+      ${[...state.verifHist].sort((a, b) => (b.decidedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0) - (a.decidedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0)).map((v) => `<tr>
+        <td>${esc(v.storeName || v.uid.slice(0, 8))}</td><td>${v.status === "approved" ? `<span class="pill">✓ موثّق</span>` : `<span class="pill off">مرفوض</span>`}</td>
+        <td class="muted">${esc(v.rejectReason || "—")}</td><td class="muted">${v.decidedAt?.toDate ? v.decidedAt.toDate().toLocaleString("ar-SA") : "—"}${v.decidedBy ? ` • ${esc(v.decidedBy)}` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">ما فيه طلبات سابقة</p>`}</details>` : "";
+  return (can("verify") ? verifHtml + hist : "") + `<h2>${c.pendingStores.length ? `🏪 صفحات تنتظر الموافقة (${c.pendingStores.length})` : "صفحات تنتظر الموافقة: لا يوجد ✅"}</h2>
     <div class="grid">${c.pendingStores.map((s) => `<div class="card">
       <div class="row">${s.logoUrl ? `<img class="thumb small" src="${esc(img(s.logoUrl, 150))}" style="border-radius:50%">` : ""}
         <div><div class="name">${esc(s.name)}</div><div class="muted">${esc(s.category)}${s.priceFrom ? ` • تبدأ من ${s.priceFrom} ر.س` : ""}</div></div></div>
@@ -306,6 +369,90 @@ function refs() {
     ${board.length ? `<div class="grid">${board.map(([u, p], k) => `<div class="card row" style="justify-content:space-between"><b>${k + 1}. ${esc(state.names[u] || u.slice(0, 8))}</b><span>${p} نقطة ${p >= 10000 ? "💎" : p >= 5000 ? "🥇" : p >= 1000 ? "🥈" : "🥉"}</span></div>`).join("")}</div>` : `<p class="muted">—</p>`}`;
 }
 
+// وصف كل عملية في السجل: [العملية, القسم, الهدف, التفاصيل]
+function describe(act, id, b, o) {
+  const f = state.feedback.find((x) => x.id === id), v = state.verifs.find((x) => x.uid === id), r = state.referrals.find((x) => x.storeUid === id);
+  const fbT = f ? { type: "message", id, name: `${f.type} — ${f.userName || f.contact || "زائر"}` } : { type: "message", id };
+  const D = {
+    approve: () => ["اعتماد عرض", "review", offerT(o)],
+    trust: () => ["اعتماد عرض + توثيق التاجر", "review", offerT(o)],
+    deleteOffer: () => ["حذف عرض", "review", offerT(o), o ? `السعر: ${o.price || 0} • الحي: ${o.district || ""}` : ""],
+    suspendOffer: () => ["إيقاف تاجر", "merchants", uidT(o?.merchantId, o?.restaurantName), "من مراجعة عرض: " + (o?.offerTitle || "")],
+    suspendUid: () => ["إيقاف تاجر", "merchants", uidT(id, b.dataset.name)],
+    keep: () => ["إرجاع عرض مخفي (البلاغات غير صحيحة)", "review", offerT(o)],
+    dismissAll: () => ["تجاهل بلاغات", "review", { type: "offer", id, name: state.reports.find((x) => x.offerId === id)?.offerTitle || id }],
+    deleteAndDismiss: () => ["حذف عرض مُبلّغ عنه", "review", o ? offerT(o) : { type: "offer", id, name: state.reports.find((x) => x.offerId === id)?.offerTitle || id }],
+    approveStore: () => ["اعتماد صفحة متجر", "merchants", { type: "store", id, name: state.pendingStores.find((x) => x.uid === id)?.name || id }],
+    untrust: () => ["إلغاء الثقة بتاجر", "merchants", uidT(id)],
+    unsuspend: () => ["إلغاء إيقاف تاجر", "merchants", uidT(id)],
+    feature: () => ["تبديل تمييز عرض", "review", offerT(o), o ? (o.isFeatured ? "أُلغي التمييز" : "صار مميّز ⭐") : ""],
+    toggleApproved: () => ["تبديل حالة عرض", "review", offerT(o), o ? (o.isApproved ? "أُوقف" : "تفعّل") : ""],
+    reply: () => ["رد على رسالة", "messages", fbT, ($("reply_" + id)?.value || "").slice(0, 600)],
+    progress: () => ["رسالة قيد المتابعة", "messages", fbT],
+    done: () => ["إنهاء رسالة", "messages", fbT],
+    deleteFb: () => ["حذف رسالة", "messages", fbT, f ? f.message.slice(0, 300) : ""],
+    verifyOk: () => ["توثيق متجر ✓", "verify", { type: "store", id, name: v?.storeName || id }, v ? `${v.docType === "freelance" ? "عمل حر" : "سجل تجاري"}: ${v.docNumber || "—"}` : ""],
+    verifyNo: () => ["رفض توثيق", "verify", { type: "store", id, name: v?.storeName || id }, "السبب: " + ($("reason_" + id)?.value || "—")],
+    awardV: () => ["نقاط إحالة: توثيق", "merchants", { type: "referral", id, name: r?.storeName || id }, `+50 لـ ${state.names[r?.referrer] || ""}`],
+    awardO: () => ["نقاط إحالة: أول عرض", "merchants", { type: "referral", id, name: r?.storeName || id }, `+50 لـ ${state.names[r?.referrer] || ""}`],
+    removeRef: () => ["حذف إحالة", "merchants", { type: "referral", id, name: r?.storeName || id }],
+    saveSupport: () => ["تغيير رقم الدعم", "settings", {}, $("supportNum")?.value],
+    saveModel: () => ["تغيير نموذج الذكاء الاصطناعي", "settings", {}, $("aiModel")?.value],
+    saveCats: () => ["تعديل التصنيفات", "settings", {}, catDraft().map((x) => x.name).filter(Boolean).join("، ")],
+    savePoi: () => ["تعديل رسالة الدعوة", "settings", {}],
+    saveExcl: () => ["تعديل شارة الحصري", "settings", {}, `${$("exIcon")?.value} ${$("exLabel")?.value} • ${$("exOn")?.checked ? "مفعّلة" : "موقفة"}`],
+    saveWelcome: () => ["تعديل هدية الترحيب", "credits", {}, `${$("crWelcome")?.value} نقطة`],
+    saveStore: () => ["تعديل رابط متجر سلة", "credits", {}, $("crStore")?.value],
+    saveItems: () => ["تعديل أسعار الخدمات", "credits", {}, itemsDraft().map((x) => `${x.name}: ${x.price}${x.unit === "day" ? "/يوم" : ""}${x.active ? "" : " (موقفة)"}`).join(" • ")],
+    savePacks: () => ["تعديل باقات الشحن", "credits", {}, packsDraft().map((p) => `${p.points}=${p.price}ر`).join(" • ")],
+    genCodes: () => ["إنشاء أكواد شحن", "credits", {}, `${$("cdCount")?.value} كود × ${$("cdPoints")?.value} نقطة`],
+    staffAdd: () => ["إضافة موظف", "team", { type: "staff", id: ($("stEmail")?.value || "").trim().toLowerCase(), name: $("stName")?.value || "" }, PERMS.filter(([k]) => $("content").querySelector(`[data-newperm="${k}"]`)?.checked).map(([, l]) => l).join("، ")],
+  };
+  return D[act] ? D[act]() : null;
+}
+
+// ================= 📜 السجل =================
+const fmtTime = (t) => { const d = t?.toDate ? t.toDate() : t?.toMillis ? new Date(t.toMillis()) : null; if (!d) return "…"; const diff = (Date.now() - d.getTime()) / 6e4;
+  return diff < 1 ? "الحين" : diff < 60 ? `قبل ${Math.round(diff)} د` : diff < 1440 ? `قبل ${Math.round(diff / 60)} س` : d.toLocaleString("ar-SA", { dateStyle: "short", timeStyle: "short" }); };
+function logPage() {
+  const q = state.logQuery.trim().toLowerCase();
+  const actors = [...new Set(state.log.map((l) => l.actor))];
+  const list = state.log.filter((l) => (state.logArea === "الكل" || l.area === state.logArea) && (state.logActor === "الكل" || l.actor === state.logActor)
+    && (!q || [l.action, l.targetName, l.details, l.actor].some((v) => (v || "").toLowerCase().includes(q))));
+  const staffName = (e) => e === state.me.email && state.me.owner ? "أنت" : (state.staff.find((x) => x.id === e)?.name || e);
+  return `<h2>📜 سجل العمليات ${state.me.owner ? "" : "(عملياتك)"}</h2>
+    <p class="muted">كل عملية في لوحة الإدارة (الويب والتطبيق) تنحفظ هنا، وما تنعدّل ولا تنحذف.</p>
+    <input type="text" id="logQuery" placeholder="ابحث: اسم متجر، عرض، سبب، إيميل…" value="${esc(state.logQuery)}">
+    <div class="chips">${["الكل", ...Object.keys(AREAS)].map((a) => `<button class="chip ${state.logArea === a ? "on" : ""}" data-logarea="${a}">${a === "الكل" ? "الكل" : AREAS[a]}</button>`).join("")}</div>
+    ${state.me.owner && actors.length > 1 ? `<div class="chips">${["الكل", ...actors].map((a) => `<button class="chip ${state.logActor === a ? "on" : ""}" data-logactor="${esc(a)}">👤 ${esc(a === "الكل" ? "كل الفريق" : staffName(a))}</button>`).join("")}</div>` : ""}
+    <p class="muted">${list.length} عملية</p>
+    ${list.length ? `<div class="card"><table class="tbl log"><thead><tr><th>متى</th><th>مين</th><th>العملية</th><th>على</th><th>التفاصيل</th></tr></thead><tbody>
+      ${list.slice(0, 300).map((l) => `<tr><td class="muted" title="${esc(l.at?.toDate ? l.at.toDate().toLocaleString("ar-SA") : "")}">${fmtTime(l.at)}</td>
+        <td>${esc(staffName(l.actor))}${l.source === "app" ? ` <span class="pill">📱</span>` : ""}</td>
+        <td><span class="area">${AREAS[l.area] || ""}</span> <b>${esc(l.action)}</b></td>
+        <td>${l.thumb ? `<img class="thumb small" src="${esc(l.thumb)}" style="width:36px;height:36px;vertical-align:middle"> ` : ""}${esc(l.targetName)}</td>
+        <td class="muted">${esc(l.details)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">ما فيه عمليات للحين</p>`}`;
+}
+
+// ================= 👥 الفريق =================
+function team() {
+  return `<h2>👥 فريق الإدارة</h2>
+    <div class="card">
+      <p class="muted">أضف موظف بإيميل Google حقه، واختر صلاحياته. يدخل من نفس الرابط (/admin) بحسابه، ويشوف التبويبات المسموحة له بس. الإعدادات والأسعار والفريق لك أنت بس.</p>
+      <div class="row" style="flex-wrap:wrap;align-items:center"><input type="text" id="stEmail" dir="ltr" placeholder="email@gmail.com" style="flex:1;min-width:200px">
+        <input type="text" id="stName" placeholder="الاسم" style="width:160px"></div>
+      <div class="chips" style="margin-top:8px">${PERMS.map(([k, l, h]) => `<label class="chip permchk" title="${esc(h)}"><input type="checkbox" data-newperm="${k}"> ${l}</label>`).join("")}</div>
+      <div class="actions"><button class="btn primary" data-act="staffAdd">＋ إضافة للفريق</button></div>
+    </div>
+    ${state.staff.length ? `<div class="grid" style="margin-top:12px">${state.staff.map((m) => `<div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center"><div><b>${esc(m.name || m.id)}</b><div class="muted" dir="ltr">${esc(m.id)}</div></div>
+        <label class="switch"><input type="checkbox" data-stactive="${esc(m.id)}" ${m.active ? "checked" : ""}> ${m.active ? "نشط" : "موقوف"}</label></div>
+      <div class="chips" style="margin-top:8px">${PERMS.map(([k, l, h]) => `<label class="chip permchk ${(m.perms || []).includes(k) ? "on" : ""}" title="${esc(h)}"><input type="checkbox" data-stperm="${esc(m.id)}" data-k="${k}" ${(m.perms || []).includes(k) ? "checked" : ""}> ${l}</label>`).join("")}</div>
+      <div class="muted">آخر عملية: ${(() => { const l = state.log.find((x) => x.actor === m.id); return l ? `${esc(l.action)} • ${fmtTime(l.at)}` : "—"; })()}</div>
+      <div class="actions"><button class="btn" data-logof="${esc(m.id)}">📜 عملياته</button><button class="btn danger" data-stdel="${esc(m.id)}">إزالة من الفريق</button></div>
+    </div>`).join("")}</div>` : `<p class="muted">ما فيه موظفين للحين</p>`}`;
+}
+
 // ================= 💰 الرصيد =================
 const CODE_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const newCode = () => { const a = crypto.getRandomValues(new Uint8Array(8)); const c = [...a].map((x) => CODE_CHARS[x % CODE_CHARS.length]).join(""); return `HY-${c.slice(0, 4)}-${c.slice(4)}`; };
@@ -320,7 +467,8 @@ function credits() {
   const codes = state.codes;
   const batches = {};
   (codes || []).forEach((c) => { const b = (batches[c.batch || "—"] ||= { name: c.batch || "—", points: c.points, total: 0, used: 0, at: c.createdAt }); b.total++; if (c.redeemedBy) b.used++; });
-  return jumpNav([["cr-status", "الحالة"], ["cr-items", "الخدمات والأسعار"], ["cr-packs", "باقات الشحن"], ["cr-codes", "الأكواد"], ["cr-wallets", "أرصدة التجار"]]) + `
+  const owner = state.me.owner;
+  return jumpNav(owner ? [["cr-status", "الحالة"], ["cr-items", "الخدمات والأسعار"], ["cr-packs", "باقات الشحن"], ["cr-codes", "الأكواد"], ["cr-wallets", "أرصدة التجار"]] : [["cr-codes", "الأكواد"], ["cr-wallets", "أرصدة التجار"]]) + (owner ? `
     <h2 id="cr-status">💰 نظام رصيد العروض</h2>
     <div class="card">
       <label class="switch"><input type="checkbox" id="crOn" ${cr.enabled ? "checked" : ""}> <b>${cr.enabled ? "مفعّل — النشر الجديد يحتاج رصيد" : "موقف — النشر مجاني للجميع"}</b></label>
@@ -365,7 +513,7 @@ function credits() {
         <input type="number" min="1" data-pk="${i}" data-k="price" value="${p.price}" style="width:90px"> ريال
         <span class="muted">(${(p.price / p.points).toFixed(2)} ريال/نقطة)</span><button class="btn danger" data-pkdel="${i}">حذف</button></div>`).join("")}
       <div class="actions"><button class="btn" data-act="pkAdd">＋ باقة</button><button class="btn primary" data-act="savePacks">حفظ الباقات</button></div>
-    </div>
+    </div>` : "") + `
 
     <h2 id="cr-codes">🔑 أكواد الشحن</h2>
     <div class="card">
@@ -508,13 +656,37 @@ function bind() {
   c.querySelectorAll("[data-ofilter]").forEach((b) => (b.onclick = () => { state.offerFilter = b.dataset.ofilter; render(); }));
   c.querySelectorAll("textarea[id^=reply_]").forEach((t) => (t.oninput = () => { state.drafts[t.id.slice(6)] = t.value; }));
   const oq = $("offerQuery"); if (oq) oq.oninput = () => { state.offerQuery = oq.value; render(); };
-  c.querySelectorAll("[data-cfg]").forEach((x) => (x.onchange = () => run(() => actions.saveConfig({ [x.dataset.cfg]: x.checked }), "تم ✅")));
-  const poiOn = $("poiOn"); if (poiOn) poiOn.onchange = () => run(() => actions.saveConfig({ showGooglePoi: poiOn.checked }), "تم ✅");
-  const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => run(() => actions.saveConfig({ poiInviteEnabled: invOn.checked }), "تم ✅");
+  const cfgSwitch = (key, val, label) => run(async () => { await actions.saveConfig({ [key]: val }); await audit(`${val ? "تشغيل" : "إيقاف"}: ${label}`, "settings"); }, "تم ✅");
+  c.querySelectorAll("[data-cfg]").forEach((x) => (x.onchange = () => cfgSwitch(x.dataset.cfg, x.checked, x.parentElement.textContent.trim())));
+  const poiOn = $("poiOn"); if (poiOn) poiOn.onchange = () => cfgSwitch("showGooglePoi", poiOn.checked, "نقاط محلات Google");
+  const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => cfgSwitch("poiInviteEnabled", invOn.checked, "بطاقة ادعه لحيّنا");
   c.querySelectorAll("[data-catname]").forEach((x) => (x.oninput = () => { catDraft()[+x.dataset.catname].name = x.value; }));
   c.querySelectorAll("[data-catup]").forEach((b) => (b.onclick = () => { const d = catDraft(), i = +b.dataset.catup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
   c.querySelectorAll("[data-catdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف التصنيف؟ العروض الحالية تبقى عليه.")) { catDraft().splice(+b.dataset.catdel, 1); render(); } }));
-  const ai = $("aiOn"); if (ai) ai.onchange = () => run(() => actions.saveConfig({ aiAutofillEnabled: ai.checked }), ai.checked ? "التعبئة الذكية مفعّلة ✨" : "التعبئة الذكية موقفة");
+  const ai = $("aiOn"); if (ai) ai.onchange = () => run(async () => { await actions.saveConfig({ aiAutofillEnabled: ai.checked }); await audit(`${ai.checked ? "تشغيل" : "إيقاف"}: التعبئة الذكية`, "settings"); }, ai.checked ? "التعبئة الذكية مفعّلة ✨" : "التعبئة الذكية موقفة");
+  // ---- السجل ----
+  const lq = $("logQuery"); if (lq) lq.oninput = () => { state.logQuery = lq.value; render(); };
+  c.querySelectorAll("[data-logarea]").forEach((b) => (b.onclick = () => { state.logArea = b.dataset.logarea; render(); }));
+  c.querySelectorAll("[data-logactor]").forEach((b) => (b.onclick = () => { state.logActor = b.dataset.logactor; render(); }));
+  c.querySelectorAll("[data-logof]").forEach((b) => (b.onclick = () => { state.logActor = b.dataset.logof; state.logArea = "الكل"; state.tab = "log"; render(); }));
+  // ---- الفريق ----
+  c.querySelectorAll("[data-stactive]").forEach((x) => (x.onchange = () => run(async () => {
+    const m = state.staff.find((s) => s.id === x.dataset.stactive);
+    await updateDoc(doc(db, "staff", m.id), { active: x.checked });
+    await audit(x.checked ? "تفعيل موظف" : "إيقاف موظف", "team", { type: "staff", id: m.id, name: m.name || m.id });
+  }, "تم ✅")));
+  c.querySelectorAll("[data-stperm]").forEach((x) => (x.onchange = () => run(async () => {
+    const m = state.staff.find((s) => s.id === x.dataset.stperm), set = new Set(m.perms || []);
+    x.checked ? set.add(x.dataset.k) : set.delete(x.dataset.k);
+    await updateDoc(doc(db, "staff", m.id), { perms: [...set] });
+    await audit("تعديل صلاحيات موظف", "team", { type: "staff", id: m.id, name: m.name || m.id }, `${x.checked ? "أُضيفت" : "أُزيلت"}: ${PERMS.find(([k]) => k === x.dataset.k)[1]}`);
+  }, "تم ✅")));
+  c.querySelectorAll("[data-stdel]").forEach((b) => (b.onclick = () => run(async () => {
+    const m = state.staff.find((s) => s.id === b.dataset.stdel);
+    if (!confirm(`إزالة ${m.name || m.id} من الفريق؟ (عملياته تبقى في السجل)`)) return;
+    await deleteDoc(doc(db, "staff", m.id));
+    await audit("إزالة موظف", "team", { type: "staff", id: m.id, name: m.name || m.id });
+  }, "تمت الإزالة")));
   // ---- الرصيد ----
   c.querySelectorAll("[data-it]").forEach((x) => (x.onchange = x.oninput = () => {
     const it = itemsDraft()[+x.dataset.it], k = x.dataset.k;
@@ -534,18 +706,21 @@ function bind() {
     await updateDoc(doc(db, "config", "app"), { "credits.enabled": crOn.checked, "credits.graceDays": grace,
       ...(crOn.checked ? { "credits.enabledAt": serverTimestamp(), "credits.graceUntil": Timestamp.fromMillis(Date.now() + grace * 864e5) } : {}),
       ...(cur.items ? {} : { "credits.items": DEFAULT_ITEMS }) });
+    await audit(crOn.checked ? "تشغيل نظام الرصيد" : "إيقاف نظام الرصيد", "credits", {}, crOn.checked ? `فترة السماح: ${$("crGrace").value} يوم` : "");
   }, crOn.checked ? "تم تفعيل الرصيد ✅" : "تم إيقاف الرصيد");
   c.querySelectorAll("[data-copyb]").forEach((b) => (b.onclick = async () => { const list = unusedOf(b.dataset.copyb).map((x) => x.id).join("\n"); try { await navigator.clipboard.writeText(list); toast(`نسخنا ${unusedOf(b.dataset.copyb).length} كود ✅`); } catch { prompt("انسخ:", list); } }));
   c.querySelectorAll("[data-csvb]").forEach((b) => (b.onclick = () => { const list = unusedOf(b.dataset.csvb).map((x) => x.id).join("\n"); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([list], { type: "text/plain" })); a.download = `hayyna-codes-${b.dataset.csvb}.txt`; a.click(); }));
   c.querySelectorAll("[data-delb]").forEach((b) => (b.onclick = () => run(async () => {
     const list = unusedOf(b.dataset.delb); if (!list.length || !confirm(`حذف ${list.length} كود غير مستخدم؟ (لا تحذفها لو رفعتها في سلة)`)) return;
     for (let i = 0; i < list.length; i += 400) { const wb = writeBatch(db); list.slice(i, i + 400).forEach((x) => wb.delete(doc(db, "creditCodes", x.id))); await wb.commit(); }
+    await audit("حذف أكواد غير مستخدمة", "credits", { type: "codes", id: b.dataset.delb, name: b.dataset.delb }, `${list.length} كود`);
     await loadCodes();
   }, "تم الحذف")));
   c.querySelectorAll("[data-adj]").forEach((b) => (b.onclick = () => run(async () => {
     const uid = b.dataset.adj, delta = parseInt($("adj_" + uid).value, 10);
     if (!delta) return toast("اكتب رقم مثل 20 أو -10");
     await adminCredit(uid, delta, $("adjn_" + uid).value.trim().slice(0, 120));
+    await audit("تعديل رصيد تاجر", "credits", uidT(uid), `${delta > 0 ? "+" : ""}${delta} نقطة${$("adjn_" + uid).value.trim() ? " • " + $("adjn_" + uid).value.trim() : ""}`);
   }, "تم تعديل الرصيد ✅")));
   // ---- شارة الحصري ----
   c.querySelectorAll("[data-excolor]").forEach((b) => (b.onclick = () => { c.querySelectorAll("[data-excolor]").forEach((x) => x.classList.toggle("on", x === b)); $("exPrev").style.background = b.dataset.excolor; }));
@@ -614,9 +789,25 @@ function bind() {
         await loadCodes();
       },
       saveExcl: () => actions.saveConfig({ exclusive: { enabled: $("exOn").checked, label: $("exLabel").value.trim().slice(0, 20) || "حصري لحيّنا", icon: $("exIcon").value.trim().slice(0, 4) || "💎", color: $("content").querySelector("[data-excolor].on")?.dataset.excolor || "#7C3AED" } }),
+      staffAdd: async () => {
+        const email = $("stEmail").value.trim().toLowerCase(), name = $("stName").value.trim().slice(0, 60);
+        const perms = PERMS.map(([k]) => k).filter((k) => $("content").querySelector(`[data-newperm="${k}"]`)?.checked);
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast("اكتب إيميل صحيح"); return false; }
+        if (ADMIN_EMAILS.includes(email)) { toast("هذا إيميل المالك"); return false; }
+        if (!perms.length) { toast("اختر صلاحية وحدة على الأقل"); return false; }
+        await setDoc(doc(db, "staff", email), { email, name, perms, active: true, addedAt: serverTimestamp(), addedBy: state.me.email });
+      },
       savePoi: () => actions.saveConfig({ inviteMessage: $("inviteMsg").value.trim(), appLink: $("appLink").value.trim() }),
     };
-    if (map[b.dataset.act]) run(map[b.dataset.act], ["approve", "trust", "suspendOffer", "suspendUid", "verifyOk", "verifyNo"].includes(b.dataset.act) ? null : "تم ✅");
+    const act = b.dataset.act, fn = map[act];
+    if (!fn) return;
+    const before = o ? { ...o } : null; // نسخة قبل الحذف للسجل
+    const desc = describe(act, id, b, before); // نوصف العملية قبل التنفيذ (القيم المكتوبة لسه موجودة)
+    run(async () => {
+      const r = await fn();
+      if (r === false) return;
+      if (desc) await audit(...desc);
+    }, ["approve", "trust", "suspendOffer", "suspendUid", "verifyOk", "verifyNo"].includes(act) ? null : "تم ✅");
   }));
 }
 

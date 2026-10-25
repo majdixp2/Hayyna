@@ -662,7 +662,9 @@ class RestaurantOfferRepository(
         verifyCollection.document(uid).update(
             mapOf(
                 "status" to if (approved) com.example.data.model.VerificationRequest.STATUS_APPROVED else com.example.data.model.VerificationRequest.STATUS_REJECTED,
-                "rejectReason" to reason.take(300)
+                "rejectReason" to reason.take(300),
+                "decidedAt" to FieldValue.serverTimestamp(),
+                "decidedBy" to (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email?.lowercase() ?: "")
             )
         ).await()
         val storeRef = storesCollection.document(uid)
@@ -744,6 +746,17 @@ class RestaurantOfferRepository(
 
     suspend fun setOfferApproved(id: String, approved: Boolean) {
         offersCollection.document(id).update("isApproved", approved).await()
+    }
+
+    /** سجل عمليات الإدارة (نفس سجل لوحة الويب). */
+    suspend fun logAdmin(uid: String, email: String, action: String, area: String, targetType: String, targetId: String, targetName: String, details: String, thumb: String) {
+        db.collection("adminLog").add(
+            hashMapOf(
+                "at" to FieldValue.serverTimestamp(), "actor" to email, "actorUid" to uid,
+                "action" to action.take(60), "area" to area, "targetType" to targetType, "targetId" to targetId.take(120),
+                "targetName" to targetName.take(200), "details" to details.take(1500), "thumb" to thumb.take(500), "source" to "app"
+            )
+        ).await()
     }
 
     suspend fun setOfferFeatured(id: String, featured: Boolean) {

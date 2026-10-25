@@ -61,3 +61,9 @@ select,input[type=number]{font:inherit;border:1px solid var(--border);border-rad
 .swatch.on{box-shadow:0 0 0 2px var(--text)}
 .xbadge{color:#fff;border-radius:999px;padding:4px 10px;font-size:13px;font-weight:700}
 @media(max-width:760px){.tbl,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}.tbl thead{display:none}.tbl tr{border:1px solid var(--border);border-radius:12px;padding:8px;margin-bottom:8px}.tbl td{border:0}}
+
+.permchk{display:inline-flex;align-items:center;gap:6px}
+.permchk input{margin:0}
+.permchk.on{background:var(--green-soft);border-color:var(--green);color:var(--green)}
+.tbl.log td{font-size:13px}
+.area{font-size:11px;color:var(--muted);white-space:nowrap}

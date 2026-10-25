@@ -51,6 +51,7 @@ import com.example.data.model.RestaurantOffer
 import com.example.ui.theme.CalmSagePrimary
 import com.example.ui.theme.SoftTerracotta
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardView(
     offers: List<RestaurantOffer>,
@@ -191,6 +192,30 @@ fun AdminDashboardView(
             when (tab) {
                 // ---------------- 🏠 الرئيسية ----------------
                 0 -> {
+                    item {
+                        // الرصيد والأسعار والأكواد والفريق والسجل: في لوحة الويب (نفس حسابك ونفس الصلاحيات)
+                        val ctx = androidx.compose.ui.platform.LocalContext.current
+                        androidx.compose.material3.Card(
+                            onClick = {
+                                runCatching {
+                                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(com.example.data.OfferSharer.WEB_BASE + "/admin/")))
+                                }
+                            },
+                            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = CalmSagePrimary),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        ) {
+                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("🖥️", fontSize = 26.sp)
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("لوحة الإدارة الكاملة", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                    Text("الرصيد والأسعار، الأكواد، الفريق، وسجل العمليات", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
+                                }
+                                Text("‹", color = Color.White, fontSize = 22.sp)
+                            }
+                        }
+                    }
                     item { SectionHeader("يحتاج انتباهك") }
                     val todo = listOf(
                         Triple("⏳ عروض تنتظر المراجعة", pending.size, 1),

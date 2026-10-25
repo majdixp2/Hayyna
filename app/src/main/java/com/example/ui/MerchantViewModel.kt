@@ -229,6 +229,7 @@ class MerchantViewModel(
         launchSafely("تعذّر حفظ الإعداد.") {
             repository.setAiConfig(enabled, model)
             toast(if (enabled) "التعبئة الذكية مفعّلة ✨" else "التعبئة الذكية موقفة")
+            audit("${if (enabled) "تشغيل" else "إيقاف"}: التعبئة الذكية", "settings", details = model)
         }
     }
 
@@ -309,6 +310,7 @@ class MerchantViewModel(
         launchSafely("تعذّر الحفظ.") {
             repository.setPoiConfig(c)
             toast("تم الحفظ ✅")
+            audit("تعديل إعدادات محلات Google والدعوة", "settings")
         }
     }
 
@@ -388,6 +390,8 @@ class MerchantViewModel(
                 )
             }
             toast(if (approve) "تم توثيق ${req.storeName} ✓" else "تم رفض الطلب")
+            audit(if (approve) "توثيق متجر ✓" else "رفض توثيق", "verify", "store", req.uid, req.storeName,
+                if (approve) "${req.docType}: ${req.docNumber}" else "السبب: ${reason.ifBlank { "—" }}")
         }
     }
 
@@ -399,6 +403,7 @@ class MerchantViewModel(
         launchSafely("تعذّر حفظ التصنيفات.") {
             repository.setCategories(list)
             toast("تم حفظ التصنيفات ✅")
+            audit("تعديل التصنيفات", "settings", details = list.joinToString("، "))
         }
     }
 
@@ -409,6 +414,7 @@ class MerchantViewModel(
             repository.setCategories(categories.value.map { if (it == old) name else it })
             val n = repository.renameCategory(old, name)
             toast("تم تغيير الاسم ✅ وتحدّث $n عرض")
+            audit("إعادة تسمية تصنيف", "settings", details = "$old ← $name ($n عرض)")
         }
     }
 
@@ -416,6 +422,7 @@ class MerchantViewModel(
         launchSafely("تعذّر الحفظ.") {
             repository.setVerifyConfig(c)
             toast("تم الحفظ ✅")
+            audit("تعديل إعدادات التوثيق", "settings")
         }
     }
 
@@ -476,15 +483,22 @@ class MerchantViewModel(
         launchSafely("تعذّر إرسال الرد.") {
             repository.replyFeedback(id, reply, status)
             toast("تم ✅")
+            audit("رد على رسالة", "messages", "message", id, "", reply.take(600))
         }
     }
 
     fun setFeedbackStatus(id: String, status: String) {
-        launchSafely("تعذّر التحديث.") { repository.setFeedbackStatus(id, status) }
+        launchSafely("تعذّر التحديث.") {
+            repository.setFeedbackStatus(id, status)
+            audit(if (status == "done") "إنهاء رسالة" else "رسالة قيد المتابعة", "messages", "message", id)
+        }
     }
 
     fun deleteFeedback(id: String) {
-        launchSafely("تعذّر الحذف.") { repository.deleteFeedback(id) }
+        launchSafely("تعذّر الحذف.") {
+            repository.deleteFeedback(id)
+            audit("حذف رسالة", "messages", "message", id)
+        }
     }
 
     fun saveSupportWhatsapp(number: String) {
@@ -1145,6 +1159,20 @@ class MerchantViewModel(
     // ---------------- أدوات الأدمن: المراجعة والتوثيق والإيقاف ----------------
 
     /** يعتمد العرض، وبعد عرضين معتمدين يصير التاجر موثوق تلقائياً. */
+    // ---------------- سجل عمليات الإدارة ----------------
+    private fun offerThumb(o: RestaurantOffer?): String = o?.mediaUris?.firstOrNull() ?: o?.mediaUri.orEmpty()
+    private fun audit(action: String, area: String, type: String = "", id: String = "", name: String = "", details: String = "", thumb: String = "") {
+        if (!isAdmin.value) return
+        val u = currentUser.value ?: return
+        viewModelScope.launch {
+            runCatching { repository.logAdmin(u.uid, u.email.orEmpty().lowercase(), action, area, type, id, name, details, thumb) }
+                .onFailure { Log.w(TAG, "audit: ${it.message}") }
+        }
+    }
+    private fun auditOffer(action: String, o: RestaurantOffer?, id: String, details: String = "") =
+        audit(action, "review", "offer", id, o?.let { "${it.offerTitle} — ${it.restaurantName}" } ?: id, details, offerThumb(o))
+    private fun offerById(id: String) = allOffers.value.firstOrNull { it.id == id }
+
     fun approveOffer(offer: RestaurantOffer) {
         launchSafely("تعذّر اعتماد العرض.") {
             repository.setOfferApproved(offer.id, true)
@@ -1159,6 +1187,7 @@ class MerchantViewModel(
             } else {
                 toast("تم اعتماد العرض ✅")
             }
+            auditOffer("اعتماد عرض", offer, offer.id)
         }
     }
 
@@ -1172,6 +1201,7 @@ class MerchantViewModel(
             repository.setOfferApproved(offer.id, true)
             runCatching { repository.setStoreApproved(offer.merchantId, true) }
             toast("صار ${offer.restaurantName} موثوق ✅")
+            auditOffer("اعتماد عرض + توثيق التاجر", offer, offer.id)
         }
     }
 
@@ -1180,6 +1210,7 @@ class MerchantViewModel(
         launchSafely("تعذّر اعتماد الصفحة.") {
             repository.setStoreApproved(store.uid, true)
             toast("تم اعتماد صفحة ${store.name} ✅")
+            audit("اعتماد صفحة متجر", "merchants", "store", store.uid, store.name)
         }
     }
 
@@ -1192,6 +1223,7 @@ class MerchantViewModel(
             repository.unapproveMerchantOffers(merchantId)
             runCatching { repository.setStoreApproved(merchantId, false) }
             toast("تم إيقاف $name وإخفاء عروضه")
+            audit("إيقاف تاجر", "merchants", "merchant", merchantId, name)
         }
     }
 
@@ -1199,6 +1231,7 @@ class MerchantViewModel(
         launchSafely("تعذّر التحديث.") {
             repository.setMerchantStatus(status.copy(trusted = false))
             toast("تم إلغاء توثيق ${status.name} — عروضه الجاية تمر بالمراجعة")
+            audit("إلغاء الثقة بتاجر", "merchants", "merchant", status.uid, status.name)
         }
     }
 
@@ -1206,6 +1239,7 @@ class MerchantViewModel(
         launchSafely("تعذّر إلغاء الإيقاف.") {
             repository.setMerchantStatus(status.copy(suspended = false, trusted = false))
             toast("تم إلغاء الإيقاف — عروضه الجاية تمر بالمراجعة")
+            audit("إلغاء إيقاف تاجر", "merchants", "merchant", status.uid, status.name)
         }
     }
 
@@ -1215,11 +1249,16 @@ class MerchantViewModel(
             repository.resetReportsCount(offer.id)
             reports.value.filter { it.offerId == offer.id }.forEach { runCatching { repository.deleteReport(it.id) } }
             toast("رجع العرض يظهر ✅")
+            auditOffer("إرجاع عرض مخفي (البلاغات غير صحيحة)", offer, offer.id)
         }
     }
 
     fun dismissReport(reportId: String) {
-        launchSafely("تعذّر حذف البلاغ.") { repository.deleteReport(reportId) }
+        launchSafely("تعذّر حذف البلاغ.") {
+            val r = reports.value.firstOrNull { it.id == reportId }
+            repository.deleteReport(reportId)
+            audit("تجاهل بلاغ", "review", "offer", r?.offerId.orEmpty(), r?.offerTitle.orEmpty(), r?.reason.orEmpty())
+        }
     }
 
     /** يحذف كل عروض التاجر وملفه ثم حسابه نهائياً. */
@@ -1243,18 +1282,26 @@ class MerchantViewModel(
 
     fun deleteOffer(id: String) {
         launchSafely("تعذّر حذف العرض. يمكنك حذف عروضك أنت فقط.") {
+            val before = offerById(id)
             repository.deleteOfferById(id)
+            if (before != null && before.merchantId != currentUser.value?.uid) auditOffer("حذف عرض", before, id, "السعر: ${before.price} • الحي: ${before.district}")
             if (activeDetailOffer.value?.id == id) activeDetailOffer.value = null
             if (selectedOfferOnMap.value?.id == id) selectedOfferOnMap.value = null
         }
     }
 
     fun toggleFeatured(id: String, featured: Boolean) {
-        launchSafely("تعذّر تحديث العرض.") { repository.setOfferFeatured(id, featured) }
+        launchSafely("تعذّر تحديث العرض.") {
+            repository.setOfferFeatured(id, featured)
+            auditOffer("تبديل تمييز عرض", offerById(id), id, if (featured) "صار مميّز ⭐" else "أُلغي التمييز")
+        }
     }
 
     fun toggleApproved(id: String, approved: Boolean) {
-        launchSafely("تعذّر تحديث العرض.") { repository.setOfferApproved(id, approved) }
+        launchSafely("تعذّر تحديث العرض.") {
+            repository.setOfferApproved(id, approved)
+            auditOffer("تبديل حالة عرض", offerById(id), id, if (approved) "تفعّل" else "أُوقف")
+        }
     }
 
     // ---------------- أدوات ----------------
