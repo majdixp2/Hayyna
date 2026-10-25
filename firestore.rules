@@ -13,6 +13,19 @@ service cloud.firestore {
         && request.auth.token.email in ['majdixp2@gmail.com'];
     }
 
+    // ===== فريق الإدارة: موظفين بصلاحيات محددة (المالك فوق يقدر كل شي) =====
+    function myEmail() { return request.auth.token.get('email', '').lower(); }
+    function staffRef() { return /databases/$(database)/documents/staff/$(myEmail()); }
+    function isStaff() {
+      return isAuthenticated() && request.auth.token.get('email_verified', false) == true && myEmail() != ''
+        && exists(staffRef()) && get(staffRef()).data.get('active', false) == true;
+    }
+    // review: مراجعة العروض والبلاغات • verify: التوثيق • messages: الرسائل • merchants: التجار والإحالات • credits: الأكواد والأرصدة
+    function can(perm) {
+      return isAdmin() || (isStaff() && perm in get(staffRef()).data.get('perms', []));
+    }
+    function canStores() { return can('review') || can('verify') || can('merchants'); }
+
     function optInt(data, key) {
       return !(key in data) || (data[key] is int && data[key] >= 0);
     }
@@ -124,12 +137,12 @@ service cloud.firestore {
         && request.resource.data.status == 'new'
         && request.resource.data.reply == ''
         && request.resource.data.createdAt == request.time;
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow read: if can('messages') || (isAuthenticated() && resource.data.uid == request.auth.uid);
       // صاحب الرسالة يعلّم الرد "مقروء" فقط
-      allow update: if isAdmin()
+      allow update: if can('messages')
         || (isAuthenticated() && resource.data.uid == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replySeen']));
-      allow delete: if isAdmin();
+      allow delete: if can('messages');
     }
 
     // الاهتمام بمحلات Google غير المسجّلة: عدّادات فقط (نخزّن معرّف المكان، بدون بيانات Google)
@@ -140,7 +153,7 @@ service cloud.firestore {
             && request.resource.data[key] <= resource.data.get(key, 0) + 1);
     }
     match /poiInterest/{placeId} {
-      allow read: if isAdmin();
+      allow read: if can('merchants');
       allow create: if request.resource.data.keys().hasOnly(['taps', 'invites', 'claims', 'lastAt'])
         && request.resource.data.lastAt == request.time
         && (!('taps' in request.resource.data) || request.resource.data.taps == 1)
@@ -149,12 +162,13 @@ service cloud.firestore {
       allow update: if request.resource.data.keys().hasOnly(['taps', 'invites', 'claims', 'lastAt'])
         && request.resource.data.lastAt == request.time
         && poiCounterOk('taps') && poiCounterOk('invites') && poiCounterOk('claims');
-      allow delete: if isAdmin();
+      allow delete: if can('merchants');
     }
 
     // نوع الحساب (عميل / تاجر): صاحبه فقط
     match /users/{uid} {
-      allow read, delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow read: if isAuthenticated() && (request.auth.uid == uid || can('merchants') || can('verify'));
+      allow delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
       allow create, update: if isAuthenticated() && request.auth.uid == uid
         && request.resource.data.role in ['customer', 'merchant']
         && (!('favorites' in request.resource.data) || (request.resource.data.favorites is list && request.resource.data.favorites.size() <= 500));
@@ -171,8 +185,8 @@ service cloud.firestore {
 
     // طلبات توثيق المتاجر: التاجر يرسل طلبه ويشوفه، والأدمن يقرّر
     match /verificationRequests/{uid} {
-      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
-      allow create, update: if isAdmin()
+      allow read: if can('verify') || (isAuthenticated() && request.auth.uid == uid);
+      allow create, update: if can('verify')
         || (isAuthenticated() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['uid', 'storeName', 'docType', 'docNumber', 'photoUrl', 'locationChecked', 'locationOk', 'distanceMeters', 'status', 'rejectReason', 'createdAt'])
           && request.resource.data.uid == uid
@@ -182,19 +196,19 @@ service cloud.firestore {
           && request.resource.data.storeName is string && request.resource.data.storeName.size() <= 100
           && request.resource.data.photoUrl is string && request.resource.data.photoUrl.size() <= 2000
           && request.resource.data.createdAt == request.time);
-      allow delete: if isAdmin();
+      allow delete: if can('verify');
     }
 
     // صفحة المتجر العامة: الكل يشوف المعتمدة، وصاحبها يعدّل (غير الموثوق تروح للمراجعة)
     match /stores/{uid} {
       allow read: if resource.data.approved == true
         || (isAuthenticated() && request.auth.uid == uid)
-        || isAdmin();
+        || canStores();
       allow create: if isAdmin()
         || (isAuthenticated() && request.auth.uid == uid && validStoreWrite(uid)
           && request.resource.data.get('verified', false) == false);
       // التاجر ما يقدر يوثّق نفسه — علامة ✓ يحطها الأدمن فقط
-      allow update: if isAdmin()
+      allow update: if canStores()
         || (isAuthenticated() && request.auth.uid == uid && validStoreWrite(uid)
           && request.resource.data.get('verified', false) == resource.data.get('verified', false));
       allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
@@ -238,36 +252,36 @@ service cloud.firestore {
     }
 
     match /wallets/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
-      allow create: if isAdmin()
+      allow read: if isAuthenticated() && (request.auth.uid == uid || can('credits'));
+      allow create: if can('credits')
         || (isAuthenticated() && request.auth.uid == uid && walletShapeOk()
           && ((request.resource.data.lastOp.kind == 'welcome' && request.resource.data.balance == creditsCfg().get('welcome', 0))
             || walletRedeemOk(uid)));
-      allow update: if isAdmin()
+      allow update: if can('credits')
         || (isAuthenticated() && request.auth.uid == uid && walletShapeOk()
           && (walletRedeemOk(uid) || walletSpendOk(uid)));
-      allow delete: if isAdmin();
+      allow delete: if can('credits');
 
       // سجل الحركات (للعرض فقط؛ الرصيد نفسه محمي فوق)
       match /tx/{txId} {
-        allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
-        allow create: if isAdmin()
+        allow read: if isAuthenticated() && (request.auth.uid == uid || can('credits'));
+        allow create: if can('credits')
           || (isAuthenticated() && request.auth.uid == uid
             && request.resource.data.keys().hasOnly(['kind', 'points', 'note', 'ref', 'at'])
             && request.resource.data.kind in ['redeem', 'spend', 'welcome']
             && request.resource.data.points is int
             && request.resource.data.note is string && request.resource.data.note.size() <= 120
             && request.resource.data.at == request.time);
-        allow update, delete: if isAdmin();
+        allow update, delete: if can('credits');
       }
     }
 
     // أكواد الشحن: الأدمن ينشئها، وأي مسجّل يقرأ كود يعرفه ويستخدمه مرة وحدة
     match /creditCodes/{code} {
       allow get: if isAuthenticated();
-      allow list: if isAdmin();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin()
+      allow list: if can('credits');
+      allow create, delete: if can('credits');
+      allow update: if can('credits')
         || (isAuthenticated()
           && resource.data.get('redeemedBy', null) == null
           && (resource.data.get('expiresAt', null) == null || resource.data.expiresAt > request.time)
@@ -325,7 +339,7 @@ service cloud.firestore {
 
     // الإحالات: المحل يسجّل مين دعاه (مرة وحدة، بدون نقاط)، والنقاط يحطها الأدمن فقط
     match /referrals/{storeUid} {
-      allow read: if isAdmin()
+      allow read: if can('merchants')
         || (isAuthenticated() && (resource.data.referrer == request.auth.uid || storeUid == request.auth.uid));
       allow create: if isAuthenticated() && request.auth.uid == storeUid
         && request.resource.data.keys().hasOnly(['referrer', 'storeUid', 'storeName', 'createdAt', 'verifiedPts', 'offerPts'])
@@ -336,13 +350,13 @@ service cloud.firestore {
         && request.resource.data.storeName is string && request.resource.data.storeName.size() <= 100
         && request.resource.data.verifiedPts == 0 && request.resource.data.offerPts == 0
         && request.resource.data.createdAt == request.time;
-      allow update, delete: if isAdmin();
+      allow update, delete: if can('merchants');
     }
 
     // حالة التاجر: موثوق / موقوف — التاجر يقرأ حالته، والأدمن فقط يكتب
     match /merchantStatus/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
-      allow write: if isAdmin();
+      allow read: if isAuthenticated() && (request.auth.uid == uid || canStores());
+      allow write: if canStores();
     }
 
     // ملف المطعم: صاحبه فقط يقرأ ويكتب
@@ -360,14 +374,35 @@ service cloud.firestore {
         && request.resource.data.offerTitle is string && request.resource.data.offerTitle.size() <= 150
         && request.resource.data.restaurantName is string && request.resource.data.restaurantName.size() <= 100
         && request.resource.data.createdAt == request.time;
-      allow read, delete: if isAdmin();
+      allow read, delete: if can('review');
+    }
+
+    // فريق الإدارة: المالك يضيف ويعدّل، والموظف يقرأ ملفه بس
+    match /staff/{email} {
+      allow read: if isAdmin() || (isAuthenticated() && myEmail() == email);
+      allow write: if isAdmin();
+    }
+
+    // سجل عمليات الإدارة: يُضاف ولا يُعدّل ولا يُحذف. المالك يشوف الكل، والموظف يشوف عملياته
+    match /adminLog/{id} {
+      allow read: if isAdmin() || (isStaff() && resource.data.actor == myEmail());
+      allow create: if (isAdmin() || isStaff())
+        && request.resource.data.keys().hasOnly(['at', 'actor', 'actorUid', 'action', 'area', 'targetType', 'targetId', 'targetName', 'details', 'thumb', 'source'])
+        && request.resource.data.actor == myEmail()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.action is string && request.resource.data.action.size() <= 60
+        && request.resource.data.area is string && request.resource.data.area.size() <= 20
+        && request.resource.data.targetName is string && request.resource.data.targetName.size() <= 200
+        && request.resource.data.details is string && request.resource.data.details.size() <= 1500;
+      allow update, delete: if false;
     }
 
     match /offers/{offerId} {
       // أي أحد يتصفح العروض المعتمدة، وصاحب العرض والأدمن يشوفون اللي بانتظار المراجعة
       allow read: if resource.data.isApproved == true
         || (isAuthenticated() && resource.data.merchantId == request.auth.uid)
-        || isAdmin();
+        || can('review');
 
       // التاجر المسجّل ينشر عرض باسمه، بدون "مميز" وبعدّادات صفر
       allow create: if isAuthenticated()
@@ -390,12 +425,12 @@ service cloud.firestore {
           && !isSuspended(request.auth.uid)
           && approvalAllowed(request.auth.uid)
           && isValidOffer(request.resource.data))
-        || isAdmin()
+        || can('review')
         || isCounterIncrement();
 
       // صاحب العرض أو الأدمن يحذف
       allow delete: if isAuthenticated()
-        && (resource.data.merchantId == request.auth.uid || isAdmin());
+        && (resource.data.merchantId == request.auth.uid || can('review'));
     }
   }
 }

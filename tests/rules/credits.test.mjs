@@ -4,7 +4,7 @@ import { doc, setDoc, getDoc, writeBatch, serverTimestamp, Timestamp, collection
 import { readFileSync } from "node:fs";
 
 process.on("unhandledRejection", (e) => { console.log(`::error title=crash::${String(e?.message || e).split("\n")[0].slice(0, 400)}`); process.exit(1); });
-const env = await initializeTestEnvironment({ projectId: "demo-hayyna", firestore: { rules: readFileSync(new URL("../../firestore.rules", import.meta.url), "utf8"), host: "127.0.0.1", port: 8080 } });
+const env = await initializeTestEnvironment({ projectId: "demo-hayyna", firestore: { rules: readFileSync(new URL("./firestore.rules", import.meta.url), "utf8"), host: "127.0.0.1", port: 8080 } });
 const DAY = 864e5;
 let pass = 0, fail = 0;
 async function t(name, fn) {
