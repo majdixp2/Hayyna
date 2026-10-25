@@ -405,19 +405,19 @@ class RestaurantOfferRepository(
             val cr = snap?.get("credits") as? Map<String, Any?> ?: emptyMap()
             @Suppress("UNCHECKED_CAST")
             val ex = snap?.get("exclusive") as? Map<String, Any?> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST")
+            val rw = ex["reward"] as? Map<String, Any?> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST")
+            val items = (cr["items"] as? Map<String, Any?>)?.mapNotNull { (id, v) ->
+                val m = v as? Map<String, Any?> ?: return@mapNotNull null
+                CreditItem(
+                    id = id, name = m["name"] as? String ?: id, effect = m["effect"] as? String ?: "",
+                    unit = m["unit"] as? String ?: "fixed", price = (m["price"] as? Number)?.toLong() ?: 0L,
+                    days = (m["days"] as? Number)?.toInt() ?: 1, active = m["active"] as? Boolean ?: false,
+                    order = (m["order"] as? Number)?.toInt() ?: 0
+                )
+            }?.associateBy { it.id } ?: CreditItem.DEFAULTS
             trySend(
-                @Suppress("UNCHECKED_CAST")
-                val rw = ex["reward"] as? Map<String, Any?> ?: emptyMap()
-                @Suppress("UNCHECKED_CAST")
-                val items = (cr["items"] as? Map<String, Any?>)?.mapNotNull { (id, v) ->
-                    val m = v as? Map<String, Any?> ?: return@mapNotNull null
-                    CreditItem(
-                        id = id, name = m["name"] as? String ?: id, effect = m["effect"] as? String ?: "",
-                        unit = m["unit"] as? String ?: "fixed", price = (m["price"] as? Number)?.toLong() ?: 0L,
-                        days = (m["days"] as? Number)?.toInt() ?: 1, active = m["active"] as? Boolean ?: false,
-                        order = (m["order"] as? Number)?.toInt() ?: 0
-                    )
-                }?.associateBy { it.id } ?: CreditItem.DEFAULTS
                 CreditsConfig(
                     items = items,
                     welcome = (cr["welcome"] as? Number)?.toLong() ?: 0L,
