@@ -488,3 +488,19 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .pinned { margin: 6px 0 10px; }
 .pinned .ptitle { font-weight: 800; font-size: 14px; margin: 4px 2px 8px; color: var(--amber); }
 .lcard.pin { border: 2px solid #FFD166; }
+
+/* المميّز: إطار ذهبي للبطاقة */
+.card.feat, .lcard.feat { border: 2px solid #FFD166; box-shadow: 0 0 0 3px rgba(255,209,102,.25), 0 6px 20px rgba(0,0,0,.14); }
+.card.feat.on { border-color: var(--green); box-shadow: 0 0 0 3px rgba(255,209,102,.45), 0 6px 20px rgba(0,0,0,.14); }
+/* سحب بالماوس */
+.carousel, .chips, .sortbar, .favrow, .hscroll, .row-chips { cursor: grab; }
+.dragging { cursor: grabbing !important; scroll-snap-type: none !important; user-select: none; }
+.dragging * { pointer-events: none; }
+.car-arrow { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .car-arrow { display: flex; position: fixed; z-index: 501; bottom: calc(var(--nav) + 62px); width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--glass); color: var(--ink); font-size: 26px; line-height: 1; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,.18); cursor: pointer; }
+  .car-arrow.prev { right: 8px; } .car-arrow.next { left: 8px; }
+  [dir="ltr"] .car-arrow.prev { right: auto; left: 8px; } [dir="ltr"] .car-arrow.next { left: auto; right: 8px; }
+  .car-arrow.hidden { display: none; }
+}

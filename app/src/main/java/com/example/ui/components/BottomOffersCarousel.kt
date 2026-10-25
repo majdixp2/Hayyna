@@ -123,7 +123,8 @@ fun SelectedRestaurantOfferCard(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(1.dp, Color(0xFFE5E0D8))
+        // المميّز: إطار ذهبي
+        border = if (offer.isFeatured) BorderStroke(2.5.dp, Color(0xFFFFD166)) else BorderStroke(1.dp, Color(0xFFE5E0D8))
     ) {
         Column(
             modifier = Modifier

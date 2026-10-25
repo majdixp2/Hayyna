@@ -260,7 +260,7 @@ function openGroup(arr) {
 function carouselCard({ o, b, d }) {
   const bd = badge(o), rem = remainingText(o), op = openNow(b), fav = state.favs.has(o.id);
   const meta = [districtLabel(b.district || o.district), distText(d), o.delivery ? "🛵" : ""].filter(Boolean).join(" • ");
-  return `<div class="card${state.selected === o.id ? " on" : ""}" data-id="${esc(o.id)}" role="button">
+  return `<div class="card${state.selected === o.id ? " on" : ""}${isFeat(o) ? " feat" : ""}" data-id="${esc(o.id)}" role="button">
     <div class="thumb"><img src="${esc(thumb(o))}" alt="" loading="lazy">${bd ? `<span class="badge${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : ""}</div>
     <div class="info">
       <div class="store-row">${o.logoUrl ? `<img class="logo" src="${esc(cld(o.logoUrl, 60))}" alt="">` : ""}<span>${esc(o.restaurantName)}</span>
@@ -273,7 +273,7 @@ function carouselCard({ o, b, d }) {
 }
 function listCard(o) {
   const { b, d } = nearestBranch(o), bd = badge(o), rem = remainingText(o), op = openNow(b), fav = state.favs.has(o.id);
-  return `<div class="lcard" data-id="${esc(o.id)}" role="button">
+  return `<div class="lcard${isFeat(o) ? " feat" : ""}" data-id="${esc(o.id)}" role="button">
     <div class="lthumb"><img src="${esc(thumb(o, 500))}" alt="" loading="lazy">${bd ? `<span class="badge${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : ""}
       <button class="heart float" data-fav="${esc(o.id)}" aria-label="مفضلة">${heartSvg(fav)}</button></div>
     <div class="linfo">
@@ -297,6 +297,7 @@ export function renderAll() {
   car.innerHTML = list.map(carouselCard).join("");
   car.scrollLeft = sl;
   car.classList.toggle("hidden", !list.length);
+  document.querySelectorAll(".car-arrow").forEach((a) => a.classList.toggle("hidden", list.length < 2));
   const empty = $("empty");
   if (state.loaded && !list.length) {
     empty.innerHTML = state.offers.length ? `<b>ما لقينا عروض مطابقة</b>جرّب كلمة ثانية أو شيل الفلاتر` : `<b>لا توجد عروض حالياً</b>المحلات تنزّل عروضها أول بأول 🔥`;
@@ -901,6 +902,34 @@ $("sheetClose").onclick = closeSheet;
 $("sheetBackdrop").onclick = closeSheet;
 $("viewerClose").onclick = () => $("viewer").classList.add("hidden");
 $("viewer").onclick = (e) => { if (e.target.id === "viewer") $("viewer").classList.add("hidden"); };
+
+// سحب الشرائط الأفقية بالماوس (الكمبيوتر) — اللمس يشتغل لحاله
+(() => {
+  const SEL = ".carousel, .chips, .sortbar, .favrow, .hscroll, .row-chips";
+  let drag = null;
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    const el = e.target.closest(SEL); if (!el || el.scrollWidth <= el.clientWidth) return;
+    drag = { el, x: e.clientX, left: el.scrollLeft, moved: false };
+  });
+  document.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.moved && Math.abs(dx) > 6) { drag.moved = true; drag.el.classList.add("dragging"); }
+    if (drag.moved) { drag.el.scrollLeft = drag.left - dx; e.preventDefault(); }
+  });
+  const end = () => { if (!drag) return; const d = drag; drag = null; d.el.classList.remove("dragging");
+    if (d.moved) { const stop = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; window.addEventListener("click", stop, { capture: true, once: true }); setTimeout(() => window.removeEventListener("click", stop, { capture: true }), 50); } };
+  document.addEventListener("pointerup", end); document.addEventListener("pointercancel", end);
+  // عجلة الماوس على الشريط = تحريك أفقي
+  document.addEventListener("wheel", (e) => {
+    const el = e.target.closest(".carousel, .favrow, .hscroll"); if (!el || Math.abs(e.deltaX) > Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth) return;
+    el.scrollBy({ left: e.deltaY, behavior: "auto" }); e.preventDefault();
+  }, { passive: false });
+})();
+// أسهم للشريط السفلي على الكمبيوتر
+$("carNext")?.addEventListener("click", () => $("carousel").scrollBy({ left: -340, behavior: "smooth" }));
+$("carPrev")?.addEventListener("click", () => $("carousel").scrollBy({ left: 340, behavior: "smooth" }));
 
 // أحداث البطاقات (خريطة + قائمة + مفضلة + لوحة)
 document.addEventListener("click", (e) => {
