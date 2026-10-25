@@ -108,7 +108,7 @@ function listen() {
     sub(query(collection(db, "verificationRequests"), where("status", "==", "pending")), (sn) => { state.verifs = parse(sn).map((x) => ({ ...x, uid: x.id })); });
     sub(query(collection(db, "verificationRequests"), where("status", "in", ["approved", "rejected"])), (sn) => { state.verifHist = parse(sn).map((x) => ({ ...x, uid: x.id })); });
   }
-  if (can("credits")) sub(collection(db, "wallets"), (sn) => { state.wallets = parse(sn); });
+  if (can("credits")) sub(collection(db, "wallets"), (sn) => { state.wallets = parse(sn); loadNames(); });
   sub(doc(db, "config", "app"), (sn) => { state.config = sn.data() || {}; });
   // السجل: المالك يشوف الكل، والموظف عملياته (الترتيب على الجهاز)
   sub(state.me.owner ? query(collection(db, "adminLog"), orderBy("at", "desc"), limit(400)) : query(collection(db, "adminLog"), where("actor", "==", state.me.email)),
@@ -116,12 +116,15 @@ function listen() {
   if (state.me.owner) sub(collection(db, "staff"), (sn) => { state.staff = parse(sn); });
 }
 
-// أسماء أصحاب الدعوات (من users)
+// أسماء أصحاب الدعوات والمحافظ: اسم المتجر + اسم صاحبه وجواله (بدل رقم الحساب)
 async function loadNames() {
-  const need = [...new Set(state.referrals.map((r) => r.referrer))].filter((u) => !(u in state.names));
+  const need = [...new Set([...state.referrals.map((r) => r.referrer), ...state.wallets.map((w) => w.id)])].filter((u) => u && !(u in state.names));
   for (const u of need) {
     state.names[u] = "…";
-    try { const d = await getDoc(doc(db, "users", u)); const x = d.data() || {}; state.names[u] = x.name ? `${x.name}${x.phone ? " • " + x.phone : ""}` : u.slice(0, 8); } catch { state.names[u] = u.slice(0, 8); }
+    let store = "", person = "";
+    try { store = (await getDoc(doc(db, "stores", u))).data()?.name || ""; } catch {}
+    try { const x = (await getDoc(doc(db, "users", u))).data() || {}; person = [x.name, x.phone].filter(Boolean).join(" • "); } catch {}
+    state.names[u] = [store, person].filter(Boolean).join(" — ") || "حساب بدون اسم";
   }
   if (need.length) render();
 }
@@ -467,7 +470,7 @@ const CODE_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const newCode = () => { const a = crypto.getRandomValues(new Uint8Array(8)); const c = [...a].map((x) => CODE_CHARS[x % CODE_CHARS.length]).join(""); return `HY-${c.slice(0, 4)}-${c.slice(4)}`; };
 const itemsDraft = () => state.itemsDraft || (state.itemsDraft = itemList(creditsOf(state.config).items).map((x) => ({ ...x })));
 const packsDraft = () => state.packsDraft || (state.packsDraft = creditsOf(state.config).packs.map((x) => ({ ...x })));
-const nameOfUid = (uid) => statusOf(uid)?.name || state.names[uid] || uid.slice(0, 8);
+const nameOfUid = (uid) => (state.names[uid] && state.names[uid] !== "…" ? state.names[uid] : statusOf(uid)?.name) || "…";
 function jumpNav(items) { return `<div class="jump">${items.map(([id, l]) => `<a href="#${id}">${l}</a>`).join("")}</div>`; }
 
 function credits() {
@@ -544,10 +547,11 @@ function credits() {
     </div>
 
     <h2 id="cr-wallets">👛 أرصدة التجار</h2>
-    ${state.wallets.length ? `<div class="card"><table class="tbl"><thead><tr><th>التاجر</th><th>الرصيد</th><th>تعديل يدوي (+ أو −)</th></tr></thead><tbody>
-      ${[...state.wallets].sort((a, b) => (b.balance || 0) - (a.balance || 0)).map((w) => `<tr><td>${esc(nameOfUid(w.id))}</td><td><b>${w.balance || 0}</b></td>
-        <td><input type="number" id="adj_${w.id}" placeholder="مثال: 20 أو -10" style="width:110px"> <input type="text" id="adjn_${w.id}" placeholder="السبب (يظهر للتاجر)" style="width:200px">
-        <button class="btn" data-adj="${w.id}">تطبيق</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">ما فيه محافظ للحين</p>`}`;
+    <p class="muted">تعديل يدوي للرصيد (تعويض، هدية، تصحيح خطأ): اكتب عدد النقاط — رقم عادي للإضافة (20) أو بالسالب للخصم (‎-10) — واكتب السبب، يظهر للتاجر في «الحركات».</p>
+    ${state.wallets.length ? `<div class="card"><table class="tbl"><thead><tr><th>التاجر</th><th>الرصيد</th><th>تعديل يدوي</th></tr></thead><tbody>
+      ${[...state.wallets].sort((a, b) => (b.balance || 0) - (a.balance || 0)).map((w) => `<tr><td><b>${esc(nameOfUid(w.id))}</b></td><td><b>${w.balance || 0}</b> نقطة</td>
+        <td><input type="number" id="adj_${w.id}" placeholder="النقاط: 20 أو ‎-10" style="width:130px"> <input type="text" id="adjn_${w.id}" placeholder="السبب، مثل: تعويض عن خطأ" style="width:200px">
+        <button class="btn" data-adj="${w.id}">تطبيق التعديل</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">ما فيه محافظ للحين</p>`}`;
 }
 async function adminCredit(uid, delta, note) {
   const ref = doc(db, "wallets", uid), snap = await getDoc(ref);

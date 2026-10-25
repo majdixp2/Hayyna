@@ -168,7 +168,7 @@ service cloud.firestore {
 
     // نوع الحساب (عميل / تاجر): صاحبه فقط
     match /users/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || can('merchants') || can('verify'));
+      allow read: if isAuthenticated() && (request.auth.uid == uid || can('merchants') || can('verify') || can('credits'));
       allow delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
       allow create, update: if isAuthenticated() && request.auth.uid == uid
         && request.resource.data.role in ['customer', 'merchant']
