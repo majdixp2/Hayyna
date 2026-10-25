@@ -293,12 +293,14 @@ function scrollCardIntoView(id) {
 
 // ---------------- 🚀 بطاقة «عرض مُبرز قريب منك» (مرة باليوم) ----------------
 let spotShown = false;
+// للتجربة: رابط فيه ?spot=1 يتجاهل قيد "مرة باليوم"
+const SPOT_TEST = new URLSearchParams(location.search).has("spot");
 function maybeSpotlight(list) {
   if (spotShown || !state.me || !state.loaded || state.view || location.pathname !== "/" || state.tab !== "map") return;
   if (!$("sheet").classList.contains("hidden") || !$("page").classList.contains("hidden")) return;
   const today = new Date().toISOString().slice(0, 10);
   let last = ""; try { last = localStorage.getItem("hayyna_spot_day") || ""; } catch {}
-  if (last === today) { spotShown = true; return; }
+  if (last === today && !SPOT_TEST) { spotShown = true; return; }
   const near = list.filter(({ o, d }) => isSpot(o) && d != null && d <= 3);
   if (!near.length) return;
   spotShown = true;
