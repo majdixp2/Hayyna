@@ -349,11 +349,15 @@ function openCheckout(sid) {
 export async function openMyOrders() {
   if (!state.user) return;
   showSheet(`<div class="pad"><div class="spinner"></div></div>`);
-  let list = [];
-  try { list = (await getDocs(query(collection(db, "orders"), where("customerUid", "==", state.user.uid)))).docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt)); } catch (e) { console.warn(e); }
+  let list = [], loadErr = "";
+  try { list = (await getDocs(query(collection(db, "orders"), where("customerUid", "==", state.user.uid)))).docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt)); }
+  catch (e) { console.warn(e); loadErr = e.code || e.message || "خطأ"; }
+  const who = state.user.email || X.toLocalPhone(state.profile?.phone || "") || "";
   const draw = () => {
     showSheet(`<div class="pad"><div class="section-title">🧾 طلباتي</div>
-      ${list.length ? list.slice(0, 50).map((o) => orderCard(o, false)).join("") : `<div class="empty-inline">ما طلبت شي للحين<br><small>ادخل صفحة أي متجر واطلب منه 🛍️</small></div>`}</div>`);
+      ${loadErr ? `<div class="err">تعذّر تحميل طلباتك (${esc(loadErr)}). حدّث الصفحة وجرّب مرة ثانية.</div>` : ""}
+      ${list.length ? list.slice(0, 50).map((o) => orderCard(o, false)).join("") : loadErr ? "" : `<div class="empty-inline">ما طلبت شي للحين<br><small>ادخل صفحة أي متجر واطلب منه 🛍️</small></div>`}
+      ${who ? `<small class="hint">الطلبات المحفوظة لحسابك: ${esc(who)} — الطلبات من حساب ثاني ما تطلع هنا.</small>` : ""}</div>`);
     const b = $("sheetBody");
     b.querySelectorAll("[data-os]").forEach((x) => x.onclick = async () => {
       if (!confirm("إلغاء الطلب؟ (بلّغ المحل على واتساب بعد)")) return;

@@ -792,7 +792,9 @@ class MerchantViewModel(
         }
     }
     suspend fun loadMyOrders(): List<com.example.data.model.HayynaOrder> =
-        currentUser.value?.uid?.let { runCatching { repository.myOrders(it) }.getOrDefault(emptyList()) } ?: emptyList()
+        currentUser.value?.uid?.let { uid ->
+            runCatching { repository.myOrders(uid) }.onFailure { toast("تعذّر تحميل طلباتك: ${it.message ?: ""}") }.getOrDefault(emptyList())
+        } ?: emptyList()
 
     /**
      * العروض الظاهرة: لما يكون رصيد العروض مفعّل، العرض الجديد لازم له "نشر" مدفوع،
