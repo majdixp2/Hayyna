@@ -6,7 +6,7 @@ import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadI
 import * as X from "./logic.js";
 import {
   KINDS, catalogOf, vatOf, baseKindOf, kindOrder, limitOf, slotId, passCost, riyal, itemVisible, itemPaidUntil, itemGrace,
-  vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber
+  vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps
 } from "./catalog.js";
 
 const { esc, cld } = X;
@@ -27,6 +27,7 @@ export function watchMerchantCatalog(uid, onChange) {
   M.unsubs.push(onSnapshot(query(collection(db, "itemPasses"), where("merchantId", "==", uid)), (s) => { M.passes = s.docs.map((d) => ({ ...d.data(), id: d.id })); fire(); refreshPage(); }, () => {}));
   M.unsubs.push(onSnapshot(query(collection(db, "orders"), where("storeId", "==", uid)), (s) => {
     M.orders = s.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt)); fire();
+    if (ordersOpen && !$("sheet").classList.contains("hidden")) M.onOrders?.();
   }, () => {}));
 }
 
@@ -204,27 +205,145 @@ function openPay(kind) {
 }
 
 /** طلبات المحل */
+let ordersOpen = false;
 function openStoreOrders() {
+  ordersOpen = true;
   const draw = () => {
+    if (!ordersOpen) return;
     const list = M.orders;
     showSheet(`<div class="pad"><div class="section-title">🧾 الطلبات (${list.length})</div>
       ${list.length ? list.slice(0, 100).map((o) => orderCard(o, true)).join("") : `<div class="empty-inline">ما وصلتك طلبات للحين</div>`}</div>`);
-    $("sheetBody").querySelectorAll("[data-os]").forEach((b) => b.onclick = async () => {
-      try { await updateDoc(doc(db, "orders", b.dataset.oid), { status: b.dataset.os, updatedAt: serverTimestamp() }); M.orders.find((o) => o.id === b.dataset.oid).status = b.dataset.os; draw(); }
-      catch { toast("تعذّر التحديث"); }
+    $("sheetBody").querySelectorAll("[data-os]").forEach((b) => b.onclick = () => {
+      const o = M.orders.find((x) => x.id === b.dataset.oid), st = b.dataset.os;
+      if (st === "received") return pickEta(o);
+      if (st === "cancelled" && !confirm("إلغاء الطلب؟ بلّغ العميل على واتساب بعد.")) return;
+      setStatus(o, st);
     });
+  };
+  const setStatus = async (o, st, extra = {}) => {
+    try { await updateDoc(doc(db, "orders", o.id), { status: st, updatedAt: serverTimestamp(), ...extra }); Object.assign(o, { status: st }, extra); ordersOpen = true; draw(); }
+    catch (e) { console.error(e); toast("تعذّر التحديث"); }
+  };
+  // استلام الطلب: المحل يختار وقت تقريبي للتجهيز
+  const pickEta = (o) => {
+    ordersOpen = false;
+    showSheet(`<div class="pad"><div class="section-title">👍 استلام الطلب #${esc(o.code)}</div>
+      <p class="desc tr">${o.mode === "delivery" ? "متى يطلع للتوصيل تقريباً؟" : "متى يكون جاهز للاستلام تقريباً؟"}</p>
+      <div class="chips wrap">${[10, 15, 20, 30, 45, 60].map((m) => `<button class="chip" data-eta="${m}">${m} دقيقة</button>`).join("")}</div>
+      <button class="btn call" id="etaSkip" style="margin-top:10px">بدون وقت</button></div>`);
+    $("sheetBody").querySelectorAll("[data-eta]").forEach((x) => x.onclick = () => setStatus(o, "received", { etaAt: Timestamp.fromMillis(Date.now() + +x.dataset.eta * 60000) }));
+    $("etaSkip").onclick = () => setStatus(o, "received");
+  };
+  M.onOrders = draw; // تتحدّث لحظياً لو وصل طلب جديد
+  draw();
+}
+const etaText = (o) => { const t = X.ms(o.etaAt); if (!t || !["received"].includes(o.status)) return ""; const m = Math.round((t - Date.now()) / 60000);
+  return m > 0 ? `⏱️ ${o.mode === "delivery" ? "يطلع للتوصيل" : "جاهز"} خلال ~${m} دقيقة` : `⏱️ ${o.mode === "delivery" ? "بيطلع" : "بيكون جاهز"} قريب`; };
+function stepper(o) {
+  if (o.status === "cancelled") return "";
+  const steps = orderSteps(o), at = Math.max(0, steps.findIndex(([k]) => k === o.status));
+  return `<div class="ostep">${steps.map(([k, l], i) => `<div class="${i <= at ? "on" : ""}${i === at ? " cur" : ""}"><i></i><small>${l}</small></div>`).join("")}</div>`;
+}
+function orderCard(o, asStore) {
+  const st = ORDER_STATUS[o.status] || ORDER_STATUS.sent, when = X.ms(o.createdAt), del = o.mode === "delivery";
+  const next = asStore ? ({
+    sent: [["received", "👍 استلمته"], ["cancelled", "✕ إلغاء"]],
+    received: [[del ? "delivering" : "ready", del ? "🚚 طلع للتوصيل" : "🛍️ جاهز للاستلام"], ["cancelled", "✕ إلغاء"]],
+    ready: [["done", "✅ تم الاستلام"]], delivering: [["done", "✅ تم التوصيل"]],
+  }[o.status] || []) : (o.status === "sent" ? [["cancelled", "✕ إلغاء الطلب"]] : []);
+  const store = !asStore ? state.stores.find((x) => x.uid === o.storeId) : null;
+  const wa = store ? X.waDigits(store.phone || store.branches?.[0]?.phone || "") : "";
+  const rated = !asStore && myRatings.has(o.id);
+  return `<div class="ocard${["sent"].includes(o.status) && asStore ? " new" : ""}"><div class="oc-top"><b>#${esc(o.code)}</b><span class="pill ${st.cls}">${asStore ? st.t : statusText(o)}</span></div>
+    <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</div>
+    ${stepper(o)}${etaText(o) ? `<div class="oc-eta">${etaText(o)}</div>` : ""}
+    <div class="oc-items">${(o.items || []).map((i) => `${i.qty} × ${esc(i.name)}`).join("، ")}</div>
+    <div class="oc-tot">${del ? "🚚 توصيل" : "🏃 استلام"} • <b>${fmt(o.total)} ر.س</b>${o.note ? ` • 📝 ${esc(o.note)}` : ""}</div>
+    ${!asStore && ["received", "ready", "delivering"].includes(o.status) ? `<div class="oc-note">المحل استلم طلبك وما يمكن إلغاؤه${wa ? ` — <a href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 تواصل مع المحل</a>` : ""}</div>` : ""}
+    ${asStore && o.mode === "delivery" && o.location ? `<a class="oc-map" href="https://maps.google.com/?q=${o.location.lat},${o.location.lng}" target="_blank" rel="noopener">📍 موقع العميل</a>` : ""}
+    ${next.length || !asStore ? `<div class="oc-act">${next.map(([s, l]) => `<button class="chip" data-oid="${esc(o.id)}" data-os="${s}">${l}</button>`).join("")}
+      ${!asStore && o.status === "done" ? (rated ? `<span class="pill">⭐ شكراً على تقييمك</span>` : `<button class="chip" data-rate="${esc(o.id)}">⭐ قيّم طلبك</button>`) : ""}
+      ${!asStore ? `<button class="chip" data-again="${esc(o.id)}">↻ اطلب نفسه</button>` : ""}</div>` : ""}
+  </div>`;
+}
+
+// ----- طلباتي (تتحدّث لحظياً + تنبيه لما تتغيّر الحالة) -----
+const MY = { uid: null, unsub: null, list: [], loaded: false, open: false, err: "" };
+const myRatings = new Set();
+export function watchMyOrders() {
+  // المفتاح يشمل حالة الخدمة: لو الإعدادات وصلت متأخرة نبدأ المتابعة بعدها
+  const uid = state.user?.uid && cat().enabled && cat().orderEnabled ? state.user.uid : null;
+  if (MY.uid === uid) return;
+  MY.unsub?.(); MY.unsub = null; MY.uid = uid; MY.list = []; MY.loaded = false; myRatings.clear();
+  if (!uid) return;
+  getDocs(query(collection(db, "ratings"), where("uid", "==", uid))).then((r) => r.docs.forEach((d) => myRatings.add(d.id))).catch(() => {});
+  MY.unsub = onSnapshot(query(collection(db, "orders"), where("customerUid", "==", uid)), (snap) => {
+    const prev = new Map(MY.list.map((o) => [o.id, o.status]));
+    MY.list = snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt));
+    if (MY.loaded) for (const o of MY.list) {
+      const was = prev.get(o.id);
+      if (was && was !== o.status && o.status !== "sent") toast(`🧾 طلبك #${o.code}: ${statusText(o)}`, true);
+    }
+    MY.loaded = true; MY.err = "";
+    if (MY.open) drawMyOrders();
+  }, (e) => { console.warn(e); MY.err = e.code || e.message || "خطأ"; if (MY.open) drawMyOrders(); });
+}
+export function openMyOrders() {
+  if (!state.user) return;
+  watchMyOrders(); MY.open = true;
+  drawMyOrders();
+}
+function drawMyOrders() {
+  const who = state.user?.email || X.toLocalPhone(state.profile?.phone || "") || "";
+  const list = MY.list;
+  if ($("sheet").classList.contains("hidden") && MY.open && MY.loaded) { /* انقفلت */ }
+  showSheet(`<div class="pad my-orders"><div class="section-title">🧾 طلباتي</div>
+    ${MY.err ? `<div class="err">تعذّر تحميل طلباتك (${esc(MY.err)}). حدّث الصفحة وجرّب مرة ثانية.</div>` : ""}
+    ${!MY.loaded && !MY.err ? `<div class="spinner"></div>` : list.length ? list.slice(0, 50).map((o) => orderCard(o, false)).join("") : MY.err ? "" : `<div class="empty-inline">ما طلبت شي للحين<br><small>ادخل صفحة أي متجر واطلب منه 🛍️</small></div>`}
+    ${who ? `<small class="hint">الطلبات المحفوظة لحسابك: ${esc(who)} — الطلبات من حساب ثاني ما تطلع هنا.</small>` : ""}</div>`);
+  const b = $("sheetBody");
+  b.querySelectorAll("[data-os]").forEach((x) => x.onclick = async () => {
+    if (!confirm("إلغاء الطلب؟ بلّغ المحل على واتساب بعد.")) return;
+    try { await updateDoc(doc(db, "orders", x.dataset.oid), { status: "cancelled", updatedAt: serverTimestamp() }); } catch { toast("تعذّر الإلغاء — يمكن المحل استلمه"); }
+  });
+  b.querySelectorAll("[data-again]").forEach((x) => x.onclick = () => {
+    const o = list.find((y) => y.id === x.dataset.again), cart = cartOf(o.storeId);
+    (o.items || []).forEach((i) => { cart[i.id] = { ...i }; }); saveCarts();
+    MY.open = false; hideSheet(); setTimeout(() => openStore(o.storeId, true), 60);
+  });
+  b.querySelectorAll("[data-rate]").forEach((x) => x.onclick = () => rateOrder(list.find((y) => y.id === x.dataset.rate)));
+}
+export const myOrdersClosed = () => { MY.open = false; ordersOpen = false; };
+
+function rateOrder(o) {
+  let stars = 5; MY.open = false;
+  const draw = () => {
+    showSheet(`<div class="pad"><div class="section-title">⭐ قيّم طلبك من ${esc(o.storeName)}</div>
+      <div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-st="${n}" class="${n <= stars ? "on" : ""}">★</button>`).join("")}</div>
+      <textarea id="rtText" class="input" rows="3" maxlength="300" placeholder="كلمة عن تجربتك (اختياري)"></textarea>
+      <div id="rtErr" class="err"></div><button class="btn dir big" id="rtGo">أرسل التقييم</button></div>`);
+    $("sheetBody").querySelectorAll("[data-st]").forEach((x) => x.onclick = () => { const t = $("rtText").value; stars = +x.dataset.st; draw(); $("rtText").value = t; });
+    $("rtGo").onclick = async () => {
+      $("rtGo").disabled = true;
+      try {
+        await setDoc(doc(db, "ratings", o.id), { orderId: o.id, storeId: o.storeId, uid: state.user.uid, name: (state.profile?.name || o.customerName || "").split(" ")[0].slice(0, 30),
+          stars, text: $("rtText").value.trim().slice(0, 300), at: serverTimestamp() });
+        myRatings.add(o.id); toast("شكراً على تقييمك 🌟", true); MY.open = true; drawMyOrders();
+      } catch (e) { console.error(e); $("rtGo").disabled = false; $("rtErr").textContent = "تعذّر الإرسال."; }
+    };
   };
   draw();
 }
-function orderCard(o, asStore) {
-  const st = ORDER_STATUS[o.status] || ORDER_STATUS.sent, when = X.ms(o.createdAt);
-  const next = asStore ? ({ sent: [["received", "👍 استلمته"], ["cancelled", "✕ إلغاء"]], received: [["ready", "✅ جاهز"], ["cancelled", "✕ إلغاء"]], ready: [["done", "🎉 تم التسليم"]] }[o.status] || []) : (o.status === "sent" ? [["cancelled", "✕ إلغاء الطلب"]] : []);
-  return `<div class="ocard"><div class="oc-top"><b>#${esc(o.code)}</b><span class="pill ${st.cls}">${st.t}</span></div>
-    <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</div>
-    <div class="oc-items">${(o.items || []).map((i) => `${i.qty} × ${esc(i.name)}`).join("، ")}</div>
-    <div class="oc-tot">${o.mode === "delivery" ? "🚚 توصيل" : "🏃 استلام"} • <b>${fmt(o.total)} ر.س</b>${o.note ? ` • 📝 ${esc(o.note)}` : ""}</div>
-    ${next.length || !asStore ? `<div class="oc-act">${next.map(([s, l]) => `<button class="chip" data-oid="${esc(o.id)}" data-os="${s}">${l}</button>`).join("")}${!asStore ? `<button class="chip" data-again="${esc(o.id)}">↻ اطلب نفسه</button>` : ""}</div>` : ""}
-  </div>`;
+
+/** ملخص التقييمات في صفحة المتجر */
+export async function renderStoreRatings(uid) {
+  const box = $("storeRatings"); if (!box) return;
+  let list = [];
+  try { list = (await getDocs(query(collection(db, "ratings"), where("storeId", "==", uid)))).docs.map((d) => d.data()).sort((a, b) => X.ms(b.at) - X.ms(a.at)); } catch { return; }
+  if (!list.length || !$("storeRatings")) return;
+  const avg = list.reduce((a, r) => a + (r.stars || 0), 0) / list.length;
+  box.innerHTML = `<div class="rating-sum"><b>⭐ ${avg.toFixed(1)}</b> <small>(${list.length} ${list.length === 1 ? "تقييم" : "تقييمات"})</small></div>
+    ${list.filter((r) => r.text).slice(0, 3).map((r) => `<div class="rv"><span>${"★".repeat(r.stars)}${"☆".repeat(5 - r.stars)}</span> <b>${esc(r.name || "زبون")}</b><p>${esc(r.text)}</p></div>`).join("")}`;
 }
 
 // =================== الزبون: صفحة المتجر + السلة ===================
@@ -345,30 +464,4 @@ function openCheckout(sid) {
   draw();
 }
 
-/** طلباتي (الزبون) */
-export async function openMyOrders() {
-  if (!state.user) return;
-  showSheet(`<div class="pad"><div class="spinner"></div></div>`);
-  let list = [], loadErr = "";
-  try { list = (await getDocs(query(collection(db, "orders"), where("customerUid", "==", state.user.uid)))).docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt)); }
-  catch (e) { console.warn(e); loadErr = e.code || e.message || "خطأ"; }
-  const who = state.user.email || X.toLocalPhone(state.profile?.phone || "") || "";
-  const draw = () => {
-    showSheet(`<div class="pad"><div class="section-title">🧾 طلباتي</div>
-      ${loadErr ? `<div class="err">تعذّر تحميل طلباتك (${esc(loadErr)}). حدّث الصفحة وجرّب مرة ثانية.</div>` : ""}
-      ${list.length ? list.slice(0, 50).map((o) => orderCard(o, false)).join("") : loadErr ? "" : `<div class="empty-inline">ما طلبت شي للحين<br><small>ادخل صفحة أي متجر واطلب منه 🛍️</small></div>`}
-      ${who ? `<small class="hint">الطلبات المحفوظة لحسابك: ${esc(who)} — الطلبات من حساب ثاني ما تطلع هنا.</small>` : ""}</div>`);
-    const b = $("sheetBody");
-    b.querySelectorAll("[data-os]").forEach((x) => x.onclick = async () => {
-      if (!confirm("إلغاء الطلب؟ (بلّغ المحل على واتساب بعد)")) return;
-      try { await updateDoc(doc(db, "orders", x.dataset.oid), { status: "cancelled", updatedAt: serverTimestamp() }); list.find((o) => o.id === x.dataset.oid).status = "cancelled"; draw(); } catch { toast("تعذّر الإلغاء"); }
-    });
-    b.querySelectorAll("[data-again]").forEach((x) => x.onclick = () => {
-      const o = list.find((y) => y.id === x.dataset.again), cart = cartOf(o.storeId);
-      (o.items || []).forEach((i) => { cart[i.id] = { ...i }; }); saveCarts();
-      hideSheet(); setTimeout(() => openStore(o.storeId, true), 60);
-    });
-  };
-  draw();
-}
 export const ordersOn = () => cat().enabled && cat().orderEnabled;

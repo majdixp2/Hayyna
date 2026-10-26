@@ -578,3 +578,24 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .store-link .name { flex: 1; }
 .icon-report { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); font-size: 14px; opacity: .75; }
 .icon-report:hover { opacity: 1; }
+/* مراحل الطلب + التقييم */
+.ostep { display: flex; margin: 10px 0 4px; }
+.ostep div { flex: 1; text-align: center; position: relative; color: var(--muted); }
+.ostep div::before { content: ""; position: absolute; top: 6px; left: 50%; width: 100%; height: 3px; background: var(--line); z-index: 0; }
+.ostep div:first-child::before { display: none; }
+.ostep div.on::before { background: var(--green); }
+.ostep i { position: relative; z-index: 1; display: block; width: 14px; height: 14px; margin: 0 auto 3px; border-radius: 50%; background: var(--line); }
+.ostep .on i { background: var(--green); }
+.ostep .cur i { box-shadow: 0 0 0 4px rgba(45,106,79,.2); }
+.ostep .on small { color: var(--green); font-weight: 800; }
+.ostep small { font-size: 11px; }
+.oc-eta { background: var(--green-soft); color: var(--green); border-radius: 10px; padding: 5px 10px; font-size: 12px; font-weight: 800; margin: 6px 0; display: inline-block; }
+.oc-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.oc-map { display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 800; color: var(--green); }
+.ocard.new { border-color: var(--green); box-shadow: 0 0 0 2px var(--green-soft); }
+.stars { display: flex; justify-content: center; gap: 6px; margin: 10px 0 14px; direction: ltr; }
+.stars button { border: 0; background: none; font-size: 38px; color: var(--line); line-height: 1; }
+.stars button.on { color: #F5B301; }
+.rating-sum { margin: 8px 0 4px; } .rating-sum b { font-size: 16px; }
+.rv { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin: 6px 0; font-size: 13px; }
+.rv span { color: #F5B301; letter-spacing: 1px; } .rv p { margin: 3px 0 0; color: var(--muted); }

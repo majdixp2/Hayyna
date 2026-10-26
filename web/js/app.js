@@ -12,7 +12,7 @@ import * as X from "./logic.js";
 import { createMap } from "./map.js";
 import { startI18n } from "./i18n.js";
 import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
-import { renderStoreItems, openMyOrders, ordersOn } from "./catalog-ui.js";
+import { renderStoreItems, openMyOrders, ordersOn, watchMyOrders, myOrdersClosed, renderStoreRatings } from "./catalog-ui.js";
 startI18n();
 
 const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf, km, distText, openNow, hoursText,
@@ -71,7 +71,7 @@ export function showSheet(html) {
 }
 export function hideSheet(fromPop) {
   const wasOpen = !$("sheet").classList.contains("hidden");
-  $("sheet").classList.add("hidden"); $("sheetBackdrop").classList.add("hidden"); state.view = null;
+  $("sheet").classList.add("hidden"); $("sheetBackdrop").classList.add("hidden"); state.view = null; myOrdersClosed();
   if (wasOpen && !fromPop && history.state?.sheet) popSilently();
 }
 let pageOnClose = null;
@@ -326,6 +326,7 @@ function maybeSpotlight(list) {
 
 // ---------------- الرسم ----------------
 export function renderAll() {
+  watchMyOrders(); // طلباتي تتحدّث لحظياً (وتنبيه لما تتغيّر الحالة)
   const list = filtered();
   renderMap(list);
   const car = $("carousel"), sl = car.scrollLeft;
@@ -463,6 +464,7 @@ export async function openStore(uid, push) {
       ${preview ? `<div class="hint warn">👀 معاينة: صفحتك بانتظار المراجعة، وما يشوفها الزبائن للحين.</div>` : ""}
       <div class="store-head">${s.logoUrl ? `<img src="${esc(cld(s.logoUrl, 200))}" alt="">` : `<div class="logo-ph">🏪</div>`}<div class="nm">${esc(s.name)}${s.verified ? ' <span class="verified">✔ موثّق</span>' : ""}</div></div>
       ${s.category ? `<div class="pills"><span class="pill">${esc(s.category)}</span></div>` : ""}
+      <div id="storeRatings"></div>
       ${s.priceFrom > 0 ? `<div class="box">💰 الأسعار تبدأ من ${money(s.priceFrom)} ر.س</div>` : ""}
       ${del ? `<div class="info-pill">${esc(del)}</div>` : ""}
       ${s.about ? `<p class="desc">${esc(s.about)}</p>` : ""}
@@ -483,6 +485,7 @@ export async function openStore(uid, push) {
   body.querySelectorAll(".menu-img").forEach((im) => im.onclick = () => openViewer(im.dataset.full));
   body.querySelector('[data-act="share"]').onclick = () => share(`🏪 ${s.name} على حيّنا`, storeUrl(uid), s.name);
   renderStoreItems(s); // المنيو/المنتجات/الخدمات + السلة (لو الخدمة شغّالة)
+  renderStoreRatings(uid);
 }
 
 async function share(text, url, title) {

@@ -84,12 +84,25 @@ data class HayynaOrder(
     val subtotal: Double = 0.0, val deliveryFee: Double = 0.0, val total: Double = 0.0,
     val vatRate: Double = 0.0, val vatAmount: Double = 0.0, val vatNumber: String = "",
     val mode: String = "pickup", val lat: Double? = null, val lng: Double? = null, val note: String = "", val status: String = "sent",
-    val createdAtMillis: Long = 0L
+    val createdAtMillis: Long = 0L, val etaAtMillis: Long = 0L
 ) {
+    val isDelivery get() = mode == "delivery"
+    /** وصف الحالة للزبون حسب نوع الطلب */
+    fun statusText(): String = when (status) {
+        "sent" -> "📨 أُرسل — بانتظار المحل"; "received" -> "👍 المحل استلم طلبك ويجهّزه"; "ready" -> "🛍️ جاهز للاستلام"
+        "delivering" -> "🚚 جاري التوصيل"; "done" -> if (isDelivery) "✅ تم التوصيل" else "✅ تم الاستلام"; "cancelled" -> "✕ ملغي"; else -> status
+    }
+    val steps: List<Pair<String, String>> get() = if (isDelivery) listOf("sent" to "أُرسل", "received" to "يجهّزه", "delivering" to "بالطريق", "done" to "وصل")
+        else listOf("sent" to "أُرسل", "received" to "يجهّزه", "ready" to "جاهز", "done" to "استلمته")
+    fun etaText(now: Long): String? {
+        if (status != "received" || etaAtMillis <= 0) return null
+        val m = ((etaAtMillis - now) / 60000).toInt()
+        return if (m > 0) "⏱️ ${if (isDelivery) "يطلع للتوصيل" else "جاهز"} خلال ~$m دقيقة" else "⏱️ ${if (isDelivery) "بيطلع" else "بيكون جاهز"} قريب"
+    }
     companion object {
         fun code(): String = "H-" + java.lang.Long.toString(System.currentTimeMillis(), 36).takeLast(4).uppercase() +
             java.lang.Long.toString((0..35).random().toLong(), 36).uppercase()
-        val STATUS = mapOf("sent" to "📨 أُرسل", "received" to "👍 استلمه المحل", "ready" to "✅ جاهز", "done" to "🎉 تم", "cancelled" to "✕ ملغي")
+        val STATUS = mapOf("sent" to "📨 أُرسل", "received" to "👍 استلمه المحل", "ready" to "🛍️ جاهز للاستلام", "delivering" to "🚚 جاري التوصيل", "done" to "✅ تم", "cancelled" to "✕ ملغي")
     }
     private fun f(n: Double) = String.format(java.util.Locale.US, "%.2f", n)
     fun text(): String = buildString {

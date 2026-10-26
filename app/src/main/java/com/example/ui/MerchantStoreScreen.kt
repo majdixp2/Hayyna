@@ -890,7 +890,10 @@ fun MerchantStoreScreen(
                     viewModel.openOfferDetail(o)
                 },
                 onClose = { viewModel.closeStorePage() },
-                catalog = { com.example.ui.components.StoreCatalogSection(st, viewModel) }
+                catalog = {
+                    com.example.ui.components.StoreRatingsSummary(st.uid, viewModel)
+                    com.example.ui.components.StoreCatalogSection(st, viewModel)
+                }
             )
         }
         if (showMyOrders) com.example.ui.components.MyOrdersDialog(viewModel) { showMyOrders = false }

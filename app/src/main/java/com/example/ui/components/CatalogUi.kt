@@ -233,41 +233,132 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
 // =================== الطلبات ===================
 
 @Composable
-fun OrdersDialog(title: String, orders: List<HayynaOrder>, asStore: Boolean, onStatus: (HayynaOrder, String) -> Unit, onAgain: ((HayynaOrder) -> Unit)? = null, onDismiss: () -> Unit) {
+private fun OrderStepper(o: HayynaOrder) {
+    if (o.status == "cancelled") return
+    val steps = o.steps
+    val at = steps.indexOfFirst { it.first == o.status }.coerceAtLeast(0)
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        steps.forEachIndexed { i, (_, label) ->
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.size(if (i == at) 16.dp else 12.dp).clip(CircleShape).background(if (i <= at) CalmSagePrimary else MaterialTheme.colorScheme.outlineVariant))
+                Text(label, fontSize = 11.sp, fontWeight = if (i <= at) FontWeight.Bold else FontWeight.Normal, color = if (i <= at) CalmSagePrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun OrdersDialog(
+    title: String, orders: List<HayynaOrder>, asStore: Boolean, onStatus: (HayynaOrder, String, Int) -> Unit,
+    onDismiss: () -> Unit, rated: Set<String> = emptySet(), onRate: ((HayynaOrder) -> Unit)? = null, storePhone: (String) -> String = { "" }
+) {
+    val context = LocalContext.current
+    var etaFor by remember { mutableStateOf<HayynaOrder?>(null) }
+    var cancelFor by remember { mutableStateOf<HayynaOrder?>(null) }
+    val now = System.currentTimeMillis()
     FullDialog(title, onDismiss) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (orders.isEmpty()) Text(if (asStore) "ما وصلتك طلبات للحين" else "ما طلبت شي للحين — ادخل صفحة أي متجر واطلب منه 🛍️", color = MaterialTheme.colorScheme.onSurfaceVariant)
             orders.take(100).forEach { o ->
-                Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+                Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(if (asStore && o.status == "sent") 2.dp else 1.dp, if (asStore && o.status == "sent") CalmSagePrimary else MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row { Text("#${o.code}", fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f)); Text(HayynaOrder.STATUS[o.status] ?: o.status, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary) }
-                        Text((if (asStore) listOf(o.customerName, o.customerPhone).filter { it.isNotBlank() }.joinToString(" • ") else "🏪 ${o.storeName}") + if (o.createdAtMillis > 0) " • ${dm(o.createdAtMillis)}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row { Text("#${o.code}", fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f)); Text(if (asStore) HayynaOrder.STATUS[o.status] ?: o.status else o.statusText(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary) }
+                        Text((if (asStore) listOf(o.customerName, o.customerPhone.let { p -> val d = p.filter { it.isDigit() }; if (d.startsWith("966")) "0" + d.drop(3) else p }).filter { it.isNotBlank() }.joinToString(" • ") else "🏪 ${o.storeName}") + if (o.createdAtMillis > 0) " • ${dm(o.createdAtMillis)}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OrderStepper(o)
+                        o.etaText(now)?.let { Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFE7F6EC)) { Text(it, color = CalmSagePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) } }
                         Text(o.items.joinToString("، ") { "${it.qty} × ${it.name}" }, fontSize = 13.sp)
-                        Text("${if (o.mode == "delivery") "🚚 توصيل" else "🏃 استلام"} • ${money(o.total)} ر.س" + if (o.note.isNotBlank()) " • 📝 ${o.note}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${if (o.isDelivery) "🚚 توصيل" else "🏃 استلام"} • ${money(o.total)} ر.س" + if (o.note.isNotBlank()) " • 📝 ${o.note}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (!asStore && o.status in listOf("received", "ready", "delivering")) {
+                            val wa = storePhone(o.storeId)
+                            Text("المحل استلم طلبك وما يمكن إلغاؤه", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (wa.isNotBlank()) TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$wa"))) } }, contentPadding = PaddingValues(0.dp)) { Text("💬 تواصل مع المحل", fontSize = 12.sp) }
+                        }
+                        if (asStore && o.isDelivery && o.lat != null && o.lng != null) TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=${o.lat},${o.lng}"))) } }, contentPadding = PaddingValues(0.dp)) { Text("📍 موقع العميل", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                         val next = if (asStore) when (o.status) {
                             "sent" -> listOf("received" to "👍 استلمته", "cancelled" to "✕ إلغاء")
-                            "received" -> listOf("ready" to "✅ جاهز", "cancelled" to "✕ إلغاء")
-                            "ready" -> listOf("done" to "🎉 تم التسليم")
+                            "received" -> listOf((if (o.isDelivery) "delivering" to "🚚 طلع للتوصيل" else "ready" to "🛍️ جاهز للاستلام"), "cancelled" to "✕ إلغاء")
+                            "ready" -> listOf("done" to "✅ تم الاستلام")
+                            "delivering" -> listOf("done" to "✅ تم التوصيل")
                             else -> emptyList()
                         } else if (o.status == "sent") listOf("cancelled" to "✕ إلغاء الطلب") else emptyList()
-                        if (next.isNotEmpty() || onAgain != null) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            next.forEach { (s, l) -> OutlinedButton(onClick = { onStatus(o, s) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text(l, fontSize = 12.sp) } }
-                            if (onAgain != null) OutlinedButton(onClick = { onAgain(o) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("↻ اطلب نفسه", fontSize = 12.sp) }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            next.forEach { (s, l) ->
+                                OutlinedButton(onClick = { when (s) { "received" -> etaFor = o; "cancelled" -> cancelFor = o; else -> onStatus(o, s, 0) } }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text(l, fontSize = 12.sp) }
+                            }
+                            if (!asStore && o.status == "done" && onRate != null) {
+                                if (o.id in rated) Text("⭐ شكراً على تقييمك", fontSize = 12.sp, color = CalmSagePrimary, modifier = Modifier.padding(8.dp))
+                                else OutlinedButton(onClick = { onRate(o) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("⭐ قيّم طلبك", fontSize = 12.sp) }
+                            }
                         }
                     }
                 }
             }
         }
     }
+    etaFor?.let { o ->
+        AlertDialog(onDismissRequest = { etaFor = null }, title = { Text("👍 استلام الطلب #${o.code}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (o.isDelivery) "متى يطلع للتوصيل تقريباً؟" else "متى يكون جاهز للاستلام تقريباً؟")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(10, 15, 20, 30, 45, 60).forEach { m -> FilterChip(selected = false, onClick = { onStatus(o, "received", m); etaFor = null }, label = { Text("$m دقيقة") }) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { onStatus(o, "received", 0); etaFor = null }) { Text("بدون وقت") } },
+            dismissButton = { TextButton(onClick = { etaFor = null }) { Text("رجوع") } })
+    }
+    cancelFor?.let { o ->
+        AlertDialog(onDismissRequest = { cancelFor = null }, title = { Text("إلغاء الطلب #${o.code}؟") }, text = { Text(if (asStore) "بلّغ العميل على واتساب بعد." else "بلّغ المحل على واتساب بعد.") },
+            confirmButton = { TextButton(onClick = { onStatus(o, "cancelled", 0); cancelFor = null }) { Text("نعم، إلغاء", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { cancelFor = null }) { Text("رجوع") } })
+    }
 }
 
-/** طلباتي (الزبون) */
+/** طلباتي (الزبون) — تتحدّث لحظياً */
 @Composable
 fun MyOrdersDialog(vm: MerchantViewModel, onDismiss: () -> Unit) {
-    var orders by remember { mutableStateOf<List<HayynaOrder>>(emptyList()) }
-    var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(tick) { orders = vm.loadMyOrders() }
-    OrdersDialog("🧾 طلباتي", orders, asStore = false, onStatus = { o, s -> vm.setOrderStatus(o.id, s); orders = orders.map { if (it.id == o.id) it.copy(status = s) else it } }, onDismiss = onDismiss)
+    val orders by vm.myOrders.collectAsStateWithLifecycle()
+    val rated by vm.myRatingIds.collectAsStateWithLifecycle()
+    val stores by vm.approvedStores.collectAsStateWithLifecycle()
+    var rate by remember { mutableStateOf<HayynaOrder?>(null) }
+    OrdersDialog("🧾 طلباتي", orders, asStore = false, onStatus = { o, s, _ -> vm.setOrderStatus(o.id, s) }, onDismiss = onDismiss,
+        rated = rated, onRate = { rate = it },
+        storePhone = { sid -> stores.firstOrNull { it.uid == sid }?.let { st -> (st.branches.firstOrNull()?.phone ?: st.phone).filter { it.isDigit() }.let { d -> if (d.startsWith("05") && d.length == 10) "966" + d.drop(1) else d } }.orEmpty() })
+    rate?.let { o ->
+        var stars by remember { mutableStateOf(5) }
+        var text by remember { mutableStateOf("") }
+        AlertDialog(onDismissRequest = { rate = null }, title = { Text("⭐ قيّم طلبك من ${o.storeName}") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row { (1..5).forEach { n -> Text(if (n <= stars) "★" else "☆", fontSize = 36.sp, color = Color(0xFFF5B301), modifier = Modifier.clickable { stars = n }.padding(3.dp)) } }
+                    OutlinedTextField(text, { text = it.take(300) }, placeholder = { Text("كلمة عن تجربتك (اختياري)") }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.rateOrder(o, stars, text.trim()); rate = null }) { Text("أرسل", fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton(onClick = { rate = null }) { Text("إلغاء") } })
+    }
+}
+
+/** ملخص التقييمات في صفحة المتجر */
+@Composable
+fun StoreRatingsSummary(uid: String, vm: MerchantViewModel) {
+    var list by remember(uid) { mutableStateOf<List<Triple<Int, String, String>>>(emptyList()) }
+    LaunchedEffect(uid) { list = vm.storeRatings(uid) }
+    if (list.isEmpty()) return
+    val avg = list.sumOf { it.first }.toDouble() / list.size
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("⭐ ${String.format(java.util.Locale.US, "%.1f", avg)}  (${list.size} ${if (list.size == 1) "تقييم" else "تقييمات"})", fontWeight = FontWeight.ExtraBold)
+        list.filter { it.third.isNotBlank() }.take(3).forEach { (st, name, t) ->
+            Surface(shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(8.dp)) {
+                    Text("${"★".repeat(st)}${"☆".repeat(5 - st)}  ${name.ifBlank { "زبون" }}", fontSize = 12.sp, color = Color(0xFFB7791F), fontWeight = FontWeight.Bold)
+                    Text(t, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
 }
 
 // =================== التاجر ===================
@@ -302,7 +393,7 @@ fun MerchantCatalogCard(vm: MerchantViewModel, category: String, balance: Long) 
         }
     }
     if (manage) CatalogManagerDialog(vm, base, balance) { manage = false }
-    if (showOrders) OrdersDialog("🧾 الطلبات (${orders.size})", orders, asStore = true, onStatus = { o, s -> vm.setOrderStatus(o.id, s) }) { showOrders = false }
+    if (showOrders) OrdersDialog("🧾 الطلبات (${orders.size})", orders, asStore = true, onStatus = { o, s, eta -> vm.setOrderStatus(o.id, s, eta) }, onDismiss = { showOrders = false })
 }
 
 @OptIn(ExperimentalLayoutApi::class)

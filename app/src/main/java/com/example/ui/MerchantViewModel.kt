@@ -736,7 +736,34 @@ class MerchantViewModel(
             toast("تم ✅ خصمنا $cost نقطة")
         }
     }
-    fun setOrderStatus(id: String, status: String) = launchSafely("تعذّر التحديث") { repository.setOrderStatus(id, status) }
+    fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0) = launchSafely("تعذّر التحديث — يمكن المحل استلمه") { repository.setOrderStatus(id, status, etaMinutes) }
+
+    /** طلباتي (الزبون) لحظياً + تنبيه لما تتغيّر حالة طلب */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val myOrders: StateFlow<List<com.example.data.model.HayynaOrder>> = combine(currentUser, catalogConfig) { u, c -> if (c.enabled && c.orderEnabled) u?.uid else null }
+        .flatMapLatest { uid -> if (uid == null) flowOf(emptyList()) else repository.myOrdersFlow(uid) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val myRatingIds = MutableStateFlow<Set<String>>(emptySet())
+    init {
+        var prev: Map<String, String>? = null
+        viewModelScope.launch {
+            myOrders.collect { list ->
+                val p = prev
+                if (p != null) list.forEach { o -> val was = p[o.id]; if (was != null && was != o.status && o.status != "sent") toast("🧾 طلبك #${o.code}: ${o.statusText()}") }
+                prev = list.associate { it.id to it.status }
+            }
+        }
+        viewModelScope.launch { currentUser.collect { u -> myRatingIds.value = if (u == null) emptySet() else repository.myRatingIds(u.uid) } }
+    }
+    fun rateOrder(o: com.example.data.model.HayynaOrder, stars: Int, text: String) {
+        val uid = currentUser.value?.uid ?: return
+        launchSafely("تعذّر إرسال التقييم") {
+            repository.saveRating(o.id, o.storeId, uid, userName.value.ifBlank { o.customerName }.substringBefore(" "), stars, text)
+            myRatingIds.value = myRatingIds.value + o.id
+            toast("شكراً على تقييمك 🌟")
+        }
+    }
+    suspend fun storeRatings(uid: String) = repository.storeRatings(uid)
 
     // ----- السلة (لكل متجر) -----
     val carts = MutableStateFlow<Map<String, Map<String, com.example.data.model.CartLine>>>(emptyMap())

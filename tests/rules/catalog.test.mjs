@@ -73,6 +73,14 @@ await t("المحل يقرأ طلبه", () => assertSucceeds(getDoc(doc(as("m1")
 await t("المحل يحدّث الحالة", () => assertSucceeds(updateDoc(doc(as("m1"), "orders/o1"), { status: "received", updatedAt: serverTimestamp() })));
 await t("المحل ما يغيّر الإجمالي", () => assertFails(updateDoc(doc(as("m1"), "orders/o1"), { total: 1 })));
 await t("الزبون ما يلغي بعد ما استلمه المحل", () => assertFails(updateDoc(doc(as("c1"), "orders/o1"), { status: "cancelled", updatedAt: serverTimestamp() })));
+await t("المحل: جاري التوصيل مع وقت تقريبي", () => assertSucceeds(updateDoc(doc(as("m1"), "orders/o1"), { status: "delivering", etaAt: Timestamp.now(), updatedAt: serverTimestamp() })));
+const rate = (uid, extra = {}) => setDoc(doc(as(uid), "ratings/o1"), { orderId: "o1", storeId: "m1", uid, name: "محمد", stars: 5, text: "ممتاز", at: serverTimestamp(), ...extra });
+await t("ما يقيّم قبل ما يخلص الطلب", () => assertFails(rate("c1")));
+await updateDoc(doc(as("m1"), "orders/o1"), { status: "done", updatedAt: serverTimestamp() });
+await t("الزبون يقيّم بعد ما يخلص", () => assertSucceeds(rate("c1")));
+await t("غير صاحب الطلب ما يقيّم", () => assertFails(setDoc(doc(as("c2"), "ratings/o1"), { orderId: "o1", storeId: "m1", uid: "c2", name: "x", stars: 1, text: "", at: serverTimestamp() })));
+await t("نجوم أكثر من 5 تُرفض", async () => { await env.withSecurityRulesDisabled((c) => import("firebase/firestore").then(({ deleteDoc }) => deleteDoc(doc(c.firestore(), "ratings/o1")))); await assertFails(rate("c1", { stars: 9 })); });
+await t("الزائر يقرأ التقييمات", () => assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), "ratings/o1"))));
 await seed({ orderEnabled: false });
 await t("الطلب مطفي: الحفظ يُرفض", () => assertFails(setDoc(doc(as("c1"), "orders/o1"), order("c1"))));
 

@@ -112,6 +112,16 @@ export function orderText(o) {
 }
 
 export const ORDER_STATUS = {
-  sent: { t: "📨 أُرسل", cls: "" }, received: { t: "👍 استلمه المحل", cls: "open" }, ready: { t: "✅ جاهز", cls: "open" },
-  done: { t: "🎉 تم", cls: "closed" }, cancelled: { t: "✕ ملغي", cls: "urgent" },
+  sent: { t: "📨 أُرسل", cls: "" }, received: { t: "👍 استلمه المحل", cls: "open" }, ready: { t: "🛍️ جاهز للاستلام", cls: "open" },
+  delivering: { t: "🚚 جاري التوصيل", cls: "open" }, done: { t: "✅ تم", cls: "closed" }, cancelled: { t: "✕ ملغي", cls: "urgent" },
 };
+/** وصف الحالة للزبون حسب نوع الطلب (استلام / توصيل) */
+export function statusText(o) {
+  const del = o.mode === "delivery";
+  return ({ sent: "📨 أُرسل — بانتظار المحل", received: "👍 المحل استلم طلبك ويجهّزه", ready: "🛍️ جاهز للاستلام", delivering: "🚚 جاري التوصيل",
+    done: del ? "✅ تم التوصيل" : "✅ تم الاستلام", cancelled: "✕ ملغي" })[o.status] || o.status;
+}
+/** المراحل الأربع لشريط التقدّم */
+export const orderSteps = (o) => o.mode === "delivery"
+  ? [["sent", "أُرسل"], ["received", "يجهّزه"], ["delivering", "بالطريق"], ["done", "وصل"]]
+  : [["sent", "أُرسل"], ["received", "يجهّزه"], ["ready", "جاهز"], ["done", "استلمته"]];

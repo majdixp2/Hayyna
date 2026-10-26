@@ -891,14 +891,38 @@ class RestaurantOfferRepository(
         subtotal = d.getDouble("subtotal") ?: 0.0, deliveryFee = d.getDouble("deliveryFee") ?: 0.0, total = d.getDouble("total") ?: 0.0,
         vatRate = d.getDouble("vatRate") ?: 0.0, vatAmount = d.getDouble("vatAmount") ?: 0.0, vatNumber = d.getString("vatNumber").orEmpty(),
         mode = d.getString("mode") ?: "pickup", note = d.getString("note").orEmpty(), status = d.getString("status") ?: "sent",
-        createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L
+        createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L,
+        etaAtMillis = d.getTimestamp("etaAt")?.toDate()?.time ?: 0L,
+        lat = (d.get("location") as? Map<String, Any?>)?.get("lat") as? Double, lng = (d.get("location") as? Map<String, Any?>)?.get("lng") as? Double
     )
+    fun myOrdersFlow(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
+        val l = db.collection("orders").whereEqualTo("customerUid", uid).addSnapshotListener { s, e ->
+            if (e != null) { Log.w(TAG, "myOrders: ${e.message}"); return@addSnapshotListener }
+            trySend(s?.documents.orEmpty().map { parseOrder(it) }.sortedByDescending { it.createdAtMillis })
+        }
+        awaitClose { l.remove() }
+    }
+    suspend fun myRatingIds(uid: String): Set<String> = runCatching { db.collection("ratings").whereEqualTo("uid", uid).get().await().documents.map { it.id }.toSet() }.getOrDefault(emptySet())
+    suspend fun saveRating(orderId: String, storeId: String, uid: String, name: String, stars: Int, text: String) {
+        db.collection("ratings").document(orderId).set(hashMapOf("orderId" to orderId, "storeId" to storeId, "uid" to uid, "name" to name.take(30),
+            "stars" to stars.toLong(), "text" to text.take(300), "at" to FieldValue.serverTimestamp())).await()
+    }
+    /** متوسط التقييم + آخر التعليقات */
+    suspend fun storeRatings(uid: String): List<Triple<Int, String, String>> = runCatching {
+        db.collection("ratings").whereEqualTo("storeId", uid).get().await().documents
+            .sortedByDescending { it.getTimestamp("at")?.toDate()?.time ?: 0L }
+            .map { Triple((it.getLong("stars") ?: 0L).toInt(), it.getString("name").orEmpty(), it.getString("text").orEmpty()) }
+    }.getOrDefault(emptyList())
     fun storeOrders(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
         val l = db.collection("orders").whereEqualTo("storeId", uid).addSnapshotListener { s, _ -> trySend(s?.documents.orEmpty().map { parseOrder(it) }.sortedByDescending { it.createdAtMillis }) }
         awaitClose { l.remove() }
     }
     suspend fun myOrders(uid: String) = db.collection("orders").whereEqualTo("customerUid", uid).get().await().documents.map { parseOrder(it) }.sortedByDescending { it.createdAtMillis }
-    suspend fun setOrderStatus(id: String, status: String) { db.collection("orders").document(id).update(mapOf("status" to status, "updatedAt" to FieldValue.serverTimestamp())).await() }
+    suspend fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0) {
+        val m = mutableMapOf<String, Any>("status" to status, "updatedAt" to FieldValue.serverTimestamp())
+        if (etaMinutes > 0) m["etaAt"] = Timestamp(java.util.Date(System.currentTimeMillis() + etaMinutes * 60_000L))
+        db.collection("orders").document(id).update(m).await()
+    }
     suspend fun saveOrder(o: com.example.data.model.HayynaOrder, customerUid: String, branchId: String) {
         val ref = db.collection("orders").document()
         ref.set(hashMapOf(
