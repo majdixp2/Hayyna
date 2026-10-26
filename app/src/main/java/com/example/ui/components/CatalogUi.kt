@@ -193,7 +193,7 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
             }
             HorizontalDivider()
             Text("طريقة الاستلام", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            if (!store.delivery && !store.curbside) Text("🏃 الطلب استلام من المحل — المحل ما يوفر توصيل", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!store.delivery && !(store.curbside && cfg.feat("curbside"))) Text("🏃 الطلب استلام من المحل — المحل ما يوفر توصيل", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else {
                 @Composable fun modeCard(id: String, title: String, sub: String = "") = Surface(
                     shape = RoundedCornerShape(14.dp), color = if (mode == id) Color(0xFFE7F6EC) else MaterialTheme.colorScheme.surface,
@@ -201,13 +201,13 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                     modifier = Modifier.fillMaxWidth().clickable { mode = id }
                 ) { Column(Modifier.padding(12.dp)) { Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp); if (sub.isNotBlank()) Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
                 modeCard("pickup", "🏃 استلام من المحل")
-                if (store.curbside) modeCard("curbside", "🚗 استلام من السيارة", "المحل يطلّع طلبك لسيارتك")
+                if (store.curbside && cfg.feat("curbside")) modeCard("curbside", "🚗 استلام من السيارة", "المحل يطلّع طلبك لسيارتك")
                 if (store.delivery) modeCard("delivery",
                     if (store.deliveryFee <= 0) "🚚 توصيل مجاني" else "🚚 توصيل — ${money(store.deliveryFee)} ر.س" + if (store.deliveryFreeOver > 0) " (مجاني من ${money(store.deliveryFreeOver)})" else "",
                     if (store.deliveryMinOrder > 0) "أقل طلب ${money(store.deliveryMinOrder)} ر.س" else "")
             }
             // 💡 كم باقي للتوصيل المجاني
-            if (mode == "delivery" && !freeDel && store.deliveryFreeOver > 0) {
+            if (mode == "delivery" && !freeDel && store.deliveryFreeOver > 0 && cfg.feat("freeHint")) {
                 val left = store.deliveryFreeOver - sub
                 Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF8E6), border = BorderStroke(1.dp, Color(0xFFF2C27A)), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -219,8 +219,8 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                 }
             }
             if (mode == "curbside") OutlinedTextField(car, { car = it.take(60) }, label = { Text("🚗 وصف سيارتك (عشان المحل يعرفك)") }, placeholder = { Text("مثال: كامري بيضاء") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Text("💳 الدفع عند الاستلام", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            if (pays.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (cfg.feat("payChoice")) Text("💳 الدفع عند الاستلام", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            if (!cfg.feat("payChoice")) Unit else if (pays.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = pay == "cash", onClick = { pay = "cash" }, label = { Text("💵 كاش") })
                 FilterChip(selected = pay == "card", onClick = { pay = "card" }, label = { Text("💳 بطاقة / شبكة") })
             } else Text(if (pays.first() == "card") "💳 بطاقة / شبكة عند الاستلام (المحل يقبلها بس)" else "💵 كاش عند الاستلام (المحل يقبله بس)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -250,7 +250,7 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                         mode == "curbside" && car.isBlank() -> "اكتب وصف سيارتك (مثال: كامري بيضاء)."
                         else -> ""
                     }
-                    if (err.isBlank()) vm.sendOrder(store, store.branches.firstOrNull { it.id == branchId }, mode, name, "+966" + phone.drop(1), note, pay, car) { url ->
+                    if (err.isBlank()) vm.sendOrder(store, store.branches.firstOrNull { it.id == branchId }, mode, name, "+966" + phone.drop(1), note, if (cfg.feat("payChoice")) pay else "", car) { url ->
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                         onDismiss()
                     }
@@ -299,7 +299,7 @@ fun OrdersDialog(
                         Row { Text("#${o.code}", fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f)); Text(if (asStore) HayynaOrder.STATUS[o.status] ?: o.status else o.statusText(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary) }
                         Text((if (asStore) listOf(o.customerName, o.customerPhone.let { p -> val d = p.filter { it.isDigit() }; if (d.startsWith("966")) "0" + d.drop(3) else p }).filter { it.isNotBlank() }.joinToString(" • ") else "🏪 ${o.storeName}") + if (o.createdAtMillis > 0) " • ${dm(o.createdAtMillis)}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         OrderStepper(o)
-                        o.etaText(now)?.let { Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFE7F6EC)) { Text(it, color = CalmSagePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) } }
+                        o.etaText(now)?.takeIf { com.example.data.model.CatalogFlags.eta }?.let { Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFE7F6EC)) { Text(it, color = CalmSagePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) } }
                         Text(o.items.joinToString("، ") { "${it.qty} × ${it.name}" }, fontSize = 13.sp)
                         Text("${o.modeText} • ${money(o.total)} ر.س" + (if (o.payText.isNotBlank()) " • ${o.payText}" else "") + if (o.note.isNotBlank()) " • 📝 ${o.note}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (o.isCurbside && o.car.isNotBlank()) Text("🚗 ${o.car}", fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -325,7 +325,7 @@ fun OrdersDialog(
                         } else if (o.status == "sent") listOf("cancelled" to "✕ إلغاء الطلب") else emptyList()
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             next.forEach { (s, l) ->
-                                OutlinedButton(onClick = { when (s) { "received" -> etaFor = o; "cancelled" -> cancelFor = o; else -> onStatus(o, s, 0) } }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text(l, fontSize = 12.sp) }
+                                OutlinedButton(onClick = { when (s) { "received" -> if (com.example.data.model.CatalogFlags.eta) etaFor = o else onStatus(o, "received", 0); "cancelled" -> cancelFor = o; else -> onStatus(o, s, 0) } }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text(l, fontSize = 12.sp) }
                             }
                             if (!asStore && o.status == "done" && onRate != null) {
                                 if (o.id in rated) Text("⭐ شكراً على تقييمك", fontSize = 12.sp, color = CalmSagePrimary, modifier = Modifier.padding(8.dp))
@@ -366,7 +366,7 @@ fun MyOrdersDialog(vm: MerchantViewModel, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     var rate by remember { mutableStateOf<HayynaOrder?>(null) }
     OrdersDialog("🧾 طلباتي", orders, asStore = false, onStatus = { o, s, _ -> vm.setOrderStatus(o.id, s) }, onDismiss = onDismiss,
-        rated = rated, onRate = { rate = it },
+        rated = rated, onRate = if (com.example.data.model.CatalogFlags.ratings) ({ rate = it }) else null,
         onArrive = { o -> vm.markArrived(o) { url -> runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } } },
         storePhone = { sid -> stores.firstOrNull { it.uid == sid }?.let { st -> (st.branches.firstOrNull()?.phone ?: st.phone).filter { it.isDigit() }.let { d -> if (d.startsWith("05") && d.length == 10) "966" + d.drop(1) else d } }.orEmpty() })
     rate?.let { o ->
@@ -389,7 +389,7 @@ fun MyOrdersDialog(vm: MerchantViewModel, onDismiss: () -> Unit) {
 fun StoreRatingsSummary(uid: String, vm: MerchantViewModel) {
     var list by remember(uid) { mutableStateOf<List<Triple<Int, String, String>>>(emptyList()) }
     LaunchedEffect(uid) { list = vm.storeRatings(uid) }
-    if (list.isEmpty()) return
+    if (list.isEmpty() || !com.example.data.model.CatalogFlags.ratings) return
     val avg = list.sumOf { it.first }.toDouble() / list.size
     Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("⭐ ${String.format(java.util.Locale.US, "%.1f", avg)}  (${list.size} ${if (list.size == 1) "تقييم" else "تقييمات"})", fontWeight = FontWeight.ExtraBold)

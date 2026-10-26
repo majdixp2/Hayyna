@@ -326,6 +326,7 @@ function maybeSpotlight(list) {
 
 // ---------------- الرسم ----------------
 export function renderAll() {
+  window.__hayynaNoCrop = (state.config?.catalog?.features || {}).crop === false;
   watchMyOrders(); // طلباتي تتحدّث لحظياً (وتنبيه لما تتغيّر الحالة)
   const list = filtered();
   renderMap(list);
@@ -391,7 +392,7 @@ export function openOffer(id, push) {
     const rem = remainingText(o), op = openNow(br), tiers = tiersText(o), starts = startsText(o), del = deliveryText(o);
     const store = state.stores.find((s) => s.uid === o.merchantId), fav = state.favs.has(o.id);
     const isOwner = state.user && state.user.uid === o.merchantId;
-    const sup = isSpot(o);
+    const sup = isSpot(o) && (state.config?.catalog?.features || {}).superGlow !== false;
     showSheet(`${sup ? `<div class="super-wrap"><div class="super-ribbon">🚀 عرض سوبر</div>${galleryHtml(o)}<i class="super-shine"></i></div>` : galleryHtml(o)}
       <div class="pad${sup ? " super-pad" : ""}">
         <div class="store-link">

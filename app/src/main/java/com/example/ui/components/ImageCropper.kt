@@ -72,6 +72,7 @@ fun ImageCropDialog(source: String, aspect: Float, round: Boolean = false, title
     var zoom by remember { mutableFloatStateOf(1f) }
     var off by remember { mutableStateOf(Offset.Zero) }
     var saving by remember { mutableStateOf(false) }
+    if (!com.example.data.model.CatalogFlags.crop) { LaunchedEffect(source) { onDone(source) }; return } // الأدمن موقّف القص
     LaunchedEffect(source) {
         bmp = withContext(Dispatchers.IO) { runCatching { decodeSampled(context, Uri.parse(source), 2200) }.getOrNull() }
         if (bmp == null) { failed = true; onDone(source) } // صيغة ما نقدر نقرأها: نرفعها مثل ما هي

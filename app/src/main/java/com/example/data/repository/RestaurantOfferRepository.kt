@@ -821,7 +821,8 @@ class RestaurantOfferRepository(
                 prices = listOf("menu", "product", "service", "all").associateWith { price(it) },
                 vatEnabled = vat["enabled"] as? Boolean ?: true,
                 vatRate = (vat["rate"] as? Number)?.toDouble() ?: 15.0,
-                categoryTypes = types.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+                categoryTypes = types.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap(),
+                features = (c["features"] as? Map<*, *>)?.mapNotNull { (k, v) -> (k as? String)?.let { kk -> (v as? Boolean)?.let { kk to it } } }?.toMap() ?: emptyMap()
             ))
         }
         awaitClose { l.remove() }

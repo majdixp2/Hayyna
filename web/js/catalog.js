@@ -28,6 +28,12 @@ export function catalogOf(config) {
       service: { ...D.pricing.service, ...(p.service || {}) }, all: { ...D.pricing.all, ...(p.all || {}) } },
   };
 }
+/** مزايا الطلب (مفاتيح من الأدمن، كلها شغّالة افتراضياً) */
+export const FEATURES = {
+  ratings: "⭐ التقييمات بعد الطلب", curbside: "🚗 الاستلام من السيارة", payChoice: "💳 اختيار طريقة الدفع عند الاستلام",
+  freeHint: "💡 تلميح التوصيل المجاني", eta: "⏱️ الوقت التقريبي للتجهيز", superGlow: "🚀 لمعة صفحة عرض سوبر", crop: "✂️ قص الصور بيد التاجر",
+};
+export const feat = (config, k) => (config?.catalog?.features || {})[k] !== false;
 export const vatOf = (config) => ({ enabled: config?.vat?.enabled ?? true, rate: Number(config?.vat?.rate ?? 15) });
 
 /** النوع الأساسي للمحل حسب تصنيفه (الأدمن يحدده لكل تصنيف، وإلا نخمّن من الاسم). */

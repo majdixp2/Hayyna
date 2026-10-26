@@ -44,8 +44,11 @@ data class CatalogConfig(
     val prices: Map<String, KindPrice> = mapOf("menu" to KindPrice(), "product" to KindPrice(), "service" to KindPrice(), "all" to KindPrice(300)),
     val vatEnabled: Boolean = true,
     val vatRate: Double = 15.0,
-    val categoryTypes: Map<String, String> = emptyMap()
+    val categoryTypes: Map<String, String> = emptyMap(),
+    // مزايا الطلب (مفاتيح من الأدمن، كلها شغّالة افتراضياً)
+    val features: Map<String, Boolean> = emptyMap()
 ) {
+    fun feat(k: String) = features[k] != false
     fun limitOf(kind: String) = limits[kind] ?: 0
     fun baseKind(category: String) = categoryTypes[category]?.let { ItemKind.of(it) } ?: ItemKind.guess(category)
     fun price(key: String) = prices[key] ?: KindPrice()
@@ -76,6 +79,14 @@ data class CatalogConfig(
         fun riyal(h: Long): String = if (h % 100 == 0L) "${h / 100}" else String.format(java.util.Locale.US, "%.2f", h / 100.0).trimEnd('0').trimEnd('.')
         fun validVat(v: String) = Regex("^3\\d{13}3$").matches(v)
     }
+}
+
+/** نسخة سريعة من مفاتيح المزايا للواجهات (تتحدّث من الإعدادات) */
+object CatalogFlags {
+    @Volatile var superGlow = true
+    @Volatile var crop = true
+    @Volatile var eta = true
+    @Volatile var ratings = true
 }
 
 data class CartLine(val id: String, val name: String, val kind: String, val price: Double, val qty: Int)

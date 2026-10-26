@@ -8,7 +8,7 @@ import {
   updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { EFFECTS, creditsOf, itemList, exclusiveOf, DEFAULT_ITEMS, rewardOf } from "/js/credits.js";
-import { KINDS, KIND_IDS, catalogOf, vatOf, baseKindOf, limitOf, itemVisible, itemPaidUp, riyal, ORDER_STATUS } from "/js/catalog.js";
+import { KINDS, KIND_IDS, catalogOf, vatOf, baseKindOf, limitOf, itemVisible, itemPaidUp, riyal, ORDER_STATUS, FEATURES, feat, MODES, PAY } from "/js/catalog.js";
 import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS } from "../config.js";
 
 const app = initializeApp(firebaseConfig);
@@ -21,7 +21,7 @@ const state = {
   offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [], referrals: [], names: {}, wallets: [], codes: null, itemsDraft: null, packsDraft: null,
   me: null, staff: [], log: [], logArea: "الكل", logQuery: "", logActor: "الكل", verifHist: [],
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
-  items: [], passes: [], orders: [], itemQuery: "", itemFilter: "الكل", storesAll: [], storeQuery: "", storeFilter: "الكل",
+  items: [], passes: [], orders: [], ratings: [], rateFilter: "الكل", rateQuery: "", ordFilter: "الكل", ordStore: "", itemQuery: "", itemFilter: "الكل", storesAll: [], storeQuery: "", storeFilter: "الكل",
 };
 const unsubs = [];
 const $ = (id) => document.getElementById(id);
@@ -116,7 +116,10 @@ function listen() {
     sub(collection(db, "items"), (sn) => { state.items = parse(sn); });
     sub(collection(db, "itemPasses"), (sn) => { state.passes = parse(sn); });
   }
-  if (can("merchants")) sub(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(500)), (sn) => { state.orders = parse(sn); });
+  if (can("merchants")) {
+    sub(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(500)), (sn) => { state.orders = parse(sn); });
+    sub(collection(db, "ratings"), (sn) => { state.ratings = parse(sn).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0)); });
+  }
   sub(doc(db, "config", "app"), (sn) => { state.config = sn.data() || {}; });
   // السجل: المالك يشوف الكل، والموظف عملياته (الترتيب على الجهاز)
   sub(state.me.owner ? query(collection(db, "adminLog"), orderBy("at", "desc"), limit(400)) : query(collection(db, "adminLog"), where("actor", "==", state.me.email)),
@@ -721,8 +724,14 @@ function catalogPage() {
   const priceRow = (key, label, unit) => `<tr><td>${label}</td>
       <td><input type="number" id="ctp_${key}" min="0.05" step="0.05" value="${riyal(pr[key].priceH)}" style="width:90px"> ر.س ${unit}</td>
       <td><label class="switch"><input type="checkbox" id="ctpa_${key}" ${pr[key].active ? "checked" : ""}> مفعّل</label></td></tr>`;
-  const nav = owner ? [["ct-status", "الخدمة"], ["ct-price", "التسعير"], ["ct-vat", "الضريبة"], ["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الإحصائيات"]]
-    : [["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الإحصائيات"]];
+  const nav = owner ? [["ct-status", "الخدمة"], ["ct-feat", "مزايا الطلب"], ["ct-price", "التسعير"], ["ct-vat", "الضريبة"], ["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الطلبات"], ["ct-rates", "التقييمات"]]
+    : [["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الطلبات"], ["ct-rates", "التقييمات"]];
+  // جدول الطلبات: فلترة + توزيع حسب الاستلام والدفع
+  const ordF = ord.filter((o) => (state.ordFilter === "الكل" || o.status === state.ordFilter) && (!state.ordStore || o.storeId === state.ordStore));
+  const cnt = (f) => ord.filter(f).length, live = (o) => o.status !== "cancelled";
+  const rq = state.rateQuery.trim().toLowerCase();
+  const rates = state.ratings.filter((r) => (state.rateFilter === "الكل" || String(r.stars) === state.rateFilter) && (!rq || [r.text, r.name, nameOfUid(r.storeId)].some((v) => String(v || "").toLowerCase().includes(rq))));
+  const avgStars = state.ratings.length ? (state.ratings.reduce((a, r) => a + (r.stars || 0), 0) / state.ratings.length).toFixed(1) : "—";
   return jumpNav(nav) + (owner ? `
     <h2 id="ct-status">🛍️ خدمة المنتجات والخدمات والمنيو</h2>
     <div class="card">
@@ -736,6 +745,12 @@ function catalogPage() {
         <label class="switch"><input type="checkbox" data-ctopen="${k}" ${limitOf(cat, k) ? "" : "checked"}> مفتوح</label></div>`).join("")}</div>
       <p class="muted">لو نزّلت الحد، المنتجات اللي فوقه تختفي (ما تنحذف) وترجع لو رفعته.</p>
       <div class="actions"><button class="btn primary" data-cact="saveLimits">حفظ الحدود</button></div>
+    </div>
+
+    <h2 id="ct-feat">⚙️ مزايا الطلب</h2>
+    <div class="card">
+      <p class="muted">كل ميزة تقدر توقفها لكل المنصة. لو وقفتها تختفي عند التاجر والزبون، والبيانات تبقى محفوظة.</p>
+      ${Object.entries(FEATURES).map(([k, l]) => `<label class="switch"><input type="checkbox" data-feat="${k}" ${feat(cfg, k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}
     </div>
 
     <h2 id="ct-price">💰 تسعير ظهور المنتجات (بالنقاط من رصيد العروض)</h2>
@@ -771,7 +786,7 @@ function catalogPage() {
       ${x.adminNote ? "" : `<button class="btn" data-ret="item" data-id="${esc(x.id)}">↩️ رجّعه</button>`}
       <button class="btn danger" data-cact="itDelete" data-id="${esc(x.id)}">حذف</button>`)).join("")}</div>
 
-    <h2 id="ct-stats">📊 الإحصائيات</h2>
+    <h2 id="ct-stats">📊 الإحصائيات والطلبات</h2>
     <div class="grid">
       <div class="card stat"><div class="v">${stores}</div><div class="t">محل أضاف منتجات</div></div>
       ${byKind.map(([k, n]) => `<div class="card stat"><div class="v">${n}</div><div class="t">${KINDS[k].icon} ${KINDS[k].label}</div></div>`).join("")}
@@ -779,11 +794,52 @@ function catalogPage() {
       <div class="card stat"><div class="v">${ord.filter((o) => oms(o) > weekAgo).length}</div><div class="t">🧾 طلبات آخر 7 أيام</div></div>
       <div class="card stat"><div class="v">${Math.round(ordSum(ord.filter((o) => oms(o) > weekAgo)))}</div><div class="t">💰 قيمة طلبات الأسبوع (ر.س)</div></div>` : ""}
     </div>
-    ${can("merchants") && ord.length ? `<div class="card"><table class="tbl"><thead><tr><th>الطلب</th><th>المحل</th><th>الإجمالي</th><th>الحالة</th></tr></thead><tbody>
-      ${ord.slice(0, 30).map((o) => `<tr><td>#${esc(o.code)}<br><small class="muted">${oms(o) ? new Date(oms(o)).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</small></td><td>${esc(o.storeName)}</td><td>${(o.total || 0).toFixed(2)}</td><td>${esc(ORDER_STATUS[o.status]?.t || o.status)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+    ${can("merchants") && ord.length ? `
+    <div class="grid">
+      <div class="card stat"><div class="v">${cnt((o) => live(o) && (o.mode || "pickup") === "pickup")}</div><div class="t">🏃 استلام من المحل</div></div>
+      <div class="card stat"><div class="v">${cnt((o) => live(o) && o.mode === "delivery")}</div><div class="t">🚚 توصيل</div></div>
+      <div class="card stat"><div class="v">${cnt((o) => live(o) && o.mode === "curbside")}</div><div class="t">🚗 من السيارة</div></div>
+      <div class="card stat"><div class="v">${cnt((o) => live(o) && o.pay === "cash")}</div><div class="t">💵 كاش</div></div>
+      <div class="card stat"><div class="v">${cnt((o) => live(o) && o.pay === "card")}</div><div class="t">💳 بطاقة</div></div>
+      <div class="card stat"><div class="v">${cnt((o) => o.status === "cancelled")}</div><div class="t">✕ ملغية</div></div>
+    </div>
+    <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px">
+      <div class="chips">${["الكل", ...Object.keys(ORDER_STATUS)].map((k) => `<button class="chip ${state.ordFilter === k ? "on" : ""}" data-ofl="${k}">${k === "الكل" ? "الكل" : esc(ORDER_STATUS[k].t)}</button>`).join("")}</div>
+      <select id="ordStore"><option value="">كل المتاجر</option>${[...new Map(ord.map((o) => [o.storeId, o.storeName])).entries()].map(([id, n]) => `<option value="${esc(id)}" ${state.ordStore === id ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+    </div>
+    <div class="card"><table class="tbl"><thead><tr><th>الطلب</th><th>المحل</th><th>الاستلام</th><th>الدفع</th><th>الإجمالي</th><th>الحالة</th></tr></thead><tbody>
+      ${ordF.slice(0, 60).map((o) => `<tr><td>#${esc(o.code)}<br><small class="muted">${oms(o) ? new Date(oms(o)).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</small></td>
+        <td>${esc(o.storeName)}<br><small class="muted">${esc(o.customerName || "")}</small></td>
+        <td>${esc(MODES[o.mode] || MODES.pickup)}${o.car ? `<br><small class="muted">🚗 ${esc(o.car)}${o.arrivedAt ? " • وصل" : ""}</small>` : ""}</td>
+        <td>${o.pay ? `${PAY[o.pay]?.icon} ${esc(PAY[o.pay]?.label || o.pay)}` : "—"}</td>
+        <td>${(o.total || 0).toFixed(2)}</td><td>${esc(ORDER_STATUS[o.status]?.t || o.status)}</td></tr>`).join("")}</tbody></table>
+      ${ordF.length > 60 ? `<p class="muted">يعرض أحدث 60 من ${ordF.length}</p>` : ""}</div>` : ""}
+
+    ${can("merchants") ? `<h2 id="ct-rates">⭐ التقييمات (${state.ratings.length}) — المتوسط ${avgStars}</h2>
+    <input type="text" id="rateQuery" placeholder="ابحث في التعليقات أو اسم المحل…" value="${esc(state.rateQuery)}">
+    <div class="chips">${["الكل", "5", "4", "3", "2", "1"].map((k) => `<button class="chip ${state.rateFilter === k ? "on" : ""}" data-rfl="${k}">${k === "الكل" ? "الكل" : "★".repeat(+k)}</button>`).join("")}</div>
+    ${rates.length ? `<div class="grid">${rates.slice(0, 100).map((r) => `<div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center"><b style="color:#B7791F">${"★".repeat(r.stars || 0)}${"☆".repeat(5 - (r.stars || 0))}</b>
+        <small class="muted">${r.at?.toMillis ? new Date(r.at.toMillis()).toLocaleDateString("ar-SA-u-ca-gregory") : ""}</small></div>
+      <div class="name">${esc(nameOfUid(r.storeId))}</div><div class="muted">من: ${esc(r.name || "زبون")} • طلب ${esc(r.orderId?.slice(0, 6) || "")}</div>
+      ${r.text ? `<p style="margin:6px 0">${esc(r.text)}</p>` : ""}
+      <div class="actions"><button class="btn danger" data-rdel="${esc(r.id)}">حذف التقييم</button></div></div>`).join("")}</div>` : `<p class="muted">ما فيه تقييمات</p>`}` : ""}`;
 }
 function bindCatalog(c) {
   const iq = $("itemQuery"); if (iq) iq.oninput = () => { state.itemQuery = iq.value; render(); };
+  const rq = $("rateQuery"); if (rq) rq.oninput = () => { state.rateQuery = rq.value; render(); };
+  c.querySelectorAll("[data-ofl]").forEach((b) => (b.onclick = () => { state.ordFilter = b.dataset.ofl; render(); }));
+  c.querySelectorAll("[data-rfl]").forEach((b) => (b.onclick = () => { state.rateFilter = b.dataset.rfl; render(); }));
+  const os = $("ordStore"); if (os) os.onchange = () => { state.ordStore = os.value; render(); };
+  c.querySelectorAll("[data-feat]").forEach((x) => (x.onchange = () => run(async () => {
+    await updateDoc(doc(db, "config", "app"), { ["catalog.features." + x.dataset.feat]: x.checked });
+    await audit(`${x.checked ? "تشغيل" : "إيقاف"}: ${FEATURES[x.dataset.feat]}`, "catalog");
+  }, x.checked ? "شغّالة ✅" : "موقفة")));
+  c.querySelectorAll("[data-rdel]").forEach((b) => (b.onclick = () => {
+    const r = state.ratings.find((x) => x.id === b.dataset.rdel);
+    if (!confirm("حذف التقييم نهائياً؟")) return;
+    run(async () => { await deleteDoc(doc(db, "ratings", r.id)); await audit("حذف تقييم", "catalog", { type: "rating", id: r.id, name: nameOfUid(r.storeId) }, `${r.stars}★ — ${r.text || ""}`.slice(0, 300)); }, "انحذف ✅", "حذف التقييم");
+  }));
   c.querySelectorAll("[data-ifilter]").forEach((b) => (b.onclick = () => { state.itemFilter = b.dataset.ifilter; render(); }));
   const setCat = (path, val) => updateDoc(doc(db, "config", "app"), { [path]: val }).catch(() => setDoc(doc(db, "config", "app"), { catalog: {} }, { merge: true }).then(() => updateDoc(doc(db, "config", "app"), { [path]: val })));
   c.querySelectorAll("[data-catcfg]").forEach((x) => (x.onchange = () => run(async () => {

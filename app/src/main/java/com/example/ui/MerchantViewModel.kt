@@ -675,6 +675,8 @@ class MerchantViewModel(
 
     // ---------------- 🛍️ المنتجات والخدمات والمنيو + الطلبات ----------------
     val catalogConfig: StateFlow<com.example.data.model.CatalogConfig> = repository.catalogConfig
+        .onEach { com.example.data.model.CatalogFlags.superGlow = it.feat("superGlow"); com.example.data.model.CatalogFlags.crop = it.feat("crop")
+            com.example.data.model.CatalogFlags.eta = it.feat("eta"); com.example.data.model.CatalogFlags.ratings = it.feat("ratings") }
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.model.CatalogConfig())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val myItems: StateFlow<List<com.example.data.model.CatalogItem>> = currentUser

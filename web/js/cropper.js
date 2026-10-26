@@ -2,6 +2,7 @@
 // cropImage(file, { aspect: 2, round: false, title }) → Promise<File | null>  (null = ألغى)
 
 export function cropImage(file, { aspect = 1, round = false, title = "قص الصورة", outW = 1400 } = {}) {
+  if (window.__hayynaNoCrop) return Promise.resolve(file); // الأدمن موقّف القص
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();

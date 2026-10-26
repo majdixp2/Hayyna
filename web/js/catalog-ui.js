@@ -7,8 +7,9 @@ import * as X from "./logic.js";
 import { cropImage } from "./cropper.js";
 import {
   KINDS, catalogOf, vatOf, baseKindOf, kindOrder, limitOf, slotId, passCost, riyal, itemVisible, itemPaidUntil, itemGrace,
-  vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps, PAY, MODES, deliveryInfo, payMethods
+  vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps, PAY, MODES, deliveryInfo, payMethods, feat
 } from "./catalog.js";
+const F = (k) => feat(state.config, k); // مزايا الطلب من الأدمن
 
 const { esc, cld } = X;
 const cat = () => catalogOf(state.config);
@@ -227,7 +228,7 @@ function openStoreOrders() {
       ${list.length ? list.slice(0, 100).map((o) => orderCard(o, true)).join("") : `<div class="empty-inline">ما وصلتك طلبات للحين</div>`}</div>`);
     $("sheetBody").querySelectorAll("[data-os]").forEach((b) => b.onclick = () => {
       const o = M.orders.find((x) => x.id === b.dataset.oid), st = b.dataset.os;
-      if (st === "received") return pickEta(o);
+      if (st === "received") return F("eta") ? pickEta(o) : setStatus(o, "received");
       if (st === "cancelled" && !confirm("إلغاء الطلب؟ بلّغ العميل على واتساب بعد.")) return;
       setStatus(o, st);
     });
@@ -268,7 +269,7 @@ function orderCard(o, asStore) {
   const rated = !asStore && myRatings.has(o.id);
   return `<div class="ocard${["sent"].includes(o.status) && asStore ? " new" : ""}"><div class="oc-top"><b>#${esc(o.code)}</b><span class="pill ${st.cls}">${asStore ? st.t : statusText(o)}</span></div>
     <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</div>
-    ${stepper(o)}${etaText(o) ? `<div class="oc-eta">${etaText(o)}</div>` : ""}
+    ${stepper(o)}${F("eta") && etaText(o) ? `<div class="oc-eta">${etaText(o)}</div>` : ""}
     <div class="oc-items">${(o.items || []).map((i) => `${i.qty} × ${esc(i.name)}`).join("، ")}</div>
     <div class="oc-tot">${MODES[o.mode] || "🏃 استلام"} • <b>${fmt(o.total)} ر.س</b>${o.pay ? ` • ${PAY[o.pay]?.icon} ${PAY[o.pay]?.label}` : ""}${o.note ? ` • 📝 ${esc(o.note)}` : ""}</div>
     ${o.mode === "curbside" && o.car ? `<div class="oc-tot">🚗 ${esc(o.car)}</div>` : ""}
@@ -277,7 +278,7 @@ function orderCard(o, asStore) {
     ${!asStore && ["received", "ready", "delivering"].includes(o.status) ? `<div class="oc-note">المحل استلم طلبك وما يمكن إلغاؤه${wa ? ` — <a href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 تواصل مع المحل</a>` : ""}</div>` : ""}
     ${asStore && o.mode === "delivery" && o.location ? `<a class="oc-map" href="https://maps.google.com/?q=${o.location.lat},${o.location.lng}" target="_blank" rel="noopener">📍 موقع العميل</a>` : ""}
     ${next.length || !asStore ? `<div class="oc-act">${next.map(([s, l]) => `<button class="chip" data-oid="${esc(o.id)}" data-os="${s}">${l}</button>`).join("")}
-      ${!asStore && o.status === "done" ? (rated ? `<span class="pill">⭐ شكراً على تقييمك</span>` : `<button class="chip" data-rate="${esc(o.id)}">⭐ قيّم طلبك</button>`) : ""}
+      ${!asStore && o.status === "done" && F("ratings") ? (rated ? `<span class="pill">⭐ شكراً على تقييمك</span>` : `<button class="chip" data-rate="${esc(o.id)}">⭐ قيّم طلبك</button>`) : ""}
       ${!asStore ? `<button class="chip" data-again="${esc(o.id)}">↻ اطلب نفسه</button>` : ""}</div>` : ""}
   </div>`;
 }
@@ -361,7 +362,7 @@ function rateOrder(o) {
 
 /** ملخص التقييمات في صفحة المتجر */
 export async function renderStoreRatings(uid) {
-  const box = $("storeRatings"); if (!box) return;
+  const box = $("storeRatings"); if (!box || !F("ratings")) return;
   let list = [];
   try { list = (await getDocs(query(collection(db, "ratings"), where("storeId", "==", uid)))).docs.map((d) => d.data()).sort((a, b) => X.ms(b.at) - X.ms(a.at)); } catch { return; }
   if (!list.length || !$("storeRatings")) return;
@@ -420,7 +421,7 @@ function drawStoreItems(sid) {
         </div>`; }).join("")}`).join("")}
     </div>`;
   }).join("") + (order && cartCount(sid) ? (() => { const di = deliveryInfo(s, cartSum(sid));
-    return `<div class="cart-bar"><span>🧾 سلتك: <b>${cartCount(sid)}</b> • <b>${fmt(cartSum(sid))} ر.س</b>${di?.left > 0 ? `<small>🚚 باقي ${fmt(di.left)} ر.س للتوصيل المجاني</small>` : di?.free && di.freeOver > 0 ? `<small>🚚 التوصيل صار مجاني 🎉</small>` : ""}</span><button class="btn dir" id="cartGo">اطلب</button></div>`; })() : "");
+    return `<div class="cart-bar"><span>🧾 سلتك: <b>${cartCount(sid)}</b> • <b>${fmt(cartSum(sid))} ر.س</b>${!F("freeHint") ? "" : di?.left > 0 ? `<small>🚚 باقي ${fmt(di.left)} ر.س للتوصيل المجاني</small>` : di?.free && di.freeOver > 0 ? `<small>🚚 التوصيل صار مجاني 🎉</small>` : ""}</span><button class="btn dir" id="cartGo">اطلب</button></div>`; })() : "");
   box.querySelectorAll("[data-inc]").forEach((b) => b.onclick = () => { const it = items.find((x) => x.id === b.dataset.inc); const l = cart[it.id] || (cart[it.id] = { id: it.id, name: it.name, kind: it.kind, price: it.price, qty: 0 }); l.qty = Math.min(99, l.qty + 1); saveCarts(); drawStoreItems(sid); });
   box.querySelectorAll("[data-dec]").forEach((b) => b.onclick = () => { const l = cart[b.dataset.dec]; if (l) { l.qty--; if (l.qty <= 0) delete cart[b.dataset.dec]; } saveCarts(); drawStoreItems(sid); });
   box.querySelectorAll("img[data-full]").forEach((im) => im.onclick = () => { $("viewerImg").src = im.dataset.full; $("viewer").classList.remove("hidden"); });
@@ -430,7 +431,7 @@ function drawStoreItems(sid) {
 function openCheckout(sid) {
   const { s } = storeCache[sid], cart = cartOf(sid), vat = vatOf(state.config);
   const branches = s.branches || [];
-  const pays = payMethods(s);
+  const pays = payMethods(s), curb = s.curbside && F("curbside");
   let savedCar = ""; try { savedCar = localStorage.getItem("hayyna_car") || ""; } catch {}
   const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: branches[0]?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null };
   const draw = () => {
@@ -445,17 +446,17 @@ function openCheckout(sid) {
     showSheet(`<div class="pad form checkout"><div class="section-title">🧾 طلبك من ${esc(s.name)}</div>
       ${lines.map((l) => `<div class="co-line"><span>${esc(l.name)}</span><div class="qty"><button data-dec="${esc(l.id)}">−</button><b>${l.qty}</b><button data-inc="${esc(l.id)}">＋</button></div><b>${fmt(l.qty * l.price)}</b></div>`).join("")}
       <label class="label">طريقة الاستلام</label>
-      ${s.delivery || s.curbside ? `<div class="modes">
+      ${s.delivery || curb ? `<div class="modes">
         <button class="mode${f.mode === "pickup" ? " on" : ""}" data-mode="pickup"><b>🏃 استلام من المحل</b></button>
-        ${s.curbside ? `<button class="mode${f.mode === "curbside" ? " on" : ""}" data-mode="curbside"><b>🚗 استلام من السيارة</b><small>المحل يطلّع طلبك لسيارتك</small></button>` : ""}
+        ${curb ? `<button class="mode${f.mode === "curbside" ? " on" : ""}" data-mode="curbside"><b>🚗 استلام من السيارة</b><small>المحل يطلّع طلبك لسيارتك</small></button>` : ""}
         ${di ? `<button class="mode${f.mode === "delivery" ? " on" : ""}" data-mode="delivery"><b>${esc(di.label)}</b>${s.deliveryMinOrder > 0 ? `<small>أقل طلب ${fmt(s.deliveryMinOrder)} ر.س</small>` : ""}</button>` : ""}
       </div>` : `<div class="hint-box">🏃 الطلب استلام من المحل — المحل ما يوفر توصيل</div>`}
-      ${f.mode === "delivery" && di?.left > 0 ? `<div class="free-hint">💡 أضف <b>${fmt(di.left)} ر.س</b> وصار التوصيل مجاني 🎉
+      ${f.mode === "delivery" && di?.left > 0 && F("freeHint") ? `<div class="free-hint">💡 أضف <b>${fmt(di.left)} ر.س</b> وصار التوصيل مجاني 🎉
         <div class="fh-bar"><i style="width:${Math.min(100, (sub / di.freeOver) * 100).toFixed(0)}%"></i></div><small>${fmt(sub)} من ${fmt(di.freeOver)}</small>
         <button class="link" id="coMore">‹ تصفّح المنيو وكمّل</button></div>` : ""}
       ${f.mode === "curbside" ? `<label class="label">🚗 وصف سيارتك (عشان المحل يعرفك)</label><input id="coCar" class="input" maxlength="60" value="${esc(f.car)}" placeholder="مثال: كامري بيضاء">` : ""}
-      <label class="label">💳 الدفع عند الاستلام</label>
-      ${pays.length > 1 ? `<div class="chips">${pays.map((p) => `<button class="chip${f.pay === p ? " on" : ""}" data-pay="${p}">${PAY[p].icon} ${PAY[p].label}</button>`).join("")}</div>`
+      ${!F("payChoice") ? "" : `<label class="label">💳 الدفع عند الاستلام</label>`}
+      ${!F("payChoice") ? "" : pays.length > 1 ? `<div class="chips">${pays.map((p) => `<button class="chip${f.pay === p ? " on" : ""}" data-pay="${p}">${PAY[p].icon} ${PAY[p].label}</button>`).join("")}</div>`
         : `<div class="hint-box">${PAY[pays[0]].icon} ${PAY[pays[0]].label} عند الاستلام (المحل يقبل هذي الطريقة بس)</div>`}
       ${branches.length > 1 ? `<label class="label">الفرع</label><select id="coBr" class="input">${branches.map((b) => `<option value="${esc(b.id)}" ${f.branch === b.id ? "selected" : ""}>${esc(b.name || X.districtLabel(b.district) || "فرع")}</option>`).join("")}</select>` : ""}
       ${f.mode === "delivery" ? `<button class="btn call" id="coLoc">📍 ${f.loc ? "موقعي محدد ✓ (حدّثه)" : "حدد موقعي للتوصيل"}</button>` : ""}
@@ -496,7 +497,7 @@ function openCheckout(sid) {
         customerUid: state.user?.uid || "", customerName: f.name.trim().slice(0, 60), customerPhone: phoneOk,
         items: lines.map((l) => ({ id: l.id, name: l.name, kind: l.kind, qty: l.qty, price: l.price })), subtotal: sub, deliveryFee: fee, total,
         vatRate: vatNo ? vat.rate : 0, vatAmount: vatNo ? vatAmt : 0, vatNumber: vatNo, mode: f.mode, location: f.mode === "delivery" ? f.loc : null,
-        pay: f.pay, car: f.mode === "curbside" ? f.car.trim().slice(0, 60) : "",
+        pay: F("payChoice") ? f.pay : "", car: f.mode === "curbside" ? f.car.trim().slice(0, 60) : "",
         note: f.note.trim().slice(0, 300), status: "sent" };
       const url = `https://wa.me/${to}?text=${encodeURIComponent(orderText(o))}`;
       const w = window.open("", "_blank"); // نفتح النافذة الحين (قبل الانتظار) عشان المتصفح ما يمنعها

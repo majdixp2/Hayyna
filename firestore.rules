@@ -364,6 +364,9 @@ service cloud.firestore {
     function catalogCfg() {
       return get(/databases/$(database)/documents/config/app).data.get('catalog', {});
     }
+    function featureOn(k) {
+      return catalogCfg().get('features', {}).get(k, true) == true;
+    }
     function itemLimit(kind) {
       return catalogCfg().get('limits', {}).get(kind, 10);
     }
@@ -453,6 +456,7 @@ service cloud.firestore {
         && request.resource.data.total is number && request.resource.data.total >= 0
         && request.resource.data.note is string && request.resource.data.note.size() <= 300
         && request.resource.data.mode in ['pickup', 'delivery', 'curbside']
+        && (request.resource.data.mode != 'curbside' || featureOn('curbside'))
         && request.resource.data.status == 'sent'
         && request.resource.data.createdAt == request.time;
       allow read: if can('merchants')
@@ -480,6 +484,7 @@ service cloud.firestore {
     match /ratings/{orderId} {
       allow read: if true;
       allow create: if isAuthenticated()
+        && featureOn('ratings')
         && request.resource.data.keys().hasOnly(['orderId', 'storeId', 'uid', 'name', 'stars', 'text', 'at'])
         && request.resource.data.orderId == orderId
         && request.resource.data.uid == request.auth.uid

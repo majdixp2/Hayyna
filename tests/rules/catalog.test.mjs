@@ -96,6 +96,9 @@ await t("طريقة دفع غير معروفة تُرفض", () => assertFails(se
 await t("الزبون ما يضغط «وصلت» قبل ما يستلمه المحل", () => assertFails(updateDoc(doc(as("c1"), "orders/o5"), { arrivedAt: serverTimestamp(), updatedAt: serverTimestamp() })));
 await updateDoc(doc(as("m1"), "orders/o5"), { status: "ready", updatedAt: serverTimestamp() });
 await t("الزبون يضغط «وصلت» 🚗", () => assertSucceeds(updateDoc(doc(as("c1"), "orders/o5"), { arrivedAt: serverTimestamp(), updatedAt: serverTimestamp() })));
+await seed({ features: { curbside: false } });
+await t("الاستلام من السيارة موقّف من الأدمن: يُرفض", () => assertFails(setDoc(doc(as("c1"), "orders/o7"), order("c1", { id: "o7", mode: "curbside", car: "x" }))));
+await t("الاستلام العادي يشتغل والسيارة موقّفة", () => assertSucceeds(setDoc(doc(as("c1"), "orders/o8"), order("c1", { id: "o8" }))));
 await seed({ orderEnabled: false });
 await t("الطلب مطفي: الحفظ يُرفض", () => assertFails(setDoc(doc(as("c1"), "orders/o1"), order("c1"))));
 

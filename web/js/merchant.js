@@ -8,7 +8,7 @@ import * as X from "./logic.js";
 import { createMap } from "./map.js";
 import { cropImage } from "./cropper.js";
 import { watchMerchantCatalog, catalogPanelHtml, bindCatalogPanel } from "./catalog-ui.js";
-import { vatOf, validVatNumber } from "./catalog.js";
+import { vatOf, validVatNumber, feat } from "./catalog.js";
 import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict, rewardOf, discounted, rewardText } from "./credits.js";
 
 const { esc, cld, thumb, priceLabel, districtLabel, money } = X;
@@ -322,7 +322,7 @@ export function openStoreForm(claim = null) {
       <label class="label">نبذة عن المتجر</label><textarea id="sAbout" class="input" rows="3" maxlength="500" placeholder="مثال: شاورما على الفحم من 2010…">${esc(f.about)}</textarea>
       <label class="label">الأسعار تبدأ من (ر.س)</label><input id="sPrice" class="input" inputmode="decimal" value="${esc(f.priceFrom)}" placeholder="مثال: 15">
       ${deliveryFields(f)}
-      <label class="switch-row"><span>🚗 أوفّر الاستلام من السيارة <small class="hint">(العميل يكتب وصف سيارته ويضغط «وصلت»)</small></span><input type="checkbox" id="sCurb" ${f.curbside ? "checked" : ""}></label>
+      ${!feat(state.config, "curbside") ? "" : `<label class="switch-row"><span>🚗 أوفّر الاستلام من السيارة <small class="hint">(العميل يكتب وصف سيارته ويضغط «وصلت»)</small></span><input type="checkbox" id="sCurb" ${f.curbside ? "checked" : ""}></label>`}
       <div class="label">💳 طرق الدفع اللي أقبلها عند الاستلام</div>
       <div class="row2"><label class="switch-row"><span>💵 كاش</span><input type="checkbox" id="sCash" ${f.payCash ? "checked" : ""}></label>
         <label class="switch-row"><span>💳 بطاقة / شبكة</span><input type="checkbox" id="sCard" ${f.payCard ? "checked" : ""}></label></div>
@@ -341,7 +341,7 @@ export function openStoreForm(claim = null) {
     const bind = (id, k) => { const el = $(id); if (el) el.oninput = (e) => { f[k] = e.target.value; dirty = true; }; };
     bind("sName", "name"); bind("sAbout", "about"); bind("sPrice", "priceFrom"); bind("sVatNo", "vatNumber");
     $("sVat").onchange = (e) => { f.vatReg = e.target.checked; dirty = true; render(); };
-    $("sCurb").onchange = (e) => { f.curbside = e.target.checked; dirty = true; };
+    $("sCurb")?.addEventListener("change", (e) => { f.curbside = e.target.checked; dirty = true; });
     $("sCash").onchange = (e) => { f.payCash = e.target.checked; if (!f.payCash && !f.payCard) { f.payCard = true; render(); } dirty = true; };
     $("sCard").onchange = (e) => { f.payCard = e.target.checked; if (!f.payCash && !f.payCard) { f.payCash = true; render(); } dirty = true; };
     bindDelivery(f, () => { dirty = true; render(); });
