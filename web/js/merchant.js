@@ -6,6 +6,7 @@ import { MAPS_WEB_KEY } from "../config.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, openStore, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
+import { cropImage } from "./cropper.js";
 import { watchMerchantCatalog, catalogPanelHtml, bindCatalogPanel } from "./catalog-ui.js";
 import { vatOf, validVatNumber } from "./catalog.js";
 import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict, rewardOf, discounted, rewardText } from "./credits.js";
@@ -337,8 +338,9 @@ export function openStoreForm(claim = null) {
     $("sVat").onchange = (e) => { f.vatReg = e.target.checked; dirty = true; render(); };
     bindDelivery(f, () => { dirty = true; render(); });
     body.querySelectorAll("[data-cat]").forEach((b) => b.onclick = () => { f.category = b.dataset.cat; dirty = true; render(); });
-    $("sLogo").onchange = (e) => { if (e.target.files[0]) { f.logoFile = e.target.files[0]; dirty = true; render(); } };
-    $("sCover").onchange = (e) => { if (e.target.files[0]) { f.coverFile = e.target.files[0]; dirty = true; render(); } };
+    // ✂️ التاجر يقص الشعار (دائري) والغلاف (عريض) بيده
+    $("sLogo").onchange = async (e) => { const fl = e.target.files[0]; e.target.value = ""; if (!fl) return; const c = await cropImage(fl, { aspect: 1, round: true, title: "قص الشعار", outW: 600 }); if (c) { f.logoFile = c; dirty = true; render(); } };
+    $("sCover").onchange = async (e) => { const fl = e.target.files[0]; e.target.value = ""; if (!fl) return; const c = await cropImage(fl, { aspect: 2, title: "قص صورة الواجهة" }); if (c) { f.coverFile = c; dirty = true; render(); } };
     $("sMenu")?.addEventListener("change", (e) => { [...e.target.files].slice(0, 10 - f.menu.length).forEach((file) => f.menu.push({ file })); dirty = true; render(); });
     body.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { f.menu.splice(+b.dataset.rm.replace("menu", ""), 1); dirty = true; render(); });
     body.querySelectorAll("[data-be]").forEach((b) => b.onclick = () => branchEditor(f.branches[+b.dataset.be], (nb) => { f.branches[+b.dataset.be] = nb; dirty = true; render(); }));
@@ -536,7 +538,7 @@ export async function openOfferForm(editing) {
       </div>
       <label class="label">${isNew ? "صور المنتج (حتى 3) أو فيديو *" : "صور العرض (حتى 3) أو فيديو *"}</label>
       <div class="tiles">${f.media.map((it, i) => f.isVideo ? `<div class="tile"><div class="vid">🎬 فيديو</div><button class="tile-x" data-rm="${i}">✕</button></div>`
-        : mediaTile(it.file ? URL.createObjectURL(it.file) : cld(it.url, 300), String(i), i === 0 ? "الغلاف" : "")).join("")}
+        : mediaTile(it.file ? URL.createObjectURL(it.file) : cld(it.url, 300), String(i), i === 0 ? "الغلاف" : "").replace(/<\/div>$/, it.file ? `<button class="tile-crop" data-crop="${i}" title="قص">✂️</button></div>` : "</div>")).join("")}
         ${!f.isVideo && f.media.length < 3 ? `<label class="tile add">＋ صور<input type="file" accept="image/*" multiple id="oImgs" hidden></label>` : ""}
         ${!f.media.length ? `<label class="tile add">🎬 فيديو<input type="file" accept="video/*" id="oVid" hidden></label>` : ""}</div>
       <label class="label">${isNew ? "اسم المنتج الجديد *" : "عنوان العرض *"}</label><input id="oTitle" class="input" value="${esc(f.title)}" maxlength="150" placeholder="${isNew ? "مثال: برجر الترافل الجديد" : "مثال: خصم 30% على كل المنتجات"}">
@@ -576,6 +578,8 @@ export async function openOfferForm(editing) {
     $("oImgs")?.addEventListener("change", (ev) => { [...ev.target.files].slice(0, 3 - f.media.length).forEach((file) => f.media.push({ file })); f.isVideo = false; dirty = true; render(); });
     $("oVid")?.addEventListener("change", (ev) => { const file = ev.target.files[0]; if (!file) return; if (file.size > 95 * 1024 * 1024) return toast("الفيديو كبير، الحد 95 ميجا"); f.media = [{ file }]; f.isVideo = true; dirty = true; render(); });
     body.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { f.media.splice(+b.dataset.rm, 1); if (!f.media.length) f.isVideo = false; dirty = true; render(); });
+    // ✂️ قص اختياري لصور العرض (بعض التجار يبون الصورة كاملة مثل المنيو المطبوع)
+    body.querySelectorAll("[data-crop]").forEach((b) => b.onclick = async (ev) => { ev.preventDefault(); const it = f.media[+b.dataset.crop]; if (!it?.file) return; const c = await cropImage(it.file, { aspect: 4 / 3, title: "قص صورة العرض" }); if (c) { it.file = c; dirty = true; render(); } });
     body.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => { f.percentMode = b.dataset.mode === "pct"; dirty = true; render(); });
     $("oTier")?.addEventListener("change", (ev) => { f.tiered = ev.target.checked; render(); });
     body.querySelectorAll("[data-day]").forEach((i) => i.oninput = (ev) => { f.days[+i.dataset.day] = ev.target.value.replace(/\D/g, "").slice(0, 2); });

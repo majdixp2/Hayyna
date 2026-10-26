@@ -163,6 +163,7 @@ fun RestaurantOfferDetailSheet(
                     .fillMaxWidth()
                     // الفيديو طولي مثل الريلز، فنعطيه مساحة أطول
                     .height(if (offer.mediaType == MediaType.VIDEO) 420.dp else 320.dp)
+                    .then(if (offer.spotlight) Modifier.superFrame() else Modifier)
             ) {
                 val gallery = offer.gallery
                 if (zoomIndex != null) {
@@ -218,6 +219,7 @@ fun RestaurantOfferDetailSheet(
                         )
                     )
                 }
+                if (offer.spotlight) SuperOverlay()
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -524,7 +526,7 @@ fun RestaurantOfferDetailSheet(
                         .weight(1f)
                         .testTag("whatsapp_restaurant_btn"),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF25D366)
+                        containerColor = if (offer.spotlight) Color(0xFFE08A0B) else Color(0xFF25D366) // عرض سوبر: زر ذهبي
                     ),
                     shape = RoundedCornerShape(10.dp)
                 ) {

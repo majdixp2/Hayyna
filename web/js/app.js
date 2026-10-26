@@ -367,6 +367,15 @@ function galleryHtml(o) {
     : `<img src="${esc(cld(u, 900))}" data-full="${esc(cld(u, 1600))}" alt="">`).join("");
   return `<div class="gallery">${inner}</div>${items.length > 1 ? `<div class="dots">${items.map(() => "<i></i>").join("")}</div>` : ""}`;
 }
+/** ذرات لمعان ✨ أول ما تنفتح صفحة عرض سوبر (ثانيتين بس، وتتوقف مع «تقليل الحركة») */
+function sparkle(el) {
+  if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (let i = 0; i < 14; i++) {
+    const s = document.createElement("span"); s.className = "spark"; s.textContent = i % 3 ? "✦" : "✨";
+    s.style.left = Math.random() * 100 + "%"; s.style.top = Math.random() * 100 + "%"; s.style.animationDelay = (Math.random() * 0.8).toFixed(2) + "s";
+    el.appendChild(s); setTimeout(() => s.remove(), 2400);
+  }
+}
 export function openOffer(id, push) {
   const o = state.offers.find((x) => x.id === id);
   if (!o) { if (state.loaded) { toast("العرض انتهى أو غير متاح"); go("/", true); } return; }
@@ -382,8 +391,9 @@ export function openOffer(id, push) {
     const rem = remainingText(o), op = openNow(br), tiers = tiersText(o), starts = startsText(o), del = deliveryText(o);
     const store = state.stores.find((s) => s.uid === o.merchantId), fav = state.favs.has(o.id);
     const isOwner = state.user && state.user.uid === o.merchantId;
-    showSheet(`${galleryHtml(o)}
-      <div class="pad">
+    const sup = isSpot(o);
+    showSheet(`${sup ? `<div class="super-wrap"><div class="super-ribbon">🚀 عرض سوبر</div>${galleryHtml(o)}<i class="super-shine"></i></div>` : galleryHtml(o)}
+      <div class="pad${sup ? " super-pad" : ""}">
         <div class="store-link">
           <div class="name">${o.logoUrl ? `<img src="${esc(cld(o.logoUrl, 100))}" alt="">` : ""}<span>${esc(o.restaurantName)}${store && store.verified ? ' <span class="verified" title="متجر موثّق">✔</span>' : ""}</span></div>
           ${store || isOwner ? `<button class="btn-soft" data-store="${esc(o.merchantId)}">🏪 ${isOwner ? "صفحة متجري" : "صفحة المتجر"} ›</button>` : ""}
@@ -419,6 +429,7 @@ export function openOffer(id, push) {
     body.querySelector("[data-store]")?.addEventListener("click", (e) => openStore(e.currentTarget.dataset.store, true));
     body.querySelector('[data-act="dir"]').addEventListener("click", () => bump(o.id, "directionsCount"));
     body.querySelector('[data-act="wa"]').addEventListener("click", () => bump(o.id, "whatsappCount"));
+    if (sup) sparkle(body.querySelector(".super-wrap"));
     body.querySelector('[data-act="fav"]').onclick = () => { toggleFav(o.id); draw(); };
     body.querySelector('[data-act="share"]').onclick = () => share(`🔥 ${o.offerTitle}\n📍 ${o.restaurantName}${o.district ? " — " + o.district : ""}\n💰 ${priceLabel(o, true)}`, offerUrl(o), o.offerTitle);
     body.querySelector('[data-act="report"]')?.addEventListener("click", () => reportOffer(o));

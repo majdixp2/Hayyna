@@ -4,6 +4,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openStore } from "./app.js";
 import * as X from "./logic.js";
+import { cropImage } from "./cropper.js";
 import {
   KINDS, catalogOf, vatOf, baseKindOf, kindOrder, limitOf, slotId, passCost, riyal, itemVisible, itemPaidUntil, itemGrace,
   vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps
@@ -130,7 +131,7 @@ function itemForm(it, kind) {
       ${!direct() ? `<small class="hint">⏳ بيظهر بعد مراجعة فريق حيّنا (عادة خلال ساعات). وثّق متجرك عشان تنزل منتجاتك مباشرة.</small>` : ""}
       <div id="ifErr" class="err"></div><button class="btn big" id="ifSave" style="background:${K.color};color:#fff">حفظ</button></div>`);
     const keep = () => { f.name = $("ifName").value; f.price = $("ifPrice").value; f.section = $("ifSec").value; f.desc = $("ifDesc").value; f.available = $("ifAv").checked; };
-    $("ifImg").onchange = (ev) => { if (ev.target.files[0]) { keep(); f.file = ev.target.files[0]; draw(); } };
+    $("ifImg").onchange = async (ev) => { const fl = ev.target.files[0]; if (!fl) return; keep(); const c = await cropImage(fl, { aspect: 1, title: "قص الصورة", outW: 1000 }); if (c) { f.file = c; draw(); } else draw(); };
     $("ifSave").onclick = async () => {
       keep();
       const err = (t) => { $("ifErr").textContent = t; };

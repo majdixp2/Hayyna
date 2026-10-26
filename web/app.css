@@ -600,3 +600,31 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .rv { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin: 6px 0; font-size: 13px; }
 .rv span { color: #F5B301; letter-spacing: 1px; } .rv p { margin: 3px 0 0; color: var(--muted); }
 .admin-note { background: #FDE8E6; color: #B42318; border-radius: 10px; padding: 6px 9px; font-size: 12px; font-weight: 700; margin-top: 5px; line-height: 1.6; }
+/* 🚀 صفحة عرض سوبر: إطار ذهبي متوهج + لمعة + شريط */
+.super-wrap { position: relative; margin: 10px; border-radius: 20px; padding: 3px; background: linear-gradient(135deg, #FFD166, #F59E0B, #FFE8A3, #D97706, #FFD166); background-size: 300% 300%; animation: superBorder 4s ease infinite, superGlow 2.4s ease-in-out infinite; overflow: hidden; }
+.super-wrap > .gallery, .super-wrap > .dots { border-radius: 17px; overflow: hidden; }
+.super-wrap .gallery { background: var(--card); }
+.super-ribbon { position: absolute; top: 12px; right: 12px; z-index: 3; background: #111827; color: #FFD166; font-weight: 800; font-size: 13px; padding: 6px 12px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.35); border: 1px solid rgba(255,209,102,.6); }
+.super-shine { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.45) 50%, transparent 65%); background-size: 250% 100%; animation: superShine 3.5s ease-in-out infinite; border-radius: 17px; }
+.spark { position: absolute; z-index: 4; color: #FFD166; font-size: 16px; pointer-events: none; text-shadow: 0 0 8px rgba(255,209,102,.9); animation: sparkPop 1.4s ease-out forwards; opacity: 0; }
+.super-pad .btn.wa { background: linear-gradient(135deg, #D97706, #F59E0B); color: #fff; box-shadow: 0 6px 18px rgba(217,119,6,.35); }
+@keyframes superBorder { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+@keyframes superGlow { 0%, 100% { box-shadow: 0 0 10px rgba(255,193,7,.45); } 50% { box-shadow: 0 0 26px rgba(255,193,7,.9); } }
+@keyframes superShine { 0% { background-position: 150% 0; } 60%, 100% { background-position: -100% 0; } }
+@keyframes sparkPop { 0% { opacity: 0; transform: scale(.3); } 30% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0; transform: scale(.6) translateY(-18px); } }
+@media (prefers-reduced-motion: reduce) { .super-wrap, .super-shine { animation: none; } .super-shine { display: none; } }
+/* ✂️ قص الصورة */
+.crop-ov { position: fixed; inset: 0; z-index: 2000; background: #0b0f0d; color: #fff; display: flex; flex-direction: column; padding-bottom: var(--safe-b); }
+.crop-top { display: flex; align-items: center; justify-content: space-between; padding: calc(10px + var(--safe-t)) 12px 8px; }
+.crop-top b { font-size: 16px; } .crop-top span { width: 36px; }
+.crop-x { width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(255,255,255,.15); color: #fff; font-size: 16px; }
+.crop-stage { position: relative; flex: 1; touch-action: none; overflow: hidden; cursor: grab; }
+.crop-stage canvas { position: absolute; inset: 0; }
+.crop-frame { position: absolute; border: 2px solid #fff; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.55); pointer-events: none; }
+.crop-frame.round { border-radius: 50%; }
+.crop-hint { text-align: center; font-size: 12px; opacity: .75; padding: 8px; }
+.crop-zoom { display: flex; align-items: center; gap: 10px; padding: 0 20px 8px; } .crop-zoom input { flex: 1; accent-color: #FFD166; }
+.crop-act { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 8px 14px 14px; }
+.crop-act .btn.call { background: rgba(255,255,255,.12); color: #fff; border: 0; }
+.tile-crop { position: absolute; bottom: 4px; left: 4px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; }
+.crop-act .btn.dir { grid-column: auto; }
