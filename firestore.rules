@@ -181,7 +181,10 @@ service cloud.firestore {
         && request.resource.data.name is string && request.resource.data.name.size() <= 100
         && request.resource.data.about is string && request.resource.data.about.size() <= 500
         && request.resource.data.menuImages is list && request.resource.data.menuImages.size() <= 10
-        && request.resource.data.branches is list && request.resource.data.branches.size() <= 50;
+        && request.resource.data.branches is list && request.resource.data.branches.size() <= 50
+        // الرقم الضريبي (اختياري): 15 رقم يبدأ وينتهي بـ 3
+        && (!('vatNumber' in request.resource.data) || request.resource.data.vatNumber == ''
+            || (request.resource.data.vatNumber is string && request.resource.data.vatNumber.matches('^3[0-9]{13}3$')));
     }
 
     // طلبات توثيق المتاجر: التاجر يرسل طلبه ويشوفه، والأدمن يقرّر
@@ -222,6 +225,7 @@ service cloud.firestore {
     function walletPath(uid) { return /databases/$(database)/documents/wallets/$(uid); }
     function codePath(code) { return /databases/$(database)/documents/creditCodes/$(code); }
     function boostPath(id) { return /databases/$(database)/documents/boosts/$(id); }
+    function passPath(id) { return /databases/$(database)/documents/itemPasses/$(id); }
 
     // شحن: الكود ينتقل من "غير مستخدم" لصاحب المحفظة في نفس العملية، والرصيد يزيد بقيمته بالضبط
     function walletRedeemOk(uid) {
@@ -244,6 +248,16 @@ service cloud.firestore {
         && request.resource.data.balance == resource.data.balance - getAfter(boostPath(op.ref)).data.cost
         && request.resource.data.balance >= 0;
     }
+    // صرف على ظهور المنتجات (itemPasses): نفس فكرة الخدمات
+    function walletCatalogOk(uid) {
+      let op = request.resource.data.lastOp;
+      return op.kind == 'catalog'
+        && !exists(passPath(op.ref))
+        && existsAfter(passPath(op.ref))
+        && getAfter(passPath(op.ref)).data.merchantId == uid
+        && request.resource.data.balance == resource.data.balance - getAfter(passPath(op.ref)).data.cost
+        && request.resource.data.balance >= 0;
+    }
     function walletShapeOk() {
       return request.resource.data.keys().hasOnly(['balance', 'lastOp', 'updatedAt'])
         && request.resource.data.balance is int
@@ -260,7 +274,7 @@ service cloud.firestore {
             || walletRedeemOk(uid)));
       allow update: if can('credits')
         || (isAuthenticated() && request.auth.uid == uid && walletShapeOk()
-          && (walletRedeemOk(uid) || walletSpendOk(uid)));
+          && (walletRedeemOk(uid) || walletSpendOk(uid) || walletCatalogOk(uid)));
       allow delete: if can('credits');
 
       // سجل الحركات (للعرض فقط؛ الرصيد نفسه محمي فوق)
@@ -343,6 +357,111 @@ service cloud.firestore {
           && request.resource.data.offerId is string
           && boostOk(request.resource.data));
       allow update, delete: if isAdmin();
+    }
+
+    // ===== المنتجات والخدمات والمنيو (يتحكم فيها الأدمن: config/app.catalog) =====
+    function catalogCfg() {
+      return get(/databases/$(database)/documents/config/app).data.get('catalog', {});
+    }
+    function itemLimit(kind) {
+      return catalogCfg().get('limits', {}).get(kind, 10);
+    }
+    function isVerifiedStore(uid) {
+      return exists(statusPath(uid)) && get(statusPath(uid)).data.get('verified', false) == true
+        && get(statusPath(uid)).data.get('suspended', false) != true;
+    }
+    function itemOk(uid, itemId, d) {
+      return d.keys().hasOnly(['id', 'merchantId', 'kind', 'slot', 'name', 'desc', 'price', 'imageUrl', 'section', 'available', 'approved', 'createdAt', 'updatedAt'])
+        && catalogCfg().get('enabled', false) == true
+        && !isSuspended(uid)
+        && d.id == itemId && d.merchantId == uid
+        && d.kind in ['menu', 'product', 'service']
+        // كل منتج له خانة (slot) رقمها أقل من الحد اللي يحدده الأدمن (0 = مفتوح)
+        && d.slot is int && d.slot >= 0 && d.slot < 1000
+        && (itemLimit(d.kind) == 0 || d.slot < itemLimit(d.kind))
+        && itemId == uid + '_' + d.kind + '_' + string(d.slot)
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 80
+        && d.desc is string && d.desc.size() <= 300
+        && d.price is number && d.price >= 0 && d.price <= 1000000
+        && d.imageUrl is string && d.imageUrl.size() <= 2000
+        && d.section is string && d.section.size() <= 40
+        && d.available is bool && d.approved is bool
+        // التاجر الجديد: تنراجع. الموثّق/الموثوق: تنزل مباشرة
+        && (d.approved == false || isTrusted(uid) || isVerifiedStore(uid) || catalogCfg().get('review', true) == false)
+        && d.updatedAt == request.time;
+    }
+    match /items/{itemId} {
+      allow read: if resource.data.approved == true
+        || (isAuthenticated() && resource.data.merchantId == request.auth.uid)
+        || can('review');
+      allow create: if can('review')
+        || (isAuthenticated() && itemOk(request.auth.uid, itemId, request.resource.data)
+          && request.resource.data.createdAt == request.time);
+      allow update: if can('review')
+        || (isAuthenticated() && resource.data.merchantId == request.auth.uid
+          && itemOk(request.auth.uid, itemId, request.resource.data)
+          && request.resource.data.createdAt == resource.data.createdAt);
+      allow delete: if can('review') || (isAuthenticated() && resource.data.merchantId == request.auth.uid);
+    }
+
+    // ظهور المنتجات المدفوع: باقة كل المنتجات، أو منتجات محددة من نوع واحد. السعر بالهللة من إعدادات الأدمن
+    function passOk(d) {
+      let pr = catalogCfg().get('pricing', {});
+      let it = pr.get(d.scope == 'all' ? 'all' : d.kind, {});
+      let ph = it.get('priceH', 0);
+      let n = d.scope == 'all' ? 1 : d.itemIds.size();
+      return pr.get('enabled', false) == true && it.get('active', false) == true
+        && ph is int && ph > 0
+        && (d.scope == 'all' || (d.scope == 'kind' && d.kind in ['menu', 'product', 'service']))
+        && d.itemIds is list && d.itemIds.size() <= 200 && (d.scope == 'all' || d.itemIds.size() >= 1)
+        && d.days is int && d.days >= 1 && d.days <= 365
+        && d.cost is int && d.cost * 100 >= n * d.days * ph && (d.cost - 1) * 100 < n * d.days * ph
+        && d.createdAt == request.time
+        && d.startsAt is timestamp && d.endsAt is timestamp
+        && d.startsAt >= request.time - duration.value(1, 'h')
+        && d.startsAt <= request.time + duration.value(366, 'd')
+        && d.endsAt > d.startsAt
+        && d.endsAt <= d.startsAt + duration.value(d.days, 'd') + duration.value(1, 'h')
+        && getAfter(walletPath(request.auth.uid)).data.lastOp.ref == d.id;
+    }
+    match /itemPasses/{passId} {
+      allow read: if true;
+      allow create: if isAdmin()
+        || (isAuthenticated()
+          && request.resource.data.keys().hasOnly(['id', 'merchantId', 'scope', 'kind', 'itemIds', 'days', 'cost', 'createdAt', 'startsAt', 'endsAt'])
+          && request.resource.data.id == passId
+          && request.resource.data.merchantId == request.auth.uid
+          && passOk(request.resource.data));
+      allow update, delete: if isAdmin();
+    }
+
+    // الطلبات: الزبون المسجّل يحفظ طلبه قبل ما ينرسل للمحل على واتساب (جاهزة للدفع المباشر لاحقاً)
+    match /orders/{orderId} {
+      allow create: if isAuthenticated()
+        && catalogCfg().get('orderEnabled', false) == true
+        && request.resource.data.keys().hasOnly(['id', 'code', 'storeId', 'storeName', 'branchId', 'branchName', 'customerUid', 'customerName', 'customerPhone',
+            'items', 'subtotal', 'deliveryFee', 'total', 'vatRate', 'vatAmount', 'vatNumber', 'mode', 'location', 'note', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.id == orderId
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.storeId is string && request.resource.data.storeId.size() > 0
+        && request.resource.data.items is list && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 100
+        && request.resource.data.total is number && request.resource.data.total >= 0
+        && request.resource.data.note is string && request.resource.data.note.size() <= 300
+        && request.resource.data.mode in ['pickup', 'delivery']
+        && request.resource.data.status == 'sent'
+        && request.resource.data.createdAt == request.time;
+      allow read: if can('merchants')
+        || (isAuthenticated() && (resource.data.customerUid == request.auth.uid || resource.data.storeId == request.auth.uid));
+      // المحل يحدّث الحالة، والزبون يلغي طلبه لو ما استلمه المحل للحين
+      allow update: if can('merchants')
+        || (isAuthenticated() && resource.data.storeId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && request.resource.data.status in ['received', 'ready', 'done', 'cancelled'])
+        || (isAuthenticated() && resource.data.customerUid == request.auth.uid
+          && resource.data.status == 'sent'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && request.resource.data.status == 'cancelled');
+      allow delete: if can('merchants');
     }
 
     // قفل دعوة محل من Google: أول من يدعوه يحجزه كم يوم (عشان ما يتكرر الإزعاج للمحل)
