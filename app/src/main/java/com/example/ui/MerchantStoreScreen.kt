@@ -106,6 +106,8 @@ fun MerchantStoreScreen(
     val boostsAll by viewModel.activeBoostsAll.collectAsStateWithLifecycle()
     val creditPrompt by viewModel.creditPrompt.collectAsStateWithLifecycle()
     val boostTarget by viewModel.boostTarget.collectAsStateWithLifecycle()
+    val catalogCfg by viewModel.catalogConfig.collectAsStateWithLifecycle()
+    var showMyOrders by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val allOffers by viewModel.allOffers.collectAsStateWithLifecycle()
     val filteredCustomerOffers by viewModel.filteredCustomerOffers.collectAsStateWithLifecycle()
 
@@ -739,6 +741,10 @@ fun MerchantStoreScreen(
                                     onPublishDraft = { viewModel.openPublishDraft(it) },
                                     onBoost = { viewModel.openBoost(it) }
                                 ) else null,
+                                catalogCard = if (catalogCfg.enabled && isMerchantLoggedIn && (merchantProfile?.branches?.isNotEmpty() == true)) {
+                                    { com.example.ui.components.MerchantCatalogCard(viewModel, merchantProfile?.cuisineType.orEmpty(), if (isAdmin) 999_999L else (walletBal ?: 0L).coerceAtLeast(0L)) }
+                                } else null,
+                                onMyOrders = if (catalogCfg.enabled && catalogCfg.orderEnabled && isMerchantLoggedIn) ({ showMyOrders = true }) else null,
                                 modifier = Modifier.fillMaxSize()
                             )
                             androidx.compose.runtime.LaunchedEffect(creditsCfg.enabled, walletBal, isMerchantLoggedIn) {
@@ -883,9 +889,11 @@ fun MerchantStoreScreen(
                     viewModel.closeStorePage()
                     viewModel.openOfferDetail(o)
                 },
-                onClose = { viewModel.closeStorePage() }
+                onClose = { viewModel.closeStorePage() },
+                catalog = { com.example.ui.components.StoreCatalogSection(st, viewModel) }
             )
         }
+        if (showMyOrders) com.example.ui.components.MyOrdersDialog(viewModel) { showMyOrders = false }
 
         // Add Restaurant Offer Sheet
         if (isAddOfferSheetOpen) {

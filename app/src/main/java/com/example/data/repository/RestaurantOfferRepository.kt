@@ -794,6 +794,123 @@ class RestaurantOfferRepository(
         return offerRef.id
     }
 
+    // ================= المنتجات والخدمات والمنيو + الطلبات =================
+
+    val catalogConfig: Flow<com.example.data.model.CatalogConfig> = callbackFlow {
+        val l = configDoc.addSnapshotListener { snap, _ ->
+            @Suppress("UNCHECKED_CAST") val c = snap?.get("catalog") as? Map<String, Any?> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST") val p = c["pricing"] as? Map<String, Any?> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST") val lim = c["limits"] as? Map<String, Any?> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST") val vat = snap?.get("vat") as? Map<String, Any?> ?: emptyMap()
+            @Suppress("UNCHECKED_CAST") val types = snap?.get("categoryTypes") as? Map<String, Any?> ?: emptyMap()
+            val def = com.example.data.model.CatalogConfig()
+            fun price(k: String): com.example.data.model.KindPrice {
+                @Suppress("UNCHECKED_CAST") val m = p[k] as? Map<String, Any?> ?: return def.price(k)
+                return com.example.data.model.KindPrice((m["priceH"] as? Number)?.toLong() ?: def.price(k).priceH, m["active"] as? Boolean ?: true)
+            }
+            trySend(com.example.data.model.CatalogConfig(
+                enabled = c["enabled"] as? Boolean ?: false,
+                orderEnabled = c["orderEnabled"] as? Boolean ?: false,
+                review = c["review"] as? Boolean ?: true,
+                limits = def.limits + lim.mapNotNull { (k, v) -> (v as? Number)?.let { k to it.toInt() } },
+                pricingEnabled = p["enabled"] as? Boolean ?: false,
+                pricingEnabledAt = (p["enabledAt"] as? Timestamp)?.toDate()?.time ?: 0L,
+                graceUntil = (p["graceUntil"] as? Timestamp)?.toDate()?.time ?: 0L,
+                prices = listOf("menu", "product", "service", "all").associateWith { price(it) },
+                vatEnabled = vat["enabled"] as? Boolean ?: true,
+                vatRate = (vat["rate"] as? Number)?.toDouble() ?: 15.0,
+                categoryTypes = types.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+            ))
+        }
+        awaitClose { l.remove() }
+    }
+
+    private fun parseItem(d: DocumentSnapshot) = com.example.data.model.CatalogItem(
+        id = d.id, merchantId = d.getString("merchantId").orEmpty(), kind = d.getString("kind") ?: "product",
+        slot = (d.getLong("slot") ?: 0L).toInt(), name = d.getString("name").orEmpty(), desc = d.getString("desc").orEmpty(),
+        price = d.getDouble("price") ?: 0.0, imageUrl = d.getString("imageUrl").orEmpty(), section = d.getString("section").orEmpty(),
+        available = d.getBoolean("available") ?: true, approved = d.getBoolean("approved") ?: false,
+        createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L
+    )
+    @Suppress("UNCHECKED_CAST")
+    private fun parsePass(d: DocumentSnapshot) = com.example.data.model.ItemPass(
+        merchantId = d.getString("merchantId").orEmpty(), scope = d.getString("scope").orEmpty(), kind = d.getString("kind").orEmpty(),
+        itemIds = (d.get("itemIds") as? List<String>).orEmpty(),
+        startsAt = d.getTimestamp("startsAt")?.toDate()?.time ?: 0L, endsAt = d.getTimestamp("endsAt")?.toDate()?.time ?: 0L
+    )
+
+    /** منتجات متجر معتمدة + ظهورها المدفوع (لصفحة المتجر) */
+    suspend fun storeCatalog(uid: String): Pair<List<com.example.data.model.CatalogItem>, List<com.example.data.model.ItemPass>> {
+        val items = db.collection("items").whereEqualTo("merchantId", uid).whereEqualTo("approved", true).get().await().documents.map { parseItem(it) }
+        val passes = runCatching { db.collection("itemPasses").whereEqualTo("merchantId", uid).get().await().documents.map { parsePass(it) } }.getOrDefault(emptyList())
+        return items to passes
+    }
+    fun myItems(uid: String): Flow<List<com.example.data.model.CatalogItem>> = callbackFlow {
+        val l = db.collection("items").whereEqualTo("merchantId", uid).addSnapshotListener { s, _ -> trySend(s?.documents.orEmpty().map { parseItem(it) }) }
+        awaitClose { l.remove() }
+    }
+    fun myPasses(uid: String): Flow<List<com.example.data.model.ItemPass>> = callbackFlow {
+        val l = db.collection("itemPasses").whereEqualTo("merchantId", uid).addSnapshotListener { s, _ -> trySend(s?.documents.orEmpty().map { parsePass(it) }) }
+        awaitClose { l.remove() }
+    }
+    suspend fun saveItem(it: com.example.data.model.CatalogItem, isNew: Boolean) {
+        val data = hashMapOf<String, Any?>(
+            "name" to it.name.take(80), "price" to it.price, "desc" to it.desc.take(300), "section" to it.section.take(40),
+            "imageUrl" to it.imageUrl, "available" to it.available, "approved" to it.approved, "updatedAt" to FieldValue.serverTimestamp()
+        )
+        val ref = db.collection("items").document(it.id)
+        if (isNew) ref.set(data + mapOf("id" to it.id, "merchantId" to it.merchantId, "kind" to it.kind, "slot" to it.slot.toLong(), "createdAt" to FieldValue.serverTimestamp())).await()
+        else ref.update(data).await()
+    }
+    suspend fun deleteItem(id: String) { db.collection("items").document(id).delete().await() }
+
+    /** شراء ظهور المنتجات: باقة كل المنتجات أو منتجات محددة من نوع — مع خصم الرصيد بنفس العملية */
+    suspend fun buyItemPass(uid: String, balance: Long, charge: Boolean, scope: String, kind: String, itemIds: List<String>, days: Int, cost: Long, startMillis: Long, note: String) {
+        val b = db.batch()
+        val ref = db.collection("itemPasses").document()
+        val start = maxOf(System.currentTimeMillis(), startMillis)
+        b.set(ref, hashMapOf(
+            "id" to ref.id, "merchantId" to uid, "scope" to scope, "kind" to kind, "itemIds" to itemIds.take(200), "days" to days.toLong(), "cost" to cost,
+            "createdAt" to FieldValue.serverTimestamp(), "startsAt" to Timestamp(java.util.Date(start)), "endsAt" to Timestamp(java.util.Date(start + days * 86_400_000L))
+        ))
+        if (charge) {
+            val w = db.collection("wallets").document(uid)
+            b.set(w, hashMapOf("balance" to balance - cost, "lastOp" to hashMapOf("kind" to "catalog", "ref" to ref.id), "updatedAt" to FieldValue.serverTimestamp()))
+            b.set(w.collection("tx").document(), hashMapOf("kind" to "spend", "points" to -cost, "note" to note.take(120), "ref" to ref.id, "at" to FieldValue.serverTimestamp()))
+        }
+        b.commit().await()
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseOrder(d: DocumentSnapshot) = com.example.data.model.HayynaOrder(
+        id = d.id, code = d.getString("code").orEmpty(), storeId = d.getString("storeId").orEmpty(), storeName = d.getString("storeName").orEmpty(),
+        branchName = d.getString("branchName").orEmpty(), customerName = d.getString("customerName").orEmpty(), customerPhone = d.getString("customerPhone").orEmpty(),
+        items = (d.get("items") as? List<Map<String, Any?>>).orEmpty().map {
+            com.example.data.model.CartLine(it["id"] as? String ?: "", it["name"] as? String ?: "", it["kind"] as? String ?: "", (it["price"] as? Number)?.toDouble() ?: 0.0, (it["qty"] as? Number)?.toInt() ?: 1)
+        },
+        subtotal = d.getDouble("subtotal") ?: 0.0, deliveryFee = d.getDouble("deliveryFee") ?: 0.0, total = d.getDouble("total") ?: 0.0,
+        vatRate = d.getDouble("vatRate") ?: 0.0, vatAmount = d.getDouble("vatAmount") ?: 0.0, vatNumber = d.getString("vatNumber").orEmpty(),
+        mode = d.getString("mode") ?: "pickup", note = d.getString("note").orEmpty(), status = d.getString("status") ?: "sent",
+        createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L
+    )
+    fun storeOrders(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
+        val l = db.collection("orders").whereEqualTo("storeId", uid).addSnapshotListener { s, _ -> trySend(s?.documents.orEmpty().map { parseOrder(it) }.sortedByDescending { it.createdAtMillis }) }
+        awaitClose { l.remove() }
+    }
+    suspend fun myOrders(uid: String) = db.collection("orders").whereEqualTo("customerUid", uid).get().await().documents.map { parseOrder(it) }.sortedByDescending { it.createdAtMillis }
+    suspend fun setOrderStatus(id: String, status: String) { db.collection("orders").document(id).update(mapOf("status" to status, "updatedAt" to FieldValue.serverTimestamp())).await() }
+    suspend fun saveOrder(o: com.example.data.model.HayynaOrder, customerUid: String, branchId: String) {
+        val ref = db.collection("orders").document()
+        ref.set(hashMapOf(
+            "id" to ref.id, "code" to o.code, "storeId" to o.storeId, "storeName" to o.storeName, "branchId" to branchId, "branchName" to o.branchName,
+            "customerUid" to customerUid, "customerName" to o.customerName, "customerPhone" to o.customerPhone,
+            "items" to o.items.map { mapOf("id" to it.id, "name" to it.name, "kind" to it.kind, "qty" to it.qty.toLong(), "price" to it.price) },
+            "subtotal" to o.subtotal, "deliveryFee" to o.deliveryFee, "total" to o.total, "vatRate" to o.vatRate, "vatAmount" to o.vatAmount, "vatNumber" to o.vatNumber,
+            "mode" to o.mode, "location" to (if (o.lat != null && o.lng != null) mapOf("lat" to o.lat, "lng" to o.lng) else null),
+            "note" to o.note.take(300), "status" to "sent", "createdAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp()
+        )).await()
+    }
+
     suspend fun insertOffer(offer: RestaurantOffer): String {
         val docRef = if (offer.id.isNotBlank()) offersCollection.document(offer.id) else offersCollection.document()
         docRef.set(offer.toFirestoreMap(docRef.id, FieldValue.serverTimestamp())).await()
@@ -866,6 +983,7 @@ class RestaurantOfferRepository(
                 "deliveryFee" to profile.deliveryFee,
                 "deliveryMinOrder" to profile.deliveryMinOrder,
                 "deliveryFreeOver" to profile.deliveryFreeOver,
+                "vatNumber" to profile.vatNumber,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()

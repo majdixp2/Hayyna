@@ -105,6 +105,8 @@ fun MerchantPortalView(
     onSaveProfile: (name: String, phone: String, role: String) -> Unit = { _, _, _ -> },
     roleResolved: Boolean = true,
     credits: MerchantCredits? = null,
+    catalogCard: (@Composable () -> Unit)? = null,
+    onMyOrders: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var editProfile by remember { mutableStateOf(false) }
@@ -149,6 +151,7 @@ fun MerchantPortalView(
             onDeleteAccount = onDeleteAccount,
             onOpenContact = onOpenContact,
             unreadReplies = unreadReplies,
+            onMyOrders = onMyOrders,
             modifier = modifier
         )
     } else {
@@ -175,6 +178,7 @@ fun MerchantPortalView(
             verifyStatus = verifyStatus,
             onOpenVerify = onOpenVerify,
             credits = credits,
+            catalogCard = catalogCard,
             modifier = modifier
         )
     }
@@ -341,6 +345,7 @@ private fun CustomerAccountView(
     onDeleteAccount: () -> Unit,
     onOpenContact: () -> Unit,
     unreadReplies: Int,
+    onMyOrders: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -392,6 +397,23 @@ private fun CustomerAccountView(
                 Column(Modifier.weight(1f)) {
                     Text("المفضلة ($favoritesCount)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Text("اعرض عروضك المحفوظة على الخريطة", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("›", fontSize = 22.sp, color = CalmSagePrimary)
+            }
+        }
+
+        if (onMyOrders != null) Card(
+            onClick = onMyOrders,
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("🧾", fontSize = 22.sp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("طلباتي", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("طلباتك من المحلات وحالتها", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text("›", fontSize = 22.sp, color = CalmSagePrimary)
             }
@@ -468,6 +490,7 @@ private fun MerchantDashboard(
     verifyStatus: String?,
     onOpenVerify: () -> Unit,
     credits: MerchantCredits? = null,
+    catalogCard: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -619,6 +642,7 @@ private fun MerchantDashboard(
         }
 
         if (credits != null) item { WalletCard(credits.balance, credits.items) }
+        if (catalogCard != null) item { catalogCard() }
 
         item {
             Text(

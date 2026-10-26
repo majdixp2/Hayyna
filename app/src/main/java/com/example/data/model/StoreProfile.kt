@@ -21,7 +21,8 @@ data class StoreProfile(
     val delivery: Boolean = false,
     val deliveryFee: Double = 0.0,
     val deliveryMinOrder: Double = 0.0,
-    val deliveryFreeOver: Double = 0.0
+    val deliveryFreeOver: Double = 0.0,
+    val vatNumber: String = ""
 ) {
     /** اسم قسم المنيو حسب نوع المتجر. */
     val menuLabel: String

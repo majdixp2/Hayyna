@@ -673,6 +673,127 @@ class MerchantViewModel(
         }
     }
 
+    // ---------------- 🛍️ المنتجات والخدمات والمنيو + الطلبات ----------------
+    val catalogConfig: StateFlow<com.example.data.model.CatalogConfig> = repository.catalogConfig
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.model.CatalogConfig())
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val myItems: StateFlow<List<com.example.data.model.CatalogItem>> = currentUser
+        .flatMapLatest { u -> if (u == null) flowOf(emptyList()) else repository.myItems(u.uid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val myPasses: StateFlow<List<com.example.data.model.ItemPass>> = currentUser
+        .flatMapLatest { u -> if (u == null) flowOf(emptyList()) else repository.myPasses(u.uid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val storeOrders: StateFlow<List<com.example.data.model.HayynaOrder>> = currentUser
+        .flatMapLatest { u -> if (u == null) flowOf(emptyList()) else repository.storeOrders(u.uid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** منتجاتي تنزل مباشرة؟ (الموثّق ✔ / الموثوق / الأدمن / المراجعة مطفية) */
+    val catalogDirect: Boolean
+        get() = isAdmin.value || canPublishDirectly || (myStatus.value?.verified == true && myStatus.value?.suspended != true) || !catalogConfig.value.review
+
+    val isSavingItem = MutableStateFlow(false)
+    fun saveCatalogItem(old: com.example.data.model.CatalogItem?, kind: String, name: String, price: Double, desc: String, section: String, available: Boolean, image: String) {
+        val uid = currentUser.value?.uid ?: return
+        viewModelScope.launch {
+            isSavingItem.value = true
+            try {
+                val url = if (image.isNotBlank() && !image.startsWith("http")) MediaUploader.uploadOfferMedia(getApplication(), image, false) else image
+                val cfg = catalogConfig.value
+                val item = if (old != null) old.copy(name = name.trim(), price = price, desc = desc.trim(), section = section.trim(), available = available, imageUrl = url, approved = catalogDirect)
+                else {
+                    val used = myItems.value.filter { it.kind == kind }.map { it.slot }.toSet()
+                    var n = 0; while (n in used) n++
+                    val lim = cfg.limitOf(kind)
+                    if (lim > 0 && n >= lim) { toast("وصلت للحد ($lim)."); return@launch }
+                    com.example.data.model.CatalogItem("${uid}_${kind}_$n", uid, kind, n, name.trim(), desc.trim(), price, url, section.trim(), available, catalogDirect)
+                }
+                repository.saveItem(item, isNew = old == null)
+                toast(if (catalogDirect) "انحفظ ✅" else "انحفظ ✅ بيظهر بعد المراجعة")
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                Log.w(TAG, "item: ${e.message}"); toast("تعذّر الحفظ: ${e.message ?: ""}")
+            } finally { isSavingItem.value = false }
+        }
+    }
+    fun toggleItemAvailable(it: com.example.data.model.CatalogItem) = launchSafely("تعذّر التحديث") {
+        repository.saveItem(it.copy(available = !it.available, approved = it.approved && catalogDirect), isNew = false)
+    }
+    fun deleteCatalogItem(id: String) = launchSafely("تعذّر الحذف") { repository.deleteItem(id); toast("انحذف") }
+
+    fun buyItemPass(scope: String, kind: String, itemIds: List<String>, days: Int) {
+        val uid = currentUser.value?.uid ?: return
+        val cfg = catalogConfig.value
+        val ph = cfg.price(if (scope == "all") "all" else kind).priceH
+        val cost = com.example.data.model.CatalogConfig.passCost(ph, if (scope == "all") 1 else itemIds.size, days)
+        if (!isAdmin.value && balance() < cost) { toast("رصيدك ما يكفي (تحتاج $cost نقطة)."); return }
+        val curAll = myPasses.value.filter { it.scope == "all" }.maxOfOrNull { it.endsAt } ?: 0L
+        val start = if (scope == "all") maxOf(System.currentTimeMillis(), curAll) else System.currentTimeMillis()
+        val k = com.example.data.model.ItemKind.of(kind)
+        launchSafely("تعذّرت العملية. جرّب مرة ثانية.") {
+            repository.buyItemPass(uid, balance(), !isAdmin.value, scope, if (scope == "all") "" else kind, if (scope == "all") emptyList() else itemIds, days, cost, start,
+                if (scope == "all") "📦 باقة كل المنتجات $days يوم" else "${k.icon} ظهور ${itemIds.size} ${k.label} $days يوم")
+            toast("تم ✅ خصمنا $cost نقطة")
+        }
+    }
+    fun setOrderStatus(id: String, status: String) = launchSafely("تعذّر التحديث") { repository.setOrderStatus(id, status) }
+
+    // ----- السلة (لكل متجر) -----
+    val carts = MutableStateFlow<Map<String, Map<String, com.example.data.model.CartLine>>>(emptyMap())
+    fun cartAdd(storeId: String, it: com.example.data.model.CatalogItem, delta: Int) {
+        val cart = carts.value[storeId].orEmpty().toMutableMap()
+        val q = (cart[it.id]?.qty ?: 0) + delta
+        if (q <= 0) cart.remove(it.id) else cart[it.id] = com.example.data.model.CartLine(it.id, it.name, it.kind, it.price, q.coerceAtMost(99))
+        carts.value = carts.value + (storeId to cart)
+    }
+    fun cartLineAdd(storeId: String, id: String, delta: Int) {
+        val cart = carts.value[storeId].orEmpty().toMutableMap()
+        val l = cart[id] ?: return
+        val q = l.qty + delta
+        if (q <= 0) cart.remove(id) else cart[id] = l.copy(qty = q.coerceAtMost(99))
+        carts.value = carts.value + (storeId to cart)
+    }
+    suspend fun loadStoreCatalog(uid: String): List<com.example.data.model.CatalogItem> {
+        val cfg = catalogConfig.value
+        if (!cfg.enabled) return emptyList()
+        val (items, passes) = runCatching { repository.storeCatalog(uid) }.getOrDefault(emptyList<com.example.data.model.CatalogItem>() to emptyList())
+        val now = System.currentTimeMillis()
+        return items.filter { cfg.visible(it, passes, now) }
+    }
+
+    /** يحفظ الطلب (لو مسجّل) ويرجّع رابط واتساب المحل مع ملخص الطلب */
+    fun sendOrder(store: com.example.data.model.StoreProfile, branch: com.example.data.model.Branch?, mode: String, name: String, phone: String, note: String, onUrl: (String) -> Unit) {
+        val lines = carts.value[store.uid].orEmpty().values.toList()
+        if (lines.isEmpty()) return
+        val cfg = catalogConfig.value
+        val sub = lines.sumOf { it.price * it.qty }
+        val fee = if (mode == "delivery") (if (store.deliveryFreeOver > 0 && sub >= store.deliveryFreeOver) 0.0 else store.deliveryFee) else 0.0
+        val total = Math.round((sub + fee) * 100) / 100.0
+        val vatNo = if (cfg.vatEnabled && com.example.data.model.CatalogConfig.validVat(store.vatNumber)) store.vatNumber else ""
+        val vatAmt = if (vatNo.isNotBlank()) Math.round(total * cfg.vatRate / (100 + cfg.vatRate) * 100) / 100.0 else 0.0
+        val loc = userLocation.value
+        val o = com.example.data.model.HayynaOrder(
+            code = com.example.data.model.HayynaOrder.code(), storeId = store.uid, storeName = store.name,
+            branchName = if (store.branches.size > 1) (branch?.name?.ifBlank { branch.district } ?: "") else "",
+            customerName = name.trim().take(60), customerPhone = phone.trim(), items = lines, subtotal = sub, deliveryFee = fee, total = total,
+            vatRate = if (vatNo.isNotBlank()) cfg.vatRate else 0.0, vatAmount = vatAmt, vatNumber = vatNo, mode = mode,
+            lat = if (mode == "delivery") loc?.latitude else null, lng = if (mode == "delivery") loc?.longitude else null, note = note.trim().take(300)
+        )
+        val digits = (branch?.phone ?: store.phone).filter { it.isDigit() }.let { d ->
+            when { d.startsWith("05") && d.length == 10 -> "966" + d.drop(1); d.startsWith("5") && d.length == 9 -> "966$d"; else -> d }
+        }
+        if (digits.isBlank()) { toast("المحل ما عنده رقم واتساب."); return }
+        val url = "https://wa.me/$digits?text=" + java.net.URLEncoder.encode(o.text(), "UTF-8").replace("+", "%20")
+        viewModelScope.launch {
+            currentUser.value?.uid?.let { uid -> runCatching { repository.saveOrder(o, uid, branch?.id.orEmpty()) }.onFailure { Log.w(TAG, "order: ${it.message}") } }
+            carts.value = carts.value - store.uid
+            toast("انرسل طلبك #${o.code} ✅ كمّل في واتساب")
+            onUrl(url)
+        }
+    }
+    suspend fun loadMyOrders(): List<com.example.data.model.HayynaOrder> =
+        currentUser.value?.uid?.let { runCatching { repository.myOrders(it) }.getOrDefault(emptyList()) } ?: emptyList()
+
     /**
      * العروض الظاهرة: لما يكون رصيد العروض مفعّل، العرض الجديد لازم له "نشر" مدفوع،
      * والتمييز المدفوع يخلي العرض مميّز (حلقة صفراء وأول الترتيب).

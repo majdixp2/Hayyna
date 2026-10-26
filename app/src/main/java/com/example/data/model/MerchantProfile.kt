@@ -26,7 +26,9 @@ data class MerchantProfile(
     val deliveryFee: Double = 0.0,
     val deliveryMinOrder: Double = 0.0,
     // توصيل مجاني للطلبات فوق هذا المبلغ (0 = ما فيه)
-    val deliveryFreeOver: Double = 0.0
+    val deliveryFreeOver: Double = 0.0,
+    // الرقم الضريبي (يكتبه التاجر من الويب) — نحفظه عشان ما ينمسح
+    val vatNumber: String = ""
 ) {
     val hasLocation: Boolean get() = latitude != 0.0 || longitude != 0.0
 }

@@ -86,7 +86,9 @@ fun StorePage(
     store: StoreProfile,
     offers: List<RestaurantOffer>,
     onOfferClick: (RestaurantOffer) -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    // المنيو/المنتجات/الخدمات + السلة (من لوحة الأدمن)
+    catalog: @Composable () -> Unit = {}
 ) {
     val context = LocalContext.current
     var viewerIndex by remember { mutableStateOf<Int?>(null) }
@@ -252,6 +254,8 @@ fun StorePage(
                                 }
                             }
                         }
+
+                        catalog()
 
                         // ---------- المنيو / المنتجات ----------
                         if (store.menuImages.isNotEmpty()) {
