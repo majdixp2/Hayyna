@@ -491,7 +491,9 @@ private fun ItemEditDialog(vm: MerchantViewModel, e: CatalogItem?, kind: ItemKin
     var image by remember { mutableStateOf(e?.imageUrl.orEmpty()) }
     var err by remember { mutableStateOf("") }
     var started by remember { mutableStateOf(false) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) image = uri.toString() }
+    var cropSrc by remember { mutableStateOf<String?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) cropSrc = uri.toString() }
+    cropSrc?.let { src -> ImageCropDialog(src, aspect = 1f, title = "قص الصورة", outWidth = 1000) { out -> if (out != null) image = out; cropSrc = null } }
     LaunchedEffect(saving) { if (started && !saving) onDismiss() }
     val sections = all.filter { it.kind == kind.id }.map { it.section }.filter { it.isNotBlank() }.distinct()
     FullDialog("${kind.icon} ${if (e == null) "إضافة" else "تعديل"} ${kind.add}", onDismiss) {

@@ -104,9 +104,14 @@ fun BranchesPage(
     var deliveryFeeText by remember { mutableStateOf(moneyText(profile.deliveryFee)) }
     var deliveryMinText by remember { mutableStateOf(moneyText(profile.deliveryMinOrder)) }
     var deliveryFreeText by remember { mutableStateOf(moneyText(profile.deliveryFreeOver)) }
+    // ✂️ التاجر يقص الغلاف والشعار بيده
+    var cropCover by remember { mutableStateOf<String?>(null) }
+    var cropLogo by remember { mutableStateOf<String?>(null) }
     val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) coverLocal = uri.toString()
+        if (uri != null) cropCover = uri.toString()
     }
+    cropCover?.let { src -> ImageCropDialog(src, aspect = 2f, title = "قص صورة الواجهة") { out -> if (out != null) coverLocal = out; cropCover = null } }
+    cropLogo?.let { src -> ImageCropDialog(src, aspect = 1f, round = true, title = "قص الشعار", outWidth = 600) { out -> if (out != null) logoLocal = out; cropLogo = null } }
     val menuPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(com.example.data.model.StoreProfile.MAX_MENU_IMAGES)
     ) { uris: List<Uri> ->
@@ -136,7 +141,7 @@ fun BranchesPage(
     var error by remember { mutableStateOf("") }
 
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) logoLocal = uri.toString()
+        if (uri != null) cropLogo = uri.toString()
     }
 
     val currentEditing = editing
