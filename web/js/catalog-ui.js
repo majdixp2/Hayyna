@@ -39,7 +39,8 @@ export function catalogPanelHtml(category) {
   const vis = M.items.filter((it) => itemVisible(it, M.passes, c, now)).length;
   const newOrders = M.orders.filter((o) => o.status === "sent").length;
   return `<div class="cat-card">
-    <div class="cc-top"><b>${KINDS[base].icon} ${KINDS[base].title}${base !== "menu" ? "" : ""}</b><small>${M.items.length ? `${M.items.length} صنف • ${vis} ظاهر للناس` : "أضف منتجاتك وخدماتك عشان يشوفها الزبون في صفحة متجرك"}</small></div>
+    ${M.items.some((x) => x.adminNote) ? `<div class="banner red" style="margin:0 0 8px">↩️ عندك ${M.items.filter((x) => x.adminNote).length} صنف يحتاج تعديل — افتح «إدارة منتجاتي»</div>` : ""}
+    <div class="cc-top"><b>${KINDS[base].icon} ${KINDS[base].title}</b><small>${M.items.length ? `${M.items.length} صنف • ${vis} ظاهر للناس` : "أضف منتجاتك وخدماتك عشان يشوفها الزبون في صفحة متجرك"}</small></div>
     <div class="cc-kinds">${kindOrder(base).map((k) => { const n = M.items.filter((x) => x.kind === k).length, lim = limitOf(c, k);
       return `<span style="background:${KINDS[k].bg};color:${KINDS[k].color}">${KINDS[k].icon} ${KINDS[k].label}: <b>${n}</b>${lim ? `/${lim}` : ""}</span>`; }).join("")}</div>
     <div class="row2"><button class="btn dir" id="ccManage">🛍️ إدارة منتجاتي</button>${c.orderEnabled ? `<button class="btn call" id="ccOrders">🧾 الطلبات${newOrders ? ` <span class="nb">${newOrders}</span>` : ""}</button>` : ""}</div>
@@ -62,6 +63,7 @@ function openManager() {
 }
 function statusOf(it, now) {
   const c = cat();
+  if (it.adminNote) return `<span class="pill urgent">↩️ يحتاج تعديل</span>`;
   if (!it.approved) return `<span class="pill">⏳ بانتظار المراجعة</span>`;
   if (it.available === false) return `<span class="pill closed">⛔ نفد</span>`;
   const lim = limitOf(c, it.kind);
@@ -88,7 +90,8 @@ function drawManager() {
     ${full ? `<small class="hint">وصلت للحد (${lim}). احذف صنف أو تواصل معنا لو تحتاج أكثر.</small>` : ""}
     <div class="ilist">${mine.length ? mine.map((it) => `<div class="irow${it.available === false ? " dim" : ""}" style="border-inline-start:4px solid ${K.color}">
         ${it.imageUrl ? `<img src="${esc(cld(it.imageUrl, 160))}" alt="">` : `<div class="iph" style="background:${K.bg}">${K.icon}</div>`}
-        <div class="ir-main"><b>${esc(it.name)}</b><div class="price">${fmt(it.price)} ر.س${it.section ? ` <small>• ${esc(it.section)}</small>` : ""}</div><div class="pills">${statusOf(it, now)}</div></div>
+        <div class="ir-main"><b>${esc(it.name)}</b><div class="price">${fmt(it.price)} ر.س${it.section ? ` <small>• ${esc(it.section)}</small>` : ""}</div><div class="pills">${statusOf(it, now)}</div>
+          ${it.adminNote ? `<div class="admin-note">📝 ${esc(it.adminNote)} — اضغط ✎ وعدّله</div>` : ""}</div>
         <div class="mr-act"><button class="av-tog${it.available === false ? " off" : ""}" data-av="${esc(it.id)}">${it.available === false ? "⛔ نفد" : "✓ متوفر"}</button><button class="icon-btn" data-ie="${esc(it.id)}">✎</button><button class="icon-btn" data-idel="${esc(it.id)}">🗑</button></div>
       </div>`).join("") : `<div class="empty-inline">ما أضفت ${K.label} للحين</div>`}</div>
   </div>`;
@@ -138,7 +141,7 @@ function itemForm(it, kind) {
       try {
         const url = f.file ? await uploadImage(f.file, 1000) : f.img;
         const data = { name: f.name.trim().slice(0, 80), price: Math.round(price * 100) / 100, desc: f.desc.trim().slice(0, 300), section: f.section.trim().slice(0, 40),
-          imageUrl: url || "", available: f.available, approved: direct(), updatedAt: serverTimestamp() };
+          imageUrl: url || "", available: f.available, approved: e?.adminNote ? false : direct(), adminNote: "", updatedAt: serverTimestamp() };
         if (e) await updateDoc(doc(db, "items", e.id), data);
         else {
           const used = new Set(M.items.filter((x) => x.kind === k).map((x) => x.slot));

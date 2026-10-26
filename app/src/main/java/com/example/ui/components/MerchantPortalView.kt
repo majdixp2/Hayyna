@@ -770,7 +770,10 @@ private fun MerchantOfferRow(
                     overflow = TextOverflow.Ellipsis,
                     color = if (expired) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                 )
-                if (offer.draft) Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFFF4E0)) {
+                if (offer.adminNote.isNotBlank()) Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFDE8E6)) {
+                    Text("↩️ يحتاج تعديل: ${offer.adminNote} — اضغط ✎", color = Color(0xFFB42318), fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                } else if (offer.draft) Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFFF4E0)) {
                     Text("📝 مسودة — بانتظار الرصيد", color = Color(0xFF8A5A00), fontSize = 11.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                 } else Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

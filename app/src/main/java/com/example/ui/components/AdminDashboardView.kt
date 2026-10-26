@@ -258,7 +258,7 @@ fun AdminDashboardView(
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             AdminStatCard("المشاهدات", "${offers.sumOf { it.viewsCount }}", Icons.Default.Visibility, CalmSagePrimary, Modifier.weight(1f))
-                            AdminStatCard("موثوقين", "${trusted.size}", Icons.Default.Star, Color(0xFFD97706), Modifier.weight(1f))
+                            AdminStatCard("⚡ ينشرون مباشرة", "${trusted.size}", Icons.Default.Star, Color(0xFFD97706), Modifier.weight(1f))
                             AdminStatCard("فيديوهات", "${offers.count { it.mediaType == MediaType.VIDEO }}", Icons.Default.Videocam, Color(0xFFE05A47), Modifier.weight(1f))
                         }
                     }
@@ -274,7 +274,7 @@ fun AdminDashboardView(
                             note = null,
                             primaryLabel = "اعتماد ✓",
                             onPrimary = { onApprove(o) },
-                            secondaryLabel = "اعتماد + توثيق التاجر",
+                            secondaryLabel = "اعتماد + ⚡ ينشر مباشرة",
                             onSecondary = { onTrustMerchant(o) },
                             onDelete = { onDeleteOffer(o.id) },
                             onSuspend = { confirmSuspend = o }
@@ -337,9 +337,9 @@ fun AdminDashboardView(
                     items(visiblePendingStores, key = { "st_" + it.uid }) { st ->
                         PendingStoreCard(st, onApprove = { onApproveStore(st) }, onSuspend = { onSuspendMerchant(st.uid, st.name) })
                     }
-                    item { SectionHeader("⭐ متاجر موثوقة (${trusted.size})") }
+                    item { SectionHeader("⚡ ينشرون مباشرة (${trusted.size})") }
                     if (trusted.isEmpty()) {
-                        item { Text("ما فيه متاجر موثوقة للحين", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        item { Text("ما فيه للحين", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                     items(trusted, key = { "t_" + it.uid }) { st ->
                         Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {

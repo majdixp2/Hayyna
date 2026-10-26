@@ -599,3 +599,4 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .rating-sum { margin: 8px 0 4px; } .rating-sum b { font-size: 16px; }
 .rv { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin: 6px 0; font-size: 13px; }
 .rv span { color: #F5B301; letter-spacing: 1px; } .rv p { margin: 3px 0 0; color: var(--muted); }
+.admin-note { background: #FDE8E6; color: #B42318; border-radius: 10px; padding: 6px 9px; font-size: 12px; font-weight: 700; margin-top: 5px; line-height: 1.6; }

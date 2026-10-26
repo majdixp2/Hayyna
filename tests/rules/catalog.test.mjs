@@ -48,6 +48,16 @@ await t("الزائر ما يشوف اللي بانتظار المراجعة", (
 await seed({ enabled: false });
 await t("الخدمة مطفية: الإضافة تُرفض", () => assertFails(putItem("m1", "menu", 0)));
 
+console.log("↩️ رجّعه للتاجر");
+await seed();
+await putItem("m1", "menu", 0);
+await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), "items/m1_menu_0"), { approved: false, adminNote: "📷 أعد رفع الصورة" }));
+await t("التاجر يعدّل ويمسح الملاحظة", () => assertSucceeds(updateDoc(doc(as("m1"), "items/m1_menu_0"), { name: "جديد", adminNote: "", approved: true, updatedAt: serverTimestamp() })));
+await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), "items/m1_menu_0"), { approved: false, adminNote: "📷 أعد رفع الصورة" }));
+await t("التاجر ما يعتمد منتجه والملاحظة باقية", () => assertFails(updateDoc(doc(as("m1"), "items/m1_menu_0"), { approved: true, updatedAt: serverTimestamp() })));
+await t("تبديل «نفد» والملاحظة باقية والمنتج مخفي", () => assertSucceeds(updateDoc(doc(as("m1"), "items/m1_menu_0"), { available: false, updatedAt: serverTimestamp() })));
+await t("التاجر ما يكتب ملاحظة أدمن بنفسه", () => assertFails(updateDoc(doc(as("m1"), "items/m1_menu_0"), { adminNote: "تمام", approved: false, updatedAt: serverTimestamp() })));
+
 console.log("ظهور المنتجات المدفوع");
 await seed();
 await t("3 منيو × 7 أيام × نص ريال = 11 نقطة", () => assertSucceeds(buy(as("m1"), { cost: 11, bal: 89 })));

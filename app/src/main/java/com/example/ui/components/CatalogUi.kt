@@ -378,6 +378,7 @@ fun MerchantCatalogCard(vm: MerchantViewModel, category: String, balance: Long) 
     val newOrders = orders.count { it.status == "sent" }
     Surface(shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (items.any { it.adminNote.isNotBlank() }) Text("↩️ عندك ${items.count { it.adminNote.isNotBlank() }} صنف يحتاج تعديل — افتح «إدارة منتجاتي»", color = Color(0xFFB42318), fontWeight = FontWeight.Bold, fontSize = 13.sp)
             Text("${base.icon} ${base.title}", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
             Text(if (items.isEmpty()) "أضف منتجاتك وخدماتك عشان يشوفها الزبون في صفحة متجرك" else "${items.size} صنف • ${items.count { cfg.visible(it, passes, now) }} ظاهر للناس", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -437,6 +438,7 @@ private fun CatalogManagerDialog(vm: MerchantViewModel, base: ItemKind, balance:
             mine.forEach { it ->
                 val paid = cfg.paidUntil(it, passes, now); val g = cfg.grace(it)
                 val status = when {
+                    it.adminNote.isNotBlank() -> "↩️ يحتاج تعديل: ${it.adminNote} — اضغط ✎"
                     !it.approved -> "⏳ بانتظار المراجعة"
                     !it.available -> "⛔ نفد"
                     lim > 0 && it.slot >= lim -> "مخفي (فوق الحد)"
@@ -455,7 +457,7 @@ private fun CatalogManagerDialog(vm: MerchantViewModel, base: ItemKind, balance:
                         Column(Modifier.weight(1f)) {
                             Text(it.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("${money(it.price)} ر.س" + if (it.section.isNotBlank()) " • ${it.section}" else "", fontSize = 12.sp, color = kind.color, fontWeight = FontWeight.Bold)
-                            Text(status, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(status, fontSize = 11.sp, color = if (it.adminNote.isNotBlank()) Color(0xFFB42318) else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (it.adminNote.isNotBlank()) FontWeight.Bold else FontWeight.Normal)
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             TextButton(onClick = { vm.toggleItemAvailable(it) }, contentPadding = PaddingValues(4.dp)) { Text(if (it.available) "✓ متوفر" else "⛔ نفد", fontSize = 11.sp) }

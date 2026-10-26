@@ -726,6 +726,7 @@ class RestaurantOfferRepository(
             "postType" to (if (postType == "new") "new" else "offer"),
             "exclusive" to exclusive,
             "draft" to draft,
+            "adminNote" to adminNote,
             "tags" to tags.take(12),
             "delivery" to delivery,
             "deliveryFee" to deliveryFee,
@@ -829,7 +830,7 @@ class RestaurantOfferRepository(
         id = d.id, merchantId = d.getString("merchantId").orEmpty(), kind = d.getString("kind") ?: "product",
         slot = (d.getLong("slot") ?: 0L).toInt(), name = d.getString("name").orEmpty(), desc = d.getString("desc").orEmpty(),
         price = d.getDouble("price") ?: 0.0, imageUrl = d.getString("imageUrl").orEmpty(), section = d.getString("section").orEmpty(),
-        available = d.getBoolean("available") ?: true, approved = d.getBoolean("approved") ?: false,
+        available = d.getBoolean("available") ?: true, approved = d.getBoolean("approved") ?: false, adminNote = d.getString("adminNote").orEmpty(),
         createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L
     )
     @Suppress("UNCHECKED_CAST")
@@ -853,11 +854,12 @@ class RestaurantOfferRepository(
         val l = db.collection("itemPasses").whereEqualTo("merchantId", uid).addSnapshotListener { s, _ -> trySend(s?.documents.orEmpty().map { parsePass(it) }) }
         awaitClose { l.remove() }
     }
-    suspend fun saveItem(it: com.example.data.model.CatalogItem, isNew: Boolean) {
+    suspend fun saveItem(it: com.example.data.model.CatalogItem, isNew: Boolean, clearNote: Boolean = true) {
         val data = hashMapOf<String, Any?>(
             "name" to it.name.take(80), "price" to it.price, "desc" to it.desc.take(300), "section" to it.section.take(40),
             "imageUrl" to it.imageUrl, "available" to it.available, "approved" to it.approved, "updatedAt" to FieldValue.serverTimestamp()
         )
+        if (clearNote) data["adminNote"] = "" // التعديل يمسح ملاحظة الأدمن
         val ref = db.collection("items").document(it.id)
         if (isNew) ref.set(data + mapOf("id" to it.id, "merchantId" to it.merchantId, "kind" to it.kind, "slot" to it.slot.toLong(), "createdAt" to FieldValue.serverTimestamp())).await()
         else ref.update(data).await()

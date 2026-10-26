@@ -64,6 +64,7 @@ service cloud.firestore {
         && (!('postType' in data) || data.postType in ['offer', 'new'])
         && (!('exclusive' in data) || data.exclusive is bool)
         && (!('draft' in data) || data.draft is bool)
+        && (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 300))
         && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12))
         && (!('delivery' in data) || data.delivery is bool)
         && (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5))
@@ -371,7 +372,9 @@ service cloud.firestore {
         && get(statusPath(uid)).data.get('suspended', false) != true;
     }
     function itemOk(uid, itemId, d) {
-      return d.keys().hasOnly(['id', 'merchantId', 'kind', 'slot', 'name', 'desc', 'price', 'imageUrl', 'section', 'available', 'approved', 'createdAt', 'updatedAt'])
+      return d.keys().hasOnly(['id', 'merchantId', 'kind', 'slot', 'name', 'desc', 'price', 'imageUrl', 'section', 'available', 'approved', 'adminNote', 'createdAt', 'updatedAt'])
+        // ملاحظة الأدمن («↩️ رجّعه للتاجر»): التاجر يمسحها لما يعدّل، أو تبقى والمنتج مخفي
+        && (d.get('adminNote', '') == '' || (resource != null && d.adminNote == resource.data.get('adminNote', '') && d.approved == false))
         && catalogCfg().get('enabled', false) == true
         && !isSuspended(uid)
         && d.id == itemId && d.merchantId == uid
@@ -584,6 +587,9 @@ service cloud.firestore {
         (isAuthenticated()
           && resource.data.merchantId == request.auth.uid
           && keepsProtectedFields()
+          // ملاحظة الأدمن: تنمسح لما التاجر يعدّل عرضه، أو تبقى والعرض مخفي
+          && (request.resource.data.get('adminNote', '') == ''
+              || (request.resource.data.adminNote == resource.data.get('adminNote', '') && request.resource.data.get('isApproved', false) == false))
           // لما مكافأة الحصري شغّالة: التاجر ما يشيل الحصري بعد النشر (الأدمن بس)
           && (resource.data.get('exclusive', false) != true || request.resource.data.get('exclusive', false) == true || !exclRewardOn())
           && !isSuspended(request.auth.uid)

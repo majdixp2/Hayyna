@@ -701,7 +701,8 @@ class MerchantViewModel(
             try {
                 val url = if (image.isNotBlank() && !image.startsWith("http")) MediaUploader.uploadOfferMedia(getApplication(), image, false) else image
                 val cfg = catalogConfig.value
-                val item = if (old != null) old.copy(name = name.trim(), price = price, desc = desc.trim(), section = section.trim(), available = available, imageUrl = url, approved = catalogDirect)
+                // المرجّع من الأدمن يرجع للمراجعة بعد التعديل
+                val item = if (old != null) old.copy(name = name.trim(), price = price, desc = desc.trim(), section = section.trim(), available = available, imageUrl = url, approved = old.adminNote.isBlank() && catalogDirect)
                 else {
                     val used = myItems.value.filter { it.kind == kind }.map { it.slot }.toSet()
                     var n = 0; while (n in used) n++
@@ -717,7 +718,7 @@ class MerchantViewModel(
         }
     }
     fun toggleItemAvailable(it: com.example.data.model.CatalogItem) = launchSafely("تعذّر التحديث") {
-        repository.saveItem(it.copy(available = !it.available, approved = it.approved && catalogDirect), isNew = false)
+        repository.saveItem(it.copy(available = !it.available, approved = it.approved && catalogDirect), isNew = false, clearNote = false)
     }
     fun deleteCatalogItem(id: String) = launchSafely("تعذّر الحذف") { repository.deleteItem(id); toast("انحذف") }
 
@@ -1320,7 +1321,7 @@ class MerchantViewModel(
                 } else if (isUpdate) {
                     // تعديل التاجر غير الموثوق يرجّع العرض للمراجعة
                     repository.updateOffer(
-                        offer.copy(mediaUri = cloudUrl, mediaUris = uploaded, isApproved = if (direct) offer.isApproved else false)
+                        offer.copy(mediaUri = cloudUrl, mediaUris = uploaded, isApproved = if (direct && offer.adminNote.isBlank()) offer.isApproved else false, adminNote = "") // التعديل يمسح ملاحظة الأدمن
                     )
                 } else {
                     repository.insertOffer(fresh)
@@ -1494,7 +1495,7 @@ class MerchantViewModel(
                     com.example.data.repository.MerchantStatus(offer.merchantId, trusted = true, name = offer.restaurantName)
                 )
                 runCatching { repository.setStoreApproved(offer.merchantId, true) }
-                toast("تم الاعتماد ✅ وصار ${offer.restaurantName} موثوق (ينشر مباشرة)")
+                toast("تم الاعتماد ✅ وصار ${offer.restaurantName} ⚡ ينشر مباشرة")
             } else {
                 toast("تم اعتماد العرض ✅")
             }
@@ -1511,7 +1512,7 @@ class MerchantViewModel(
             )
             repository.setOfferApproved(offer.id, true)
             runCatching { repository.setStoreApproved(offer.merchantId, true) }
-            toast("صار ${offer.restaurantName} موثوق ✅")
+            toast("صار ${offer.restaurantName} ⚡ ينشر مباشرة ✅")
             auditOffer("اعتماد عرض + توثيق التاجر", offer, offer.id)
         }
     }

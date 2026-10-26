@@ -68,6 +68,8 @@ data class RestaurantOffer(
     val exclusive: Boolean = false,
     // 📝 مسودة: محفوظة بس ما تظهر للناس (لين ينشرها التاجر برصيده)
     val draft: Boolean = false,
+    // «↩️ رجّعه للتاجر»: سبب من الأدمن (العرض مخفي لين يعدّله)
+    val adminNote: String = "",
     // 🚀 مُبرز (يُحسب من الخدمات المدفوعة النشطة، ما يُحفظ في العرض)
     @get:com.google.firebase.firestore.Exclude
     val spotlight: Boolean = false,

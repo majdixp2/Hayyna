@@ -24,7 +24,9 @@ enum class ItemKind(val id: String, val label: String, val icon: String, val tit
 data class CatalogItem(
     val id: String = "", val merchantId: String = "", val kind: String = "product", val slot: Int = 0,
     val name: String = "", val desc: String = "", val price: Double = 0.0, val imageUrl: String = "", val section: String = "",
-    val available: Boolean = true, val approved: Boolean = false, val createdAtMillis: Long = 0L
+    val available: Boolean = true, val approved: Boolean = false, val createdAtMillis: Long = 0L,
+    // «↩️ رجّعه للتاجر»: سبب من الأدمن (المنتج مخفي لين يعدّله)
+    val adminNote: String = ""
 )
 
 data class ItemPass(val merchantId: String, val scope: String, val kind: String, val itemIds: List<String>, val startsAt: Long, val endsAt: Long)

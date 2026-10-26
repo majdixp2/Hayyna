@@ -21,7 +21,7 @@ const state = {
   offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [], referrals: [], names: {}, wallets: [], codes: null, itemsDraft: null, packsDraft: null,
   me: null, staff: [], log: [], logArea: "الكل", logQuery: "", logActor: "الكل", verifHist: [],
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
-  items: [], passes: [], orders: [], itemQuery: "", itemFilter: "الكل",
+  items: [], passes: [], orders: [], itemQuery: "", itemFilter: "الكل", storesAll: [], storeQuery: "", storeFilter: "الكل",
 };
 const unsubs = [];
 const $ = (id) => document.getElementById(id);
@@ -100,6 +100,7 @@ function listen() {
   if (canStores()) {
     sub(collection(db, "merchantStatus"), (sn) => { state.statuses = parse(sn).map((x) => ({ ...x, uid: x.id })); });
     sub(query(collection(db, "stores"), where("approved", "==", false)), (sn) => { state.pendingStores = parse(sn).map((x) => ({ ...x, uid: x.id })); });
+    sub(collection(db, "stores"), (sn) => { state.storesAll = parse(sn).map((x) => ({ ...x, uid: x.id })); });
   }
   if (can("messages")) sub(query(collection(db, "feedback"), orderBy("createdAt", "desc"), limit(300)), (sn) => { state.feedback = parse(sn); });
   if (can("merchants")) {
@@ -172,14 +173,14 @@ const actions = {
     if (count >= 2 && !cur?.trusted && !cur?.suspended) {
       await setStatus(o.merchantId, { trusted: true, suspended: false, name: o.restaurantName });
       await setStoreApproved(o.merchantId, true);
-      toast(`تم الاعتماد ✅ وصار ${o.restaurantName} موثوق`);
+      toast(`تم الاعتماد ✅ وصار ${o.restaurantName} ⚡ ينشر مباشرة`);
     } else toast("تم اعتماد العرض ✅");
   },
   async trust(o) {
     await setStatus(o.merchantId, { trusted: true, suspended: false, name: o.restaurantName });
     await updateDoc(doc(db, "offers", o.id), { isApproved: true });
     await setStoreApproved(o.merchantId, true);
-    toast(`صار ${o.restaurantName} موثوق ✅`);
+    toast(`صار ${o.restaurantName} ⚡ ينشر مباشرة ✅`);
   },
   async suspend(uid, name) {
     if (!confirm(`إيقاف ${name}؟ بتختفي كل عروضه وما يقدر ينشر.`)) return false;
@@ -220,7 +221,7 @@ const actions = {
 // ---------------- الواجهة ----------------
 function computed() {
   const suspendedIds = new Set(state.statuses.filter((s) => s.suspended).map((s) => s.uid));
-  const pending = state.offers.filter((o) => !o.isApproved && !o.draft && !suspendedIds.has(o.merchantId)); // المسودة تنراجع لما ينشرها التاجر
+  const pending = state.offers.filter((o) => !o.isApproved && !o.draft && !o.adminNote && !suspendedIds.has(o.merchantId)); // المسودة تنراجع لما ينشرها التاجر
   const hidden = state.offers.filter((o) => o.isApproved && (o.reportsCount || 0) >= AUTO_HIDE_REPORTS);
   const hiddenIds = new Set(hidden.map((o) => o.id));
   const otherReports = {};
@@ -244,7 +245,7 @@ function tabAllowed(k) {
 function render() {
   if ($("app").classList.contains("hidden")) return;
   const c = computed();
-  const badges = { catalog: state.items.filter((x) => !x.approved && !x.hidden).length, review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs, refs: c.refAwards };
+  const badges = { catalog: state.items.filter((x) => !x.approved && !x.adminNote).length, review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs, refs: c.refAwards };
   if (!tabAllowed(state.tab)) state.tab = "home";
   $("tabs").innerHTML = TABS.filter(([k]) => tabAllowed(k)).map(([k, t]) =>
     `<button class="tab ${state.tab === k ? "active" : ""}" data-tab="${k}">${t}${badges[k] ? `<span class="badge">${badges[k]}</span>` : ""}</button>`
@@ -301,7 +302,7 @@ function home(c) {
       ${stat("المشاهدات", state.offers.reduce((a, o) => a + (o.viewsCount || 0), 0))}
       ${stat("طلبوا الاتجاه", state.offers.reduce((a, o) => a + (o.directionsCount || 0), 0))}
       ${stat("تواصلوا واتساب", state.offers.reduce((a, o) => a + (o.whatsappCount || 0), 0))}
-      ${stat("موثوقين", state.statuses.filter((s) => s.trusted && !s.suspended).length)}
+      ${stat("⚡ ينشرون مباشرة", state.statuses.filter((s) => s.trusted && !s.suspended).length)}
     </div>`;
 }
 
@@ -310,7 +311,8 @@ function review(c) {
   return `<h2>${c.pending.length ? `⏳ عروض جديدة تنتظر المراجعة (${c.pending.length})` : "عروض جديدة: لا يوجد ✅"}</h2>
     <div class="grid">${c.pending.map((o) => offerCard(o, "",
       `<button class="btn primary" data-act="approve" data-id="${o.id}">اعتماد ✓</button>
-       <button class="btn" data-act="trust" data-id="${o.id}">اعتماد + توثيق التاجر</button>
+       <button class="btn" data-act="trust" data-id="${o.id}">اعتماد + ⚡ ينشر مباشرة</button>
+       <button class="btn" data-ret="offer" data-id="${o.id}">↩️ رجّعه للتاجر</button>
        <button class="btn danger" data-act="deleteOffer" data-id="${o.id}">حذف</button>
        <button class="btn danger" data-act="suspendOffer" data-id="${o.id}">⛔ إيقاف التاجر</button>`)).join("")}</div>
     <h2>${c.hidden.length ? `🚩 مخفية بسبب البلاغات (${c.hidden.length})` : "مخفية بسبب البلاغات: لا يوجد ✅"}</h2>
@@ -351,10 +353,11 @@ function stores(c) {
       <div class="actions">${[s.coverUrl, ...(s.menuImages || [])].filter(Boolean).map((u) => `<img class="thumb small" src="${esc(img(u, 200))}" data-view="${esc(u)}">`).join("")}</div>
       <div class="actions"><button class="btn primary" data-act="approveStore" data-id="${s.uid}">اعتماد الصفحة ✓</button>
         <button class="btn danger" data-act="suspendUid" data-id="${s.uid}" data-name="${esc(s.name)}">⛔ إيقاف التاجر</button></div></div>`).join("")}</div>
-    <h2>⭐ متاجر موثوقة (${trusted.length})</h2>
+    ${allStoresHtml()}
+    <h2>⚡ ينشرون مباشرة بدون مراجعة (${trusted.length})</h2>
     ${trusted.length ? `<div class="grid">${trusted.map((s) => `<div class="card row" style="align-items:center;justify-content:space-between">
-      <b>${esc(s.name || s.uid.slice(0, 8))}</b><span><button class="btn" data-act="untrust" data-id="${s.uid}">إلغاء التوثيق</button>
-      <button class="btn danger" data-act="suspendUid" data-id="${s.uid}" data-name="${esc(s.name)}">إيقاف</button></span></div>`).join("")}</div>` : `<p class="muted">ما فيه متاجر موثوقة للحين</p>`}
+      <b>${esc(s.name || s.uid.slice(0, 8))}</b><span><button class="btn" data-act="untrust" data-id="${s.uid}">إلغاء «ينشر مباشرة»</button>
+      <button class="btn danger" data-act="suspendUid" data-id="${s.uid}" data-name="${esc(s.name)}">إيقاف</button></span></div>`).join("")}</div>` : `<p class="muted">ما فيه للحين</p>`}
     <h2>📍 محلات غير مسجّلة يطلبها العملاء</h2>
     <p class="muted">من نقاط خرائط Google: 👆 ضغطات • 📣 دعوات • 🏪 "أنا صاحب المحل"</p>
     ${state.poi.length ? `<div class="grid">${state.poi.map((p) => `<a class="card row" style="justify-content:space-between;text-decoration:none;color:inherit" target="_blank" rel="noopener"
@@ -391,7 +394,6 @@ function describe(act, id, b, o) {
   const fbT = f ? { type: "message", id, name: `${f.type} — ${f.userName || f.contact || "زائر"}` } : { type: "message", id };
   const D = {
     approve: () => ["اعتماد عرض", "review", offerT(o)],
-    trust: () => ["اعتماد عرض + توثيق التاجر", "review", offerT(o)],
     deleteOffer: () => ["حذف عرض", "review", offerT(o), o ? `السعر: ${o.price || 0} • الحي: ${o.district || ""}` : ""],
     suspendOffer: () => ["إيقاف تاجر", "merchants", uidT(o?.merchantId, o?.restaurantName), "من مراجعة عرض: " + (o?.offerTitle || "")],
     suspendUid: () => ["إيقاف تاجر", "merchants", uidT(id, b.dataset.name)],
@@ -404,6 +406,7 @@ function describe(act, id, b, o) {
     feature: () => ["تبديل تمييز عرض", "review", offerT(o), o ? (o.isFeatured ? "أُلغي التمييز" : "صار مميّز ⭐") : ""],
     toggleApproved: () => ["تبديل حالة عرض", "review", offerT(o), o ? (o.isApproved ? "أُوقف" : "تفعّل") : ""],
     unexcl: () => ["شيل الحصري عن عرض", "review", offerT(o), "العرض مو حصري فعلاً — انشالت الشارة (بدون خصم من الرصيد)"],
+    trust: () => ["اعتماد عرض + ⚡ ينشر مباشرة", "review", offerT(o)],
     reply: () => ["رد على رسالة", "messages", fbT, ($("reply_" + id)?.value || "").slice(0, 600)],
     progress: () => ["رسالة قيد المتابعة", "messages", fbT],
     done: () => ["إنهاء رسالة", "messages", fbT],
@@ -605,9 +608,10 @@ function offers() {
     <div class="grid">${list.map((o) => offerCard(o,
       `<div style="margin-top:6px"><span class="pill ${o.isApproved ? "" : "off"}">${o.isApproved ? "نشط" : "معلق"}</span>
        ${isExpired(o) ? `<span class="pill off">منتهي</span>` : ""} ${o.isFeatured ? `<span class="pill">مميز ⭐</span>` : ""}
-       ${o.exclusive ? `<span class="pill" style="background:#EDE4FF;color:#6D28D9">💎 حصري</span>` : ""} ${o.draft ? `<span class="pill off">📝 مسودة (بانتظار رصيد التاجر)</span>` : ""}</div>`,
+       ${o.exclusive ? `<span class="pill" style="background:#EDE4FF;color:#6D28D9">💎 حصري</span>` : ""} ${o.adminNote ? `<div class="note">↩️ مرجّع للتاجر: ${esc(o.adminNote)}</div>` : ""} ${o.draft ? `<span class="pill off">📝 مسودة (بانتظار رصيد التاجر)</span>` : ""}</div>`,
       `<button class="btn" data-act="feature" data-id="${o.id}">${o.isFeatured ? "إلغاء التمييز" : "⭐ تمييز"}</button>
        <button class="btn" data-act="toggleApproved" data-id="${o.id}">${o.isApproved ? "إيقاف" : "تفعيل"}</button>
+       ${o.adminNote ? "" : `<button class="btn" data-ret="offer" data-id="${o.id}">↩️ رجّعه</button>`}
        ${o.exclusive ? `<button class="btn" data-act="unexcl" data-id="${o.id}" title="لو العرض مو حصري فعلاً">💎 شيل الحصري</button>` : ""}
        <button class="btn danger" data-act="deleteOffer" data-id="${o.id}">حذف</button>`)).join("")}</div>`;
 }
@@ -618,22 +622,92 @@ function catDraft() {
   if (!state.catDraft) state.catDraft = ((state.config.categories && state.config.categories.length) ? state.config.categories : DEFAULT_CATS).map((c) => ({ orig: c, name: c, type: baseKindOf(state.config, c) }));
   return state.catDraft;
 }
+// =================== 🏪 كل المتاجر ===================
+function allStoresHtml() {
+  const st = (uid) => statusOf(uid) || {};
+  const q = state.storeQuery.trim().toLowerCase();
+  const F = {
+    "الكل": () => true,
+    "✔ موثّق": (s) => s.verified || st(s.uid).verified,
+    "غير موثّق": (s) => !(s.verified || st(s.uid).verified),
+    "⚡ ينشر مباشرة": (s) => st(s.uid).trusted && !st(s.uid).suspended,
+    "بانتظار الموافقة": (s) => !s.approved,
+    "⛔ موقوف": (s) => st(s.uid).suspended,
+  };
+  const list = state.storesAll.filter((s) => (F[state.storeFilter] || F["الكل"])(s)
+    && (!q || [s.name, s.category, s.phone, ...(s.branches || []).map((b) => b.district)].some((v) => String(v || "").toLowerCase().includes(q))))
+    .sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+  const wa = (p) => String(p || "").replace(/\D/g, "").replace(/^05/, "9665").replace(/^5(\d{8})$/, "9665$1");
+  return `<h2>🏪 كل المتاجر (${state.storesAll.length})</h2>
+    <input type="text" id="storeQuery" placeholder="ابحث بالاسم أو التصنيف أو الجوال أو الحي…" value="${esc(state.storeQuery)}">
+    <div class="chips">${Object.keys(F).map((k) => `<button class="chip ${state.storeFilter === k ? "on" : ""}" data-sfilter="${esc(k)}">${esc(k)} (${state.storesAll.filter(F[k]).length})</button>`).join("")}</div>
+    <div class="grid">${list.slice(0, 150).map((s) => { const t = st(s.uid), offers = state.offers.filter((o) => o.merchantId === s.uid).length, items = state.items.filter((i) => i.merchantId === s.uid).length;
+      return `<div class="card"><div class="row" style="align-items:center;gap:10px">
+        ${s.logoUrl ? `<img class="thumb small" src="${esc(img(s.logoUrl, 150))}" style="border-radius:50%">` : `<div class="thumb small" style="display:flex;align-items:center;justify-content:center;border-radius:50%">🏪</div>`}
+        <div style="flex:1;min-width:0"><div class="name">${esc(s.name || "—")}</div>
+          <div class="muted">${esc(s.category || "")}${s.phone ? " • " + esc(s.phone) : ""}${(s.branches || []).length ? ` • ${(s.branches || []).length} فرع` : ""}</div>
+          <div style="margin-top:4px">${s.verified || t.verified ? `<span class="pill">✔ موثّق</span>` : `<span class="pill off">غير موثّق</span>`}
+            ${t.trusted && !t.suspended ? `<span class="pill">⚡ ينشر مباشرة</span>` : ""} ${!s.approved ? `<span class="pill off">⏳ صفحته بانتظار الموافقة</span>` : ""} ${t.suspended ? `<span class="pill off">⛔ موقوف</span>` : ""}
+            <span class="muted">🔥 ${offers} عرض • 🛍️ ${items} منتج</span></div></div></div>
+        <div class="actions"><a class="btn" href="/s/${encodeURIComponent(s.uid)}" target="_blank" rel="noopener">👀 صفحته</a>
+          ${s.phone ? `<a class="btn" href="https://wa.me/${wa(s.phone)}" target="_blank" rel="noopener">💬 واتساب</a>` : ""}
+          ${!s.approved ? `<button class="btn primary" data-act="approveStore" data-id="${s.uid}">اعتماد الصفحة</button>` : ""}
+          ${t.suspended ? `<button class="btn" data-act="unsuspend" data-id="${s.uid}">إلغاء الإيقاف</button>` : `<button class="btn danger" data-act="suspendUid" data-id="${s.uid}" data-name="${esc(s.name)}">⛔ إيقاف</button>`}</div></div>`; }).join("")}</div>
+    ${list.length > 150 ? `<p class="muted">يعرض أول 150 — استخدم البحث</p>` : ""}`;
+}
+
+// =================== ↩️ رجّعه للتاجر (مع السبب) ===================
+const RETURN_REASONS = ["📷 أعد رفع الصورة (غير واضحة أو ناقصة)", "💰 السعر غير واضح أو غير صحيح", "✏️ الاسم أو العنوان غير مناسب", "📝 الوصف ناقص", "🏷️ التصنيف غير صحيح"];
+function returnToMerchant(type, id) {
+  const isItem = type === "item";
+  const x = isItem ? state.items.find((i) => i.id === id) : state.offers.find((o) => o.id === id);
+  if (!x) return;
+  const title = isItem ? x.name : x.offerTitle, uid = x.merchantId;
+  const store = (state.storesAll || []).find((s) => s.uid === uid);
+  const phone = String((isItem ? store?.phone : x.phone) || store?.phone || "").replace(/\D/g, "").replace(/^05/, "9665").replace(/^5(\d{8})$/, "9665$1");
+  const box = document.createElement("div");
+  box.className = "modal";
+  box.innerHTML = `<div class="modal-card"><h3>↩️ رجّعه للتاجر</h3><p class="muted">«${esc(title)}» يبقى مخفي، والتاجر يشوف السبب ويعدّل، وبعدها يرجع لك للمراجعة.</p>
+    <div class="chips">${RETURN_REASONS.map((r, i) => `<button class="chip" data-r="${i}">${esc(r)}</button>`).join("")}</div>
+    <textarea id="retText" rows="3" maxlength="300" placeholder="السبب (يظهر للتاجر)"></textarea>
+    ${phone ? `<label class="switch"><input type="checkbox" id="retWa" checked> أرسل له الملاحظة على واتساب بعد</label>` : ""}
+    <div class="actions"><button class="btn primary" id="retGo">رجّعه</button><button class="btn" id="retNo">إلغاء</button></div></div>`;
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  box.querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => { $("retText").value = RETURN_REASONS[+b.dataset.r]; }));
+  $("retNo").onclick = close; box.onclick = (e) => { if (e.target === box) close(); };
+  $("retGo").onclick = () => {
+    const note = $("retText").value.trim().slice(0, 300);
+    if (!note) { toast("اكتب السبب أو اختر واحد"); return; }
+    const wa = $("retWa")?.checked;
+    const w = wa ? window.open("", "_blank") : null;
+    run(async () => {
+      await updateDoc(doc(db, isItem ? "items" : "offers", id), isItem ? { approved: false, adminNote: note } : { isApproved: false, adminNote: note });
+      await audit(isItem ? "إرجاع منتج للتاجر" : "إرجاع عرض للتاجر", isItem ? "catalog" : "review", isItem ? { type: "item", id, name: title } : offerT(x), note);
+      close();
+      const msg = `السلام عليكم 👋 من فريق حيّنا\nبخصوص ${isItem ? "منتجك" : "عرضك"} «${title}»:\n${note}\n\nعدّله من «حسابي» في حيّنا، وبنراجعه مرة ثانية على طول 🌿`;
+      if (w) w.location = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    }, "رجّعناه للتاجر ✅", "رجّعه للتاجر");
+  };
+}
+
 // =================== 🛍️ المنتجات والخدمات والمنيو ===================
 const DAYMS = 864e5;
 function catalogPage() {
   const cfg = state.config, cat = catalogOf(cfg), vat = vatOf(cfg), owner = !!state.me.owner, now = Date.now();
-  const pending = state.items.filter((x) => !x.approved);
+  const pending = state.items.filter((x) => !x.approved && !x.adminNote);
   const storeName = (uid) => nameOfUid(uid);
   const kindChip = (k) => `<span class="pill" style="background:${KINDS[k]?.bg};color:${KINDS[k]?.color}">${KINDS[k]?.icon} ${KINDS[k]?.label}</span>`;
   const itemCard = (x, buttons) => `<div class="card"><div class="row" style="align-items:center;gap:10px">
       ${x.imageUrl ? `<img class="thumb" src="${esc(img(x.imageUrl, 160))}" data-view="${esc(x.imageUrl)}" alt="">` : `<div class="thumb" style="display:flex;align-items:center;justify-content:center;font-size:28px">${KINDS[x.kind]?.icon || "🛍️"}</div>`}
       <div style="flex:1;min-width:0"><b>${esc(x.name)}</b> ${kindChip(x.kind)} ${x.available === false ? `<span class="pill off">نفد</span>` : ""}
         <div class="muted">${esc(storeName(x.merchantId))} • ${esc(x.price)} ر.س${x.section ? " • " + esc(x.section) : ""}</div>
-        ${x.desc ? `<div class="muted">${esc(x.desc).slice(0, 160)}</div>` : ""}</div></div>
+        ${x.desc ? `<div class="muted">${esc(x.desc).slice(0, 160)}</div>` : ""}
+        ${x.adminNote ? `<div class="note">↩️ ${esc(x.adminNote)}</div>` : ""}</div></div>
       <div class="actions">${buttons}</div></div>`;
   // فلترة كل المنتجات
   const q = state.itemQuery.trim().toLowerCase();
-  const status = (x) => !x.approved ? "بانتظار المراجعة" : x.available === false ? "نفد" : !itemPaidUp(x, state.passes, cat, now) ? "غير مدفوع" : "ظاهر";
+  const status = (x) => x.adminNote ? "↩️ مرجّعة للتاجر" : !x.approved ? "بانتظار المراجعة" : x.available === false ? "نفد" : !itemPaidUp(x, state.passes, cat, now) ? "غير مدفوع" : "ظاهر";
   const all = state.items.filter((x) => (!q || [x.name, storeName(x.merchantId), x.section].some((v) => String(v || "").toLowerCase().includes(q)))
     && (state.itemFilter === "الكل" || status(x) === state.itemFilter || (KINDS[state.itemFilter.split(" ")[1]] && x.kind === state.itemFilter.split(" ")[1])))
     .sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
@@ -655,7 +729,7 @@ function catalogPage() {
       <label class="switch"><input type="checkbox" data-catcfg="enabled" ${cat.enabled ? "checked" : ""}> <b>تشغيل الخدمة</b></label>
       <p class="muted">${cat.enabled ? "✅ شغّالة: التاجر يضيف منتجاته، وتظهر للزبون في صفحة المتجر." : "⛔ مطفية: ما يظهر شي عند التاجر ولا الزبون، والأمور مثل قبل. البيانات محفوظة وترجع لما تشغّلها."}</p>
       <label class="switch"><input type="checkbox" data-catcfg="orderEnabled" ${cat.orderEnabled ? "checked" : ""}> 🧾 الطلب عبر واتساب (السلة + ملخص الطلب)</label>
-      <label class="switch"><input type="checkbox" data-catcfg="review" ${cat.review ? "checked" : ""}> ⏳ منتجات التاجر الجديد تنراجع قبل ما تظهر (الموثّق ✔ والموثوق تنزل مباشرة)</label>
+      <label class="switch"><input type="checkbox" data-catcfg="review" ${cat.review ? "checked" : ""}> ⏳ منتجات التاجر الجديد تنراجع قبل ما تظهر (الموثّق ✔ واللي ⚡ ينشر مباشرة تنزل على طول)</label>
       <h3 style="margin:14px 0 6px">الحد الأقصى لكل تاجر</h3>
       <div class="row" style="flex-wrap:wrap;gap:14px">${KIND_IDS.map((k) => `<div class="row" style="align-items:center;gap:6px">${KINDS[k].icon} ${KINDS[k].label}
         <input type="number" id="ctl_${k}" min="1" max="999" value="${limitOf(cat, k) || ""}" ${limitOf(cat, k) ? "" : "disabled"} style="width:80px">
@@ -686,14 +760,15 @@ function catalogPage() {
     </div>` : "") + `
 
     <h2 id="ct-review">⏳ بانتظار المراجعة (${pending.length})</h2>
-    ${pending.length ? `<div class="grid">${pending.map((x) => itemCard(x, `<button class="btn primary" data-cact="itApprove" data-id="${esc(x.id)}">اعتماد</button><button class="btn danger" data-cact="itDelete" data-id="${esc(x.id)}">حذف</button>`)).join("")}</div>` : `<p class="muted">لا يوجد ✅</p>`}
+    ${pending.length ? `<div class="grid">${pending.map((x) => itemCard(x, `<button class="btn primary" data-cact="itApprove" data-id="${esc(x.id)}">اعتماد</button><button class="btn" data-ret="item" data-id="${esc(x.id)}">↩️ رجّعه للتاجر</button><button class="btn danger" data-cact="itDelete" data-id="${esc(x.id)}">حذف</button>`)).join("")}</div>` : `<p class="muted">لا يوجد ✅</p>`}
 
     <h2 id="ct-all">📋 كل المنتجات (${state.items.length})</h2>
     <input type="text" id="itemQuery" placeholder="ابحث باسم المنتج أو المحل…" value="${esc(state.itemQuery)}">
-    <div class="chips">${["الكل", "ظاهر", "بانتظار المراجعة", "غير مدفوع", "نفد", ...KIND_IDS.map((k) => `${KINDS[k].icon} ${k}`)].map((t) => `<button class="chip ${state.itemFilter === t ? "on" : ""}" data-ifilter="${esc(t)}">${esc(KINDS[t.split(" ")[1]] ? `${KINDS[t.split(" ")[1]].icon} ${KINDS[t.split(" ")[1]].label}` : t)}</button>`).join("")}</div>
+    <div class="chips">${["الكل", "ظاهر", "بانتظار المراجعة", "↩️ مرجّعة للتاجر", "غير مدفوع", "نفد", ...KIND_IDS.map((k) => `${KINDS[k].icon} ${k}`)].map((t) => `<button class="chip ${state.itemFilter === t ? "on" : ""}" data-ifilter="${esc(t)}">${esc(KINDS[t.split(" ")[1]] ? `${KINDS[t.split(" ")[1]].icon} ${KINDS[t.split(" ")[1]].label}` : t)}</button>`).join("")}</div>
     <p class="muted">${all.length} منتج</p>
     <div class="grid">${all.slice(0, 200).map((x) => itemCard(x, `<span class="pill ${status(x) === "ظاهر" ? "" : "off"}">${status(x)}</span>
       ${x.approved ? `<button class="btn" data-cact="itHide" data-id="${esc(x.id)}">إخفاء</button>` : `<button class="btn primary" data-cact="itApprove" data-id="${esc(x.id)}">اعتماد</button>`}
+      ${x.adminNote ? "" : `<button class="btn" data-ret="item" data-id="${esc(x.id)}">↩️ رجّعه</button>`}
       <button class="btn danger" data-cact="itDelete" data-id="${esc(x.id)}">حذف</button>`)).join("")}</div>
 
     <h2 id="ct-stats">📊 الإحصائيات</h2>
@@ -750,7 +825,7 @@ function bindCatalog(c) {
         await actions.saveConfig({ vat: { enabled: $("vatOn").checked, rate } });
         await audit("تعديل إعدادات الضريبة", "catalog", {}, `${$("vatOn").checked ? "مفعّلة" : "موقفة"} • ${rate}%`);
       },
-      itApprove: async () => { await updateDoc(doc(db, "items", id), { approved: true }); await audit("اعتماد منتج", "catalog", itT); },
+      itApprove: async () => { await updateDoc(doc(db, "items", id), { approved: true, adminNote: "" }); await audit("اعتماد منتج", "catalog", itT); },
       itHide: async () => { await updateDoc(doc(db, "items", id), { approved: false }); await audit("إخفاء منتج", "catalog", itT); },
       itDelete: async () => { if (!confirm("حذف المنتج نهائياً؟")) return false; await deleteDoc(doc(db, "items", id)); await audit("حذف منتج", "catalog", itT, it ? `${it.price} ر.س` : ""); },
     };
@@ -840,6 +915,9 @@ function bind() {
   c.querySelectorAll("[data-cattype]").forEach((x) => (x.onchange = () => { catDraft()[+x.dataset.cattype].type = x.value; }));
   const cn = $("catNew"); if (cn) cn.oninput = () => { const g = baseKindOf({}, cn.value); $("catNewType").value = g; }; // نخمّن النوع من الاسم
   bindCatalog(c);
+  c.querySelectorAll("[data-ret]").forEach((b) => (b.onclick = () => returnToMerchant(b.dataset.ret, b.dataset.id)));
+  c.querySelectorAll("[data-sfilter]").forEach((b) => (b.onclick = () => { state.storeFilter = b.dataset.sfilter; render(); }));
+  const sq = $("storeQuery"); if (sq) sq.oninput = () => { state.storeQuery = sq.value; render(); };
   c.querySelectorAll("[data-catup]").forEach((b) => (b.onclick = () => { const d = catDraft(), i = +b.dataset.catup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
   c.querySelectorAll("[data-catdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف التصنيف؟ العروض الحالية تبقى عليه.")) { catDraft().splice(+b.dataset.catdel, 1); render(); } }));
   const ai = $("aiOn"); if (ai) ai.onchange = () => run(async () => { await actions.saveConfig({ aiAutofillEnabled: ai.checked }); await audit(`${ai.checked ? "تشغيل" : "إيقاف"}: التعبئة الذكية`, "settings"); }, ai.checked ? "التعبئة الذكية مفعّلة ✨" : "التعبئة الذكية موقفة");

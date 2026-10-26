@@ -46,7 +46,7 @@ function draw() {
   const active = m.offers.filter((o) => o.isApproved && !o.draft && !X.isExpired(o, now));
   const sum = (k) => m.offers.reduce((a, o) => a + (o[k] || 0), 0);
   const banner = st.suspended ? `<div class="banner red">⛔ حسابك موقوف حالياً. تواصل مع إدارة حيّنا.</div>`
-    : canPublishDirectly() ? `<div class="banner green">✅ حسابك موثوق — عروضك تنشر مباشرة</div>`
+    : canPublishDirectly() ? `<div class="banner green">⚡ حسابك ينشر مباشرة — عروضك تظهر بدون مراجعة</div>`
     : `<div class="banner amber">⏳ حساب جديد: عروضك تنراجع قبل ما تظهر (عادة خلال ساعات). بعد عرضين معتمدين تنشر مباشرة.</div>`;
   root.innerHTML = `
     ${m.ctx.isAdmin ? `<a class="btn dir" href="/admin/">🛡️ لوحة الإدارة</a>` : ""}
@@ -66,6 +66,7 @@ function draw() {
       <div class="stat"><b>${sum("whatsappCount")}</b><small>واتساب</small></div>
     </div>
     ${walletCard()}
+    ${m.offers.some((o) => o.adminNote) ? `<div class="banner red">↩️ عندك ${m.offers.filter((o) => o.adminNote).length === 1 ? "عرض يحتاج تعديل" : m.offers.filter((o) => o.adminNote).length + " عروض تحتاج تعديل"} من فريق حيّنا — شوف الملاحظة تحت العرض واضغط ✎</div>` : ""}
     ${hasStore ? catalogPanelHtml(p.cuisineType) : ""}
     <button class="btn dir big" id="newOffer" ${st.suspended ? "disabled" : ""}>＋ عرض جديد</button>
     <div class="section-title">عروضي (${m.offers.length})</div>
@@ -91,11 +92,12 @@ function draw() {
 
 function offerRow(o) {
   const now = Date.now(), exp = X.isExpired(o, now), hidden = (o.reportsCount || 0) >= 3;
-  const chip = o.draft ? `<span class="pill urgent">📝 مسودة — بانتظار الرصيد</span>` : !o.isApproved ? `<span class="pill">⏳ بانتظار المراجعة</span>` : hidden ? `<span class="pill urgent">🚩 مخفي للمراجعة</span>`
+  const chip = o.adminNote ? `<span class="pill urgent">↩️ يحتاج تعديل</span>` : o.draft ? `<span class="pill urgent">📝 مسودة — بانتظار الرصيد</span>` : !o.isApproved ? `<span class="pill">⏳ بانتظار المراجعة</span>` : hidden ? `<span class="pill urgent">🚩 مخفي للمراجعة</span>`
     : exp ? `<span class="pill closed">منتهي</span>` : (() => { const r = X.remainingText(o, now); return r ? `<span class="pill ${r.cls}">${esc(r.t)}</span>` : `<span class="pill open">نشط</span>`; })();
   return `<div class="mrow${exp ? " dim" : ""}${o.draft ? " draft" : ""}">
     <img src="${esc(thumb(o, 160))}" alt="" data-view="${esc(o.id)}">
     <div class="mr-main" data-view="${esc(o.id)}"><b>${esc(o.offerTitle)}</b><div class="price">${esc(priceLabel(o))}</div>
+      ${o.adminNote ? `<div class="admin-note">📝 ${esc(o.adminNote)}</div>` : ""}
       <div class="pills">${chip}${o.draft ? "" : paidChips(o)}<span class="pill closed">👁 ${o.viewsCount || 0}</span></div></div>
     ${o.draft ? `<button class="btn dir pub-now" data-pub="${esc(o.id)}">📢 انشر الحين</button>` : ""}
     <div class="mr-act">${cr().enabled && !exp && !o.draft ? `<button class="icon-btn" data-boost="${esc(o.id)}" aria-label="تمييز">🚀</button>` : ""}<button class="icon-btn" data-edit="${esc(o.id)}" aria-label="تعديل">✎</button><button class="icon-btn" data-del="${esc(o.id)}" aria-label="حذف">🗑</button></div>
@@ -668,7 +670,8 @@ export async function openOfferForm(editing) {
         logoUrl: p.logoUrl || "", branches: branches.slice(0, 50),
       };
       if (e) {
-        await updateDoc(doc(db, "offers", e.id), { ...data, isApproved: direct ? e.isApproved : false });
+        // عرض مرجّع من الأدمن: يرجع للمراجعة بعد التعديل، والملاحظة تنمسح
+        await updateDoc(doc(db, "offers", e.id), { ...data, adminNote: "", isApproved: e.adminNote ? false : direct ? e.isApproved : false });
       } else {
         const ref = doc(collection(db, "offers"));
         const offerDoc = { ...data, id: ref.id, merchantId: state.user.uid, isApproved: direct, isFeatured: false,
