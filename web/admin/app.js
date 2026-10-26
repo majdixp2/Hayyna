@@ -8,6 +8,7 @@ import {
   updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { EFFECTS, creditsOf, itemList, exclusiveOf, DEFAULT_ITEMS, rewardOf } from "/js/credits.js";
+import { KINDS, KIND_IDS, catalogOf, vatOf, baseKindOf, limitOf, itemVisible, itemPaidUp, riyal, ORDER_STATUS } from "/js/catalog.js";
 import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS } from "../config.js";
 
 const app = initializeApp(firebaseConfig);
@@ -20,6 +21,7 @@ const state = {
   offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [], referrals: [], names: {}, wallets: [], codes: null, itemsDraft: null, packsDraft: null,
   me: null, staff: [], log: [], logArea: "الكل", logQuery: "", logActor: "الكل", verifHist: [],
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
+  items: [], passes: [], orders: [], itemQuery: "", itemFilter: "الكل",
 };
 const unsubs = [];
 const $ = (id) => document.getElementById(id);
@@ -109,6 +111,11 @@ function listen() {
     sub(query(collection(db, "verificationRequests"), where("status", "in", ["approved", "rejected"])), (sn) => { state.verifHist = parse(sn).map((x) => ({ ...x, uid: x.id })); });
   }
   if (can("credits")) sub(collection(db, "wallets"), (sn) => { state.wallets = parse(sn); loadNames(); });
+  if (can("review")) {
+    sub(collection(db, "items"), (sn) => { state.items = parse(sn); });
+    sub(collection(db, "itemPasses"), (sn) => { state.passes = parse(sn); });
+  }
+  if (can("merchants")) sub(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(500)), (sn) => { state.orders = parse(sn); });
   sub(doc(db, "config", "app"), (sn) => { state.config = sn.data() || {}; });
   // السجل: المالك يشوف الكل، والموظف عملياته (الترتيب على الجهاز)
   sub(state.me.owner ? query(collection(db, "adminLog"), orderBy("at", "desc"), limit(400)) : query(collection(db, "adminLog"), where("actor", "==", state.me.email)),
@@ -137,7 +144,7 @@ function refInfo(r) {
 }
 
 // ---------------- سجل العمليات ----------------
-const AREAS = { review: "📝 العروض", verify: "🛡️ التوثيق", merchants: "🏪 التجار", messages: "📨 الرسائل", credits: "💰 الرصيد", settings: "⚙️ الإعدادات", team: "👥 الفريق" };
+const AREAS = { catalog: "🛍️ المنتجات", review: "📝 العروض", verify: "🛡️ التوثيق", merchants: "🏪 التجار", messages: "📨 الرسائل", credits: "💰 الرصيد", settings: "⚙️ الإعدادات", team: "👥 الفريق" };
 async function audit(action, area, target = {}, details = "") {
   try {
     await addDoc(collection(db, "adminLog"), {
@@ -226,18 +233,18 @@ function computed() {
 
 const TABS = [
   ["home", "🏠 الرئيسية"], ["review", "⏳ المراجعة"], ["stores", "🏪 المتاجر"],
-  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["credits", "💰 الرصيد"],
+  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["catalog", "🛍️ المنتجات"], ["credits", "💰 الرصيد"],
   ["log", "📜 السجل"], ["team", "👥 الفريق"], ["settings", "⚙️ الإعدادات"],
 ];
 function tabAllowed(k) {
   return ({ home: true, log: true, review: can("review"), offers: can("review"), stores: canStores(), messages: can("messages"),
-    refs: can("merchants"), credits: can("credits"), team: !!state.me?.owner, settings: !!state.me?.owner })[k];
+    refs: can("merchants"), credits: can("credits"), catalog: can("review"), team: !!state.me?.owner, settings: !!state.me?.owner })[k];
 }
 
 function render() {
   if ($("app").classList.contains("hidden")) return;
   const c = computed();
-  const badges = { review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs, refs: c.refAwards };
+  const badges = { catalog: state.items.filter((x) => !x.approved && !x.hidden).length, review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs, refs: c.refAwards };
   if (!tabAllowed(state.tab)) state.tab = "home";
   $("tabs").innerHTML = TABS.filter(([k]) => tabAllowed(k)).map(([k, t]) =>
     `<button class="tab ${state.tab === k ? "active" : ""}" data-tab="${k}">${t}${badges[k] ? `<span class="badge">${badges[k]}</span>` : ""}</button>`
@@ -245,7 +252,7 @@ function render() {
   $("tabs").querySelectorAll(".tab").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; localStorage.setItem("hayyna_admin_tab", state.tab); render(); }));
   const focused = document.activeElement?.id;
   const caret = document.activeElement?.selectionStart;
-  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, settings, log: logPage, team }[state.tab] || home)(c);
+  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, catalog: catalogPage, settings, log: logPage, team }[state.tab] || home)(c);
   bind();
   if (focused && $(focused)) { $(focused).focus(); try { $(focused).setSelectionRange(caret, caret); } catch {} }
 }
@@ -408,7 +415,7 @@ function describe(act, id, b, o) {
     removeRef: () => ["حذف إحالة", "merchants", { type: "referral", id, name: r?.storeName || id }],
     saveSupport: () => ["تغيير رقم الدعم", "settings", {}, $("supportNum")?.value],
     saveModel: () => ["تغيير نموذج الذكاء الاصطناعي", "settings", {}, $("aiModel")?.value],
-    saveCats: () => ["تعديل التصنيفات", "settings", {}, catDraft().map((x) => x.name).filter(Boolean).join("، ")],
+    saveCats: () => ["تعديل التصنيفات", "settings", {}, catDraft().filter((x) => x.name).map((x) => `${x.name} (${KINDS[x.type]?.label || ""})`).join("، ")],
     savePoi: () => ["تعديل رسالة الدعوة", "settings", {}],
     saveExcl: () => ["تعديل شارة الحصري", "settings", {}, `${$("exIcon")?.value} ${$("exLabel")?.value} • ${$("exOn")?.checked ? "مفعّلة" : "موقفة"} • المكافأة: ${$("exRw")?.checked ? `${$("exPct")?.value}%` : "مطفية"}`],
     saveSpot: () => ["تعديل حد الإبراز في الحي", "credits", {}, `${$("crSpot")?.value} لكل حي`],
@@ -608,9 +615,149 @@ function offers() {
 const DEFAULT_CATS = ["مطاعم 🍽️", "مقاهي وحلويات ☕", "سوبرماركت وبقالة 🛒", "ملابس وأزياء 👕", "خياطة ومشاغل 🧵",
   "نظارات وبصريات 👓", "عطور وتجميل 💄", "جوالات وإلكترونيات 📱", "حلاقة وصالونات 💈", "خدمات أخرى 🧰"];
 function catDraft() {
-  if (!state.catDraft) state.catDraft = ((state.config.categories && state.config.categories.length) ? state.config.categories : DEFAULT_CATS).map((c) => ({ orig: c, name: c }));
+  if (!state.catDraft) state.catDraft = ((state.config.categories && state.config.categories.length) ? state.config.categories : DEFAULT_CATS).map((c) => ({ orig: c, name: c, type: baseKindOf(state.config, c) }));
   return state.catDraft;
 }
+// =================== 🛍️ المنتجات والخدمات والمنيو ===================
+const DAYMS = 864e5;
+function catalogPage() {
+  const cfg = state.config, cat = catalogOf(cfg), vat = vatOf(cfg), owner = !!state.me.owner, now = Date.now();
+  const pending = state.items.filter((x) => !x.approved);
+  const storeName = (uid) => nameOfUid(uid);
+  const kindChip = (k) => `<span class="pill" style="background:${KINDS[k]?.bg};color:${KINDS[k]?.color}">${KINDS[k]?.icon} ${KINDS[k]?.label}</span>`;
+  const itemCard = (x, buttons) => `<div class="card"><div class="row" style="align-items:center;gap:10px">
+      ${x.imageUrl ? `<img class="thumb" src="${esc(img(x.imageUrl, 160))}" data-view="${esc(x.imageUrl)}" alt="">` : `<div class="thumb" style="display:flex;align-items:center;justify-content:center;font-size:28px">${KINDS[x.kind]?.icon || "🛍️"}</div>`}
+      <div style="flex:1;min-width:0"><b>${esc(x.name)}</b> ${kindChip(x.kind)} ${x.available === false ? `<span class="pill off">نفد</span>` : ""}
+        <div class="muted">${esc(storeName(x.merchantId))} • ${esc(x.price)} ر.س${x.section ? " • " + esc(x.section) : ""}</div>
+        ${x.desc ? `<div class="muted">${esc(x.desc).slice(0, 160)}</div>` : ""}</div></div>
+      <div class="actions">${buttons}</div></div>`;
+  // فلترة كل المنتجات
+  const q = state.itemQuery.trim().toLowerCase();
+  const status = (x) => !x.approved ? "بانتظار المراجعة" : x.available === false ? "نفد" : !itemPaidUp(x, state.passes, cat, now) ? "غير مدفوع" : "ظاهر";
+  const all = state.items.filter((x) => (!q || [x.name, storeName(x.merchantId), x.section].some((v) => String(v || "").toLowerCase().includes(q)))
+    && (state.itemFilter === "الكل" || status(x) === state.itemFilter || (KINDS[state.itemFilter.split(" ")[1]] && x.kind === state.itemFilter.split(" ")[1])))
+    .sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+  // إحصائيات
+  const stores = new Set(state.items.map((x) => x.merchantId)).size;
+  const byKind = KIND_IDS.map((k) => [k, state.items.filter((x) => x.kind === k).length]);
+  const ord = state.orders, dayAgo = now - DAYMS, weekAgo = now - 7 * DAYMS;
+  const oms = (o) => o.createdAt?.toMillis?.() || 0;
+  const ordSum = (list) => list.filter((o) => o.status !== "cancelled").reduce((a, o) => a + (o.total || 0), 0);
+  const pr = cat.pricing;
+  const priceRow = (key, label, unit) => `<tr><td>${label}</td>
+      <td><input type="number" id="ctp_${key}" min="0.05" step="0.05" value="${riyal(pr[key].priceH)}" style="width:90px"> ر.س ${unit}</td>
+      <td><label class="switch"><input type="checkbox" id="ctpa_${key}" ${pr[key].active ? "checked" : ""}> مفعّل</label></td></tr>`;
+  const nav = owner ? [["ct-status", "الخدمة"], ["ct-price", "التسعير"], ["ct-vat", "الضريبة"], ["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الإحصائيات"]]
+    : [["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الإحصائيات"]];
+  return jumpNav(nav) + (owner ? `
+    <h2 id="ct-status">🛍️ خدمة المنتجات والخدمات والمنيو</h2>
+    <div class="card">
+      <label class="switch"><input type="checkbox" data-catcfg="enabled" ${cat.enabled ? "checked" : ""}> <b>تشغيل الخدمة</b></label>
+      <p class="muted">${cat.enabled ? "✅ شغّالة: التاجر يضيف منتجاته، وتظهر للزبون في صفحة المتجر." : "⛔ مطفية: ما يظهر شي عند التاجر ولا الزبون، والأمور مثل قبل. البيانات محفوظة وترجع لما تشغّلها."}</p>
+      <label class="switch"><input type="checkbox" data-catcfg="orderEnabled" ${cat.orderEnabled ? "checked" : ""}> 🧾 الطلب عبر واتساب (السلة + ملخص الطلب)</label>
+      <label class="switch"><input type="checkbox" data-catcfg="review" ${cat.review ? "checked" : ""}> ⏳ منتجات التاجر الجديد تنراجع قبل ما تظهر (الموثّق ✔ والموثوق تنزل مباشرة)</label>
+      <h3 style="margin:14px 0 6px">الحد الأقصى لكل تاجر</h3>
+      <div class="row" style="flex-wrap:wrap;gap:14px">${KIND_IDS.map((k) => `<div class="row" style="align-items:center;gap:6px">${KINDS[k].icon} ${KINDS[k].label}
+        <input type="number" id="ctl_${k}" min="1" max="999" value="${limitOf(cat, k) || ""}" ${limitOf(cat, k) ? "" : "disabled"} style="width:80px">
+        <label class="switch"><input type="checkbox" data-ctopen="${k}" ${limitOf(cat, k) ? "" : "checked"}> مفتوح</label></div>`).join("")}</div>
+      <p class="muted">لو نزّلت الحد، المنتجات اللي فوقه تختفي (ما تنحذف) وترجع لو رفعته.</p>
+      <div class="actions"><button class="btn primary" data-cact="saveLimits">حفظ الحدود</button></div>
+    </div>
+
+    <h2 id="ct-price">💰 تسعير ظهور المنتجات (بالنقاط من رصيد العروض)</h2>
+    <div class="card">
+      <label class="switch"><input type="checkbox" id="ctPrOn" ${pr.enabled ? "checked" : ""}> <b>تفعيل التسعير</b> (مطفي = المنتجات مجانية)</label>
+      <div class="row" style="align-items:center;margin-top:6px">⏳ فترة سماح للمنتجات الموجودة قبل التفعيل:
+        <select id="ctGrace">${[0, 7, 14, 30].map((d) => `<option value="${d}" ${(pr.graceDays ?? 14) === d ? "selected" : ""}>${d ? d + " يوم" : "بدون سماح"}</option>`).join("")}</select>
+        ${pr.enabled && pr.graceUntil?.toMillis ? `<span class="pill">${pr.graceUntil.toMillis() > now ? "السماح لين " + new Date(pr.graceUntil.toMillis()).toLocaleDateString("ar-SA-u-ca-gregory") : "انتهى السماح"}</span>` : ""}</div>
+      <table class="tbl" style="margin-top:10px"><thead><tr><th>الطريقة</th><th>السعر باليوم</th><th></th></tr></thead><tbody>
+        ${priceRow("menu", "🍽️ صنف منيو", "/يوم لكل صنف")}${priceRow("product", "🛍️ منتج", "/يوم لكل منتج")}${priceRow("service", "✂️ خدمة", "/يوم لكل خدمة")}
+        ${priceRow("all", "📦 باقة كل المنتجات", "/يوم (كل منتجات التاجر)")}</tbody></table>
+      <p class="muted">التاجر يختار: يدفع لمنتجات محددة، أو الباقة لكل منتجاته — المدة من يوم إلى سنة. الإجمالي يتقرّب لفوق (مثال: 3 منتجات × 7 أيام × 0.5 = 10.5 ← 11 نقطة). اللي تنتهي مدته يختفي ويرجع بالتمديد.</p>
+      <div class="actions"><button class="btn primary" data-cact="savePrices">حفظ الأسعار</button></div>
+    </div>
+
+    <h2 id="ct-vat">🧾 ضريبة القيمة المضافة</h2>
+    <div class="card">
+      <label class="switch"><input type="checkbox" id="vatOn" ${vat.enabled ? "checked" : ""}> إظهار تفصيل الضريبة في ملخص الطلب</label>
+      <div class="row" style="align-items:center;margin-top:6px">النسبة <input type="number" id="vatRate" min="0" max="100" step="0.5" value="${vat.rate}" style="width:80px"> %</div>
+      <p class="muted">الأسعار دايماً <b>شاملة الضريبة</b> (23 = 20 + 3). التفصيل يطلع بس للمحل اللي كتب <b>رقمه الضريبي</b> في صفحة متجره — المحلات غير المسجّلة (والأسر المنتجة) يطلع لها الإجمالي بدون ضريبة. الملخص اسمه «ملخص الطلب» مو «فاتورة ضريبية» رسمية.</p>
+      <div class="actions"><button class="btn primary" data-cact="saveVat">حفظ</button></div>
+    </div>` : "") + `
+
+    <h2 id="ct-review">⏳ بانتظار المراجعة (${pending.length})</h2>
+    ${pending.length ? `<div class="grid">${pending.map((x) => itemCard(x, `<button class="btn primary" data-cact="itApprove" data-id="${esc(x.id)}">اعتماد</button><button class="btn danger" data-cact="itDelete" data-id="${esc(x.id)}">حذف</button>`)).join("")}</div>` : `<p class="muted">لا يوجد ✅</p>`}
+
+    <h2 id="ct-all">📋 كل المنتجات (${state.items.length})</h2>
+    <input type="text" id="itemQuery" placeholder="ابحث باسم المنتج أو المحل…" value="${esc(state.itemQuery)}">
+    <div class="chips">${["الكل", "ظاهر", "بانتظار المراجعة", "غير مدفوع", "نفد", ...KIND_IDS.map((k) => `${KINDS[k].icon} ${k}`)].map((t) => `<button class="chip ${state.itemFilter === t ? "on" : ""}" data-ifilter="${esc(t)}">${esc(KINDS[t.split(" ")[1]] ? `${KINDS[t.split(" ")[1]].icon} ${KINDS[t.split(" ")[1]].label}` : t)}</button>`).join("")}</div>
+    <p class="muted">${all.length} منتج</p>
+    <div class="grid">${all.slice(0, 200).map((x) => itemCard(x, `<span class="pill ${status(x) === "ظاهر" ? "" : "off"}">${status(x)}</span>
+      ${x.approved ? `<button class="btn" data-cact="itHide" data-id="${esc(x.id)}">إخفاء</button>` : `<button class="btn primary" data-cact="itApprove" data-id="${esc(x.id)}">اعتماد</button>`}
+      <button class="btn danger" data-cact="itDelete" data-id="${esc(x.id)}">حذف</button>`)).join("")}</div>
+
+    <h2 id="ct-stats">📊 الإحصائيات</h2>
+    <div class="grid">
+      <div class="card stat"><div class="v">${stores}</div><div class="t">محل أضاف منتجات</div></div>
+      ${byKind.map(([k, n]) => `<div class="card stat"><div class="v">${n}</div><div class="t">${KINDS[k].icon} ${KINDS[k].label}</div></div>`).join("")}
+      ${can("merchants") ? `<div class="card stat"><div class="v">${ord.filter((o) => oms(o) > dayAgo).length}</div><div class="t">🧾 طلبات اليوم</div></div>
+      <div class="card stat"><div class="v">${ord.filter((o) => oms(o) > weekAgo).length}</div><div class="t">🧾 طلبات آخر 7 أيام</div></div>
+      <div class="card stat"><div class="v">${Math.round(ordSum(ord.filter((o) => oms(o) > weekAgo)))}</div><div class="t">💰 قيمة طلبات الأسبوع (ر.س)</div></div>` : ""}
+    </div>
+    ${can("merchants") && ord.length ? `<div class="card"><table class="tbl"><thead><tr><th>الطلب</th><th>المحل</th><th>الإجمالي</th><th>الحالة</th></tr></thead><tbody>
+      ${ord.slice(0, 30).map((o) => `<tr><td>#${esc(o.code)}<br><small class="muted">${oms(o) ? new Date(oms(o)).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</small></td><td>${esc(o.storeName)}</td><td>${(o.total || 0).toFixed(2)}</td><td>${esc(ORDER_STATUS[o.status]?.t || o.status)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+}
+function bindCatalog(c) {
+  const iq = $("itemQuery"); if (iq) iq.oninput = () => { state.itemQuery = iq.value; render(); };
+  c.querySelectorAll("[data-ifilter]").forEach((b) => (b.onclick = () => { state.itemFilter = b.dataset.ifilter; render(); }));
+  const setCat = (path, val) => updateDoc(doc(db, "config", "app"), { [path]: val }).catch(() => setDoc(doc(db, "config", "app"), { catalog: {} }, { merge: true }).then(() => updateDoc(doc(db, "config", "app"), { [path]: val })));
+  c.querySelectorAll("[data-catcfg]").forEach((x) => (x.onchange = () => run(async () => {
+    await setCat("catalog." + x.dataset.catcfg, x.checked);
+    await audit(`${x.checked ? "تشغيل" : "إيقاف"}: ${x.parentElement.textContent.trim().slice(0, 40)}`, "catalog");
+  }, "تم ✅")));
+  c.querySelectorAll("[data-ctopen]").forEach((x) => (x.onchange = () => { const i = $("ctl_" + x.dataset.ctopen); i.disabled = x.checked; if (!x.checked && !i.value) i.value = 10; }));
+  const prOn = $("ctPrOn");
+  if (prOn) prOn.onchange = () => run(async () => {
+    const days = +$("ctGrace").value, now = Date.now();
+    await setCat("catalog.pricing.enabled", prOn.checked);
+    if (prOn.checked) await updateDoc(doc(db, "config", "app"), { "catalog.pricing.enabledAt": Timestamp.fromMillis(now), "catalog.pricing.graceDays": days,
+      "catalog.pricing.graceUntil": days ? Timestamp.fromMillis(now + days * DAYMS) : Timestamp.fromMillis(now) });
+    await audit(`${prOn.checked ? "تشغيل" : "إيقاف"}: تسعير ظهور المنتجات`, "catalog", {}, prOn.checked ? `فترة السماح ${days} يوم` : "");
+  }, prOn.checked ? "التسعير شغّال ✅" : "التسعير موقف — المنتجات مجانية");
+  c.querySelectorAll("[data-cact]").forEach((b) => (b.onclick = () => {
+    const act = b.dataset.cact, id = b.dataset.id, it = state.items.find((x) => x.id === id);
+    const itT = it ? { type: "item", id, name: `${it.name} — ${nameOfUid(it.merchantId)}`, thumb: it.imageUrl ? img(it.imageUrl, 160) : "" } : {};
+    const A = {
+      saveLimits: async () => {
+        const lim = {}; KIND_IDS.forEach((k) => { lim[k] = c.querySelector(`[data-ctopen="${k}"]`).checked ? 0 : Math.min(999, Math.max(1, parseInt($("ctl_" + k).value, 10) || 1)); });
+        await setCat("catalog.limits", lim);
+        await audit("تعديل حدود المنتجات", "catalog", {}, KIND_IDS.map((k) => `${KINDS[k].label}: ${lim[k] || "مفتوح"}`).join(" • "));
+      },
+      savePrices: async () => {
+        const upd = {};
+        for (const k of [...KIND_IDS, "all"]) {
+          const h = Math.round(parseFloat($("ctp_" + k).value) * 100);
+          if (!(h >= 5)) { toast("اكتب سعر صحيح (أقل شي 0.05)"); return false; }
+          upd[`catalog.pricing.${k}`] = { priceH: h, active: $("ctpa_" + k).checked };
+        }
+        upd["catalog.pricing.graceDays"] = +$("ctGrace").value;
+        await updateDoc(doc(db, "config", "app"), upd).catch(async () => { await setDoc(doc(db, "config", "app"), { catalog: { pricing: {} } }, { merge: true }); await updateDoc(doc(db, "config", "app"), upd); });
+        await audit("تعديل أسعار ظهور المنتجات", "catalog", {}, [...KIND_IDS, "all"].map((k) => `${k === "all" ? "الباقة" : KINDS[k].label}: ${riyal(upd[`catalog.pricing.${k}`].priceH)}${upd[`catalog.pricing.${k}`].active ? "" : " (موقف)"}`).join(" • "));
+      },
+      saveVat: async () => {
+        const rate = parseFloat($("vatRate").value);
+        if (!(rate >= 0 && rate <= 100)) { toast("نسبة غير صحيحة"); return false; }
+        await actions.saveConfig({ vat: { enabled: $("vatOn").checked, rate } });
+        await audit("تعديل إعدادات الضريبة", "catalog", {}, `${$("vatOn").checked ? "مفعّلة" : "موقفة"} • ${rate}%`);
+      },
+      itApprove: async () => { await updateDoc(doc(db, "items", id), { approved: true }); await audit("اعتماد منتج", "catalog", itT); },
+      itHide: async () => { await updateDoc(doc(db, "items", id), { approved: false }); await audit("إخفاء منتج", "catalog", itT); },
+      itDelete: async () => { if (!confirm("حذف المنتج نهائياً؟")) return false; await deleteDoc(doc(db, "items", id)); await audit("حذف منتج", "catalog", itT, it ? `${it.price} ر.س` : ""); },
+    };
+    if (A[act]) run(async () => { if ((await A[act]()) !== false) toast("تم ✅"); }, null, b.textContent.trim().slice(0, 30));
+  }));
+}
+
 function settings() {
   const cfg = state.config;
   const cats = catDraft();
@@ -635,12 +782,15 @@ function settings() {
     </div>
     <h2 id="st-cats">🏷️ تصنيفات المتاجر</h2>
     <div class="card">
-      <p class="muted">تظهر للتجار عند إعداد المتجر ونشر العروض، وللزبائن في الفلاتر. تعديل الاسم يحدّث العروض والمتاجر اللي عليه.</p>
+      <p class="muted">تظهر للتجار عند إعداد المتجر ونشر العروض، وللزبائن في الفلاتر. تعديل الاسم يحدّث العروض والمتاجر اللي عليه.
+        <b>النوع الأساسي</b> يحدد وش يطلع أول في صفحة المتجر (🍽️ منيو / 🛍️ منتجات / ✂️ خدمات)، والتاجر يقدر يضيف الأنواع الثانية بعد.</p>
       ${cats.map((c, i) => `<div class="row" style="align-items:center;margin:4px 0">
         <input type="text" data-catname="${i}" value="${esc(c.name)}" maxlength="40" style="flex:1">
+        <select data-cattype="${i}">${KIND_IDS.map((k) => `<option value="${k}" ${c.type === k ? "selected" : ""}>${KINDS[k].icon} ${KINDS[k].label}</option>`).join("")}</select>
         <button class="btn" data-catup="${i}" ${i === 0 ? "disabled" : ""}>↑</button>
         <button class="btn danger" data-catdel="${i}" ${cats.length < 2 ? "disabled" : ""}>حذف</button></div>`).join("")}
-      <div class="row" style="align-items:center;margin-top:8px"><input type="text" id="catNew" placeholder="تصنيف جديد مع إيموجي، مثال: ورود وهدايا 💐" maxlength="40" style="flex:1">
+      <div class="row" style="align-items:center;margin-top:8px"><input type="text" id="catNew" placeholder="تصنيف جديد مع إيموجي، مثال: صيانة 🔧 أو نادي رياضي 🏋️" maxlength="40" style="flex:1">
+        <select id="catNewType">${KIND_IDS.map((k) => `<option value="${k}">${KINDS[k].icon} ${KINDS[k].label}</option>`).join("")}</select>
         <button class="btn" data-act="catAdd">إضافة</button></div>
       <div class="actions"><button class="btn primary" data-act="saveCats">حفظ التصنيفات</button></div>
     </div>
@@ -687,6 +837,9 @@ function bind() {
   const poiOn = $("poiOn"); if (poiOn) poiOn.onchange = () => cfgSwitch("showGooglePoi", poiOn.checked, "نقاط محلات Google");
   const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => cfgSwitch("poiInviteEnabled", invOn.checked, "بطاقة ادعه لحيّنا");
   c.querySelectorAll("[data-catname]").forEach((x) => (x.oninput = () => { catDraft()[+x.dataset.catname].name = x.value; }));
+  c.querySelectorAll("[data-cattype]").forEach((x) => (x.onchange = () => { catDraft()[+x.dataset.cattype].type = x.value; }));
+  const cn = $("catNew"); if (cn) cn.oninput = () => { const g = baseKindOf({}, cn.value); $("catNewType").value = g; }; // نخمّن النوع من الاسم
+  bindCatalog(c);
   c.querySelectorAll("[data-catup]").forEach((b) => (b.onclick = () => { const d = catDraft(), i = +b.dataset.catup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
   c.querySelectorAll("[data-catdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف التصنيف؟ العروض الحالية تبقى عليه.")) { catDraft().splice(+b.dataset.catdel, 1); render(); } }));
   const ai = $("aiOn"); if (ai) ai.onchange = () => run(async () => { await actions.saveConfig({ aiAutofillEnabled: ai.checked }); await audit(`${ai.checked ? "تشغيل" : "إيقاف"}: التعبئة الذكية`, "settings"); }, ai.checked ? "التعبئة الذكية مفعّلة ✨" : "التعبئة الذكية موقفة");
@@ -786,11 +939,12 @@ function bind() {
       awardO: () => actions.awardRef(id, "offerPts"),
       removeRef: () => actions.removeRef(id),
       verifyNo: () => actions.verify(id, false, $("reason_" + id).value.trim()),
-      catAdd: () => { const v = $("catNew").value.trim(); if (v && !catDraft().some((x) => x.name.trim() === v)) catDraft().push({ orig: null, name: v }); render(); },
+      catAdd: () => { const v = $("catNew").value.trim(); if (v && !catDraft().some((x) => x.name.trim() === v)) catDraft().push({ orig: null, name: v, type: $("catNewType").value }); render(); },
       saveCats: async () => {
         const d = catDraft().map((x) => ({ ...x, name: x.name.trim() })).filter((x) => x.name);
         const names = [...new Set(d.map((x) => x.name))];
-        await actions.saveConfig({ categories: names });
+        const types = {}; d.forEach((x) => { types[x.name] = x.type || baseKindOf({}, x.name); });
+        await updateDoc(doc(db, "config", "app"), { categories: names, categoryTypes: types });
         let moved = 0;
         for (const x of d) if (x.orig && x.orig !== x.name) {
           for (const od of (await getDocs(query(collection(db, "offers"), where("cuisineType", "==", x.orig)))).docs) { await updateDoc(od.ref, { cuisineType: x.name }); moved++; }

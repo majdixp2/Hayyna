@@ -12,6 +12,7 @@ import * as X from "./logic.js";
 import { createMap } from "./map.js";
 import { startI18n } from "./i18n.js";
 import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
+import { renderStoreItems, openMyOrders, ordersOn } from "./catalog-ui.js";
 startI18n();
 
 const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf, km, distText, openNow, hoursText,
@@ -461,6 +462,7 @@ export function openStore(uid, push) {
       ${phone ? `<div class="actions"><a class="btn wa" href="https://wa.me/${waDigits(phone)}" target="_blank" rel="noopener">💬 واتساب</a><a class="btn call" href="tel:${esc(phone)}">📞 اتصال</a></div>` : ""}
       ${offers.length ? `<div class="section-title">🔥 العروض الحالية (${offers.length})</div><div class="hscroll">${offers.map((o) =>
         `<button class="mini" data-offer="${esc(o.id)}"><img src="${esc(thumb(o))}" alt=""><div>${esc(o.offerTitle)}<small>${esc(priceLabel(o))}</small></div></button>`).join("")}</div>` : ""}
+      <div id="storeItems"></div>
       ${(s.menuImages || []).length ? `<div class="section-title">📋 ${X.menuLabel(s.category)}</div><div class="hscroll">${s.menuImages.map((u) =>
         `<img class="menu-img" src="${esc(cld(u, 400))}" data-full="${esc(cld(u, 1600))}" alt="">`).join("")}</div>` : ""}
       ${(s.branches || []).length ? `<div class="section-title">📍 الفروع (${s.branches.length})</div><div class="branches">${s.branches.map((b) => {
@@ -473,6 +475,7 @@ export function openStore(uid, push) {
   body.querySelectorAll("[data-offer]").forEach((el) => el.onclick = () => openOffer(el.dataset.offer, true));
   body.querySelectorAll(".menu-img").forEach((im) => im.onclick = () => openViewer(im.dataset.full));
   body.querySelector('[data-act="share"]').onclick = () => share(`🏪 ${s.name} على حيّنا`, storeUrl(uid), s.name);
+  renderStoreItems(s); // المنيو/المنتجات/الخدمات + السلة (لو الخدمة شغّالة)
 }
 
 async function share(text, url, title) {
@@ -660,6 +663,7 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
 
 
       <div class="menu">
+        ${ordersOn() ? row("myOrders", "🧾", "طلباتي", "طلباتك من المحلات، وتعيدها بضغطة") : ""}
         ${row("settingsRow", "⚙️", "الإعدادات", "المظهر، اللغة، الحساب")}
         ${canOfferInstall() ? row("installAcc", "📲", "ثبّت حيّنا على جوالك", "يفتح بشاشة كاملة مثل التطبيق") : ""}
         ${row("contactBtn", "💬", "تواصل معنا", "اقتراح، مشكلة، أو محل تبيه ينضم")}
@@ -672,6 +676,7 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
   el.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => { const g = b.dataset.go; if (g === "locate") { setTab("map"); locate(true); } else if (g === "fresh") { state.fresh = true; state.scope = "all"; renderAll(); setTab("list"); } else setTab(g); });
   $("contactBtn").onclick = openContact;
   $("settingsRow").onclick = openSettings;
+  $("myOrders")?.addEventListener("click", openMyOrders);
   el.querySelector(".acc-foot #settingsBtn")?.remove(); // موجودة في القائمة فوق
   $("inviteFriend").onclick = inviteFriend;
   $("howPts")?.addEventListener("click", howPoints);
@@ -1171,7 +1176,8 @@ createMap($("map"), { key: MAPS_WEB_KEY, showShops: state.config.showGooglePoi !
   const here = location.pathname + location.search + location.hash;
   history.replaceState({ root: 1 }, "", "/");
   history.pushState({ guard: 1 }, "", "/");
-  if (here !== "/" && /^\/(o|s)\//.test(location.pathname)) history.pushState({ v: 1 }, "", here);
+  // ملاحظة: نفحص "here" (المسار الأصلي)، لأن location صار "/" بعد السطر فوق — كان يكسر روابط /o و /s المباشرة
+  if (here !== "/" && /^\/(o|s)\//.test(here)) history.pushState({ v: 1 }, "", here);
 })();
 try { const t = sessionStorage.getItem("hayyna_tab"); if (t && !location.pathname.match(/^\/(o|s)\//)) setTab(t); } catch {}
 

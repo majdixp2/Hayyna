@@ -529,3 +529,49 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .excl-offer .btn { background: #7C3AED; }
 .mrow.draft { flex-wrap: wrap; border-style: dashed; border-color: #F2C27A; }
 .mrow.draft .pub-now { flex-basis: 100%; order: 5; margin: 2px 0 0; }
+
+/* 🛍️ المنتجات / الخدمات / المنيو */
+.cat-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin: 12px 0; }
+.cat-card .cc-top b { display: block; font-size: 16px; }
+.cat-card .cc-top small { color: var(--muted); font-size: 12px; }
+.cc-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.cc-kinds span { border-radius: 10px; padding: 4px 9px; font-size: 12px; font-weight: 700; }
+.nb { background: #E05A47; color: #fff; border-radius: 999px; padding: 0 7px; font-size: 12px; margin-inline-start: 4px; }
+.kpill { border-radius: 8px; padding: 2px 8px; font-size: 11px; font-weight: 800; }
+.pay-box { display: flex; align-items: center; gap: 10px; background: var(--amber-bg); color: var(--amber); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+.pay-box > div { flex: 1; } .pay-box b { display: block; } .pay-box small { font-size: 12px; }
+.pay-box .btn { flex: none; width: auto; padding: 10px 14px; }
+.ilist { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.irow { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px; }
+.irow.dim { opacity: .6; }
+.irow > img, .irow .iph { width: 58px; height: 58px; border-radius: 10px; object-fit: cover; flex: none; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+.ir-main { flex: 1; min-width: 0; } .ir-main b { display: block; }
+.pick { max-height: 40vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 4px 8px; margin: 6px 0; }
+/* صفحة المتجر */
+.kind-sec { margin-top: 16px; }
+.ks-title { background: var(--kb); color: var(--kc); font-weight: 800; font-size: 16px; padding: 9px 12px; border-radius: 12px; border-inline-start: 5px solid var(--kc); }
+.ks-title small { font-weight: 600; opacity: .8; }
+.ks-sub { font-weight: 800; font-size: 13px; color: var(--muted); margin: 12px 4px 4px; }
+.icard { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); }
+.icard.out { opacity: .55; }
+.icard > img, .icard .iph { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex: none; background: var(--kb); display: flex; align-items: center; justify-content: center; font-size: 26px; cursor: zoom-in; }
+.ic-main { flex: 1; min-width: 0; } .ic-main b { display: block; font-size: 14px; }
+.ic-main small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.ic-price { color: var(--kc); font-weight: 800; font-size: 14px; margin-top: 2px; }
+.add-btn { border: 1px solid var(--kc); background: var(--card); color: var(--kc); border-radius: 10px; padding: 7px 10px; font-weight: 800; font-family: inherit; flex: none; }
+.qty { display: flex; align-items: center; gap: 8px; flex: none; }
+.qty button { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--kc, var(--green)); color: #fff; font-size: 18px; font-weight: 800; line-height: 1; }
+.qty b { min-width: 16px; text-align: center; }
+.cart-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; background: var(--green); color: #fff; border-radius: 14px; padding: 10px 12px; margin-top: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.2); }
+.cart-bar span { flex: 1; white-space: nowrap; } .cart-bar .btn { background: #fff; color: var(--green); padding: 9px 22px; width: auto; flex: none; }
+.checkout .co-line { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); --kc: var(--green); }
+.checkout .co-line span { flex: 1; }
+.co-sum { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 10px 0; font-size: 14px; }
+.co-sum div { display: flex; justify-content: space-between; padding: 3px 0; }
+.co-sum .tot { border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 7px; font-size: 16px; }
+.ocard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; }
+.oc-top { display: flex; justify-content: space-between; align-items: center; }
+.oc-sub, .oc-tot { color: var(--muted); margin-top: 3px; } .oc-items { margin-top: 5px; } .oc-tot b { color: var(--ink); }
+.oc-act { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.av-tog { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 800; font-family: inherit; color: #15803D; }
+.av-tog.off { color: var(--muted); }

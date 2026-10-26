@@ -6,6 +6,8 @@ import { MAPS_WEB_KEY } from "../config.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
+import { watchMerchantCatalog, catalogPanelHtml, bindCatalogPanel } from "./catalog-ui.js";
+import { vatOf, validVatNumber } from "./catalog.js";
 import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict, rewardOf, discounted, rewardText } from "./credits.js";
 
 const { esc, cld, thumb, priceLabel, districtLabel, money } = X;
@@ -28,6 +30,7 @@ export function renderMerchant(root, ctx) {
     m.wallet = undefined; m.boosts = [];
     m.unsubs.push(onSnapshot(doc(db, "wallets", uid), (s) => { m.wallet = s.exists() ? s.data() : null; ensureWallet(); draw(); }, () => { m.wallet = null; draw(); }));
     m.unsubs.push(onSnapshot(query(collection(db, "boosts"), where("merchantId", "==", uid)), (snap) => { m.boosts = snap.docs.map((d) => ({ ...d.data(), id: d.id })); draw(); }, () => {}));
+    watchMerchantCatalog(uid, () => draw());
     m.unsubs.push(onSnapshot(query(collection(db, "offers"), where("merchantId", "==", uid)), (snap) => {
       m.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => (X.ms(b.createdAt) || 0) - (X.ms(a.createdAt) || 0)); draw();
     }, (e) => console.error(e)));
@@ -62,6 +65,7 @@ function draw() {
       <div class="stat"><b>${sum("whatsappCount")}</b><small>واتساب</small></div>
     </div>
     ${walletCard()}
+    ${hasStore ? catalogPanelHtml(p.cuisineType) : ""}
     <button class="btn dir big" id="newOffer" ${st.suspended ? "disabled" : ""}>＋ عرض جديد</button>
     <div class="section-title">عروضي (${m.offers.length})</div>
     <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
@@ -73,6 +77,8 @@ function draw() {
   $("newOffer").onclick = () => hasStore ? openOfferForm(null) : (toast("جهّز صفحة متجرك وموقعك أول 📍"), openStoreForm());
   $("mContact").onclick = m.ctx.contact;
   $("wRedeem")?.addEventListener("click", openRedeem);
+  bindCatalogPanel({ isAdmin: () => !!m.ctx?.isAdmin, direct: () => canPublishDirectly() || (m.status?.verified === true && m.status?.suspended !== true), balance: bal,
+    category: () => m.profile?.cuisineType || "", vatNumber: () => (vatOf(state.config).enabled && validVatNumber(m.profile?.vatNumber) ? m.profile.vatNumber : "") });
   $("wHistory")?.addEventListener("click", openHistory);
   root.querySelectorAll("[data-pub]").forEach((b) => b.onclick = () => publishDraft(m.offers.find((o) => o.id === b.dataset.pub)));
   root.querySelectorAll("[data-boost]").forEach((b) => b.onclick = () => openBoost(m.offers.find((o) => o.id === b.dataset.boost)));
@@ -290,6 +296,7 @@ export function openStoreForm(claim = null) {
     priceFrom: p.priceFrom > 0 ? String(p.priceFrom) : "", delivery: !!p.delivery,
     fee: p.deliveryFee > 0 ? String(p.deliveryFee) : "", min: p.deliveryMinOrder > 0 ? String(p.deliveryMinOrder) : "",
     free: p.deliveryFreeOver > 0 ? String(p.deliveryFreeOver) : "",
+    vatReg: !!p.vatNumber, vatNumber: p.vatNumber || "",
     logo: p.logoUrl || "", logoFile: null, cover: p.coverUrl || "", coverFile: null,
     menu: (p.menuImages || []).map((u) => ({ url: u })), branches: JSON.parse(JSON.stringify(p.branches || [])),
   };
@@ -309,7 +316,9 @@ export function openStoreForm(claim = null) {
       <label class="label">نبذة عن المتجر</label><textarea id="sAbout" class="input" rows="3" maxlength="500" placeholder="مثال: شاورما على الفحم من 2010…">${esc(f.about)}</textarea>
       <label class="label">الأسعار تبدأ من (ر.س)</label><input id="sPrice" class="input" inputmode="decimal" value="${esc(f.priceFrom)}" placeholder="مثال: 15">
       ${deliveryFields(f)}
-      <label class="label">${X.menuLabel(f.category)} (${f.menu.length}/10)</label>
+      <label class="switch-row"><span>🧾 منشأتي مسجّلة في ضريبة القيمة المضافة <small class="hint">(يطلع تفصيل الضريبة ورقمك الضريبي في ملخص الطلب)</small></span><input type="checkbox" id="sVat" ${f.vatReg ? "checked" : ""}></label>
+      ${f.vatReg ? `<label class="label">الرقم الضريبي (15 رقم يبدأ وينتهي بـ 3)</label><input id="sVatNo" class="input" inputmode="numeric" maxlength="15" dir="ltr" value="${esc(f.vatNumber)}" placeholder="3xxxxxxxxxxxxx3">` : ""}
+      <label class="label">${X.menuLabel(f.category)} — صور (${f.menu.length}/10)</label>
       <div class="tiles">${f.menu.map((it, i) => mediaTile(it.file ? URL.createObjectURL(it.file) : cld(it.url, 300), "menu" + i)).join("")}
         ${f.menu.length < 10 ? `<label class="tile add">＋<input type="file" accept="image/*" multiple id="sMenu" hidden></label>` : ""}</div>
       <div class="section-title">📍 الفروع *</div>
@@ -320,7 +329,8 @@ export function openStoreForm(claim = null) {
     </div>`;
     const body = $("pageBody");
     const bind = (id, k) => { const el = $(id); if (el) el.oninput = (e) => { f[k] = e.target.value; dirty = true; }; };
-    bind("sName", "name"); bind("sAbout", "about"); bind("sPrice", "priceFrom");
+    bind("sName", "name"); bind("sAbout", "about"); bind("sPrice", "priceFrom"); bind("sVatNo", "vatNumber");
+    $("sVat").onchange = (e) => { f.vatReg = e.target.checked; dirty = true; render(); };
     bindDelivery(f, () => { dirty = true; render(); });
     body.querySelectorAll("[data-cat]").forEach((b) => b.onclick = () => { f.category = b.dataset.cat; dirty = true; render(); });
     $("sLogo").onchange = (e) => { if (e.target.files[0]) { f.logoFile = e.target.files[0]; dirty = true; render(); } };
@@ -354,6 +364,8 @@ export function openStoreForm(claim = null) {
     if (!f.name.trim()) return err("اكتب اسم المتجر.");
     if (!f.category) return err("اختر تصنيف المتجر.");
     if (!f.branches.length) return err("حدد موقع محلك (فرع واحد على الأقل).");
+    const vatNo = f.vatReg ? String(f.vatNumber).replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c)).replace(/\D/g, "") : "";
+    if (f.vatReg && !validVatNumber(vatNo)) return err("الرقم الضريبي لازم 15 رقم يبدأ وينتهي بـ 3.");
     saving = true; $("sSave").disabled = true; $("sSave").textContent = "جاري الحفظ…"; err("");
     try {
       const logo = f.logoFile ? await uploadImage(f.logoFile, 600) : f.logo;
@@ -366,7 +378,7 @@ export function openStoreForm(claim = null) {
         logoUrl: logo || "", branches: f.branches.slice(0, 50), coverUrl: cover || "", about: f.about.trim().slice(0, 500),
         priceFrom: Number(f.priceFrom) > 0 ? Number(f.priceFrom) : 0, menuImages: menu.slice(0, 10),
         delivery: f.delivery, deliveryFee: f.delivery ? Number(f.fee) || 0 : 0, deliveryMinOrder: f.delivery ? Number(f.min) || 0 : 0,
-        deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0,
+        deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0, vatNumber: vatNo,
         updatedAt: serverTimestamp(),
       };
       const uid = state.user.uid, direct = canPublishDirectly();
@@ -374,7 +386,7 @@ export function openStoreForm(claim = null) {
       await setDoc(doc(db, "stores", uid), {
         uid, name: profile.restaurantName, logoUrl: profile.logoUrl, coverUrl: profile.coverUrl, about: profile.about, category: profile.cuisineType.slice(0, 60),
         priceFrom: profile.priceFrom, menuImages: profile.menuImages, branches: profile.branches, phone: (primary.phone || "").slice(0, 30), approved: direct,
-        delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver, updatedAt: serverTimestamp(),
+        delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver, vatNumber: vatNo, updatedAt: serverTimestamp(),
       }, { merge: true });
       await syncOffers(profile, direct);
       await recordReferral(uid, profile.restaurantName);
