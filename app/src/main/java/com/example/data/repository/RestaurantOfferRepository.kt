@@ -581,6 +581,7 @@ class RestaurantOfferRepository(
                 "deliveryFee" to store.deliveryFee,
                 "deliveryMinOrder" to store.deliveryMinOrder,
                 "deliveryFreeOver" to store.deliveryFreeOver,
+                "curbside" to store.curbside, "payCash" to store.payCash, "payCard" to store.payCard,
                 "updatedAt" to FieldValue.serverTimestamp()
             ),
             // دمج: عشان ما تنمسح علامة ✓ اللي يحطها الأدمن
@@ -895,6 +896,7 @@ class RestaurantOfferRepository(
         mode = d.getString("mode") ?: "pickup", note = d.getString("note").orEmpty(), status = d.getString("status") ?: "sent",
         createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L,
         etaAtMillis = d.getTimestamp("etaAt")?.toDate()?.time ?: 0L,
+        pay = d.getString("pay").orEmpty(), car = d.getString("car").orEmpty(), arrived = d.get("arrivedAt") != null,
         lat = (d.get("location") as? Map<String, Any?>)?.get("lat") as? Double, lng = (d.get("location") as? Map<String, Any?>)?.get("lng") as? Double
     )
     fun myOrdersFlow(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
@@ -920,6 +922,9 @@ class RestaurantOfferRepository(
         awaitClose { l.remove() }
     }
     suspend fun myOrders(uid: String) = db.collection("orders").whereEqualTo("customerUid", uid).get().await().documents.map { parseOrder(it) }.sortedByDescending { it.createdAtMillis }
+    suspend fun markArrived(id: String) {
+        db.collection("orders").document(id).update(mapOf("arrivedAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp())).await()
+    }
     suspend fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0) {
         val m = mutableMapOf<String, Any>("status" to status, "updatedAt" to FieldValue.serverTimestamp())
         if (etaMinutes > 0) m["etaAt"] = Timestamp(java.util.Date(System.currentTimeMillis() + etaMinutes * 60_000L))
@@ -933,6 +938,7 @@ class RestaurantOfferRepository(
             "items" to o.items.map { mapOf("id" to it.id, "name" to it.name, "kind" to it.kind, "qty" to it.qty.toLong(), "price" to it.price) },
             "subtotal" to o.subtotal, "deliveryFee" to o.deliveryFee, "total" to o.total, "vatRate" to o.vatRate, "vatAmount" to o.vatAmount, "vatNumber" to o.vatNumber,
             "mode" to o.mode, "location" to (if (o.lat != null && o.lng != null) mapOf("lat" to o.lat, "lng" to o.lng) else null),
+            "pay" to o.pay, "car" to o.car.take(60),
             "note" to o.note.take(300), "status" to "sent", "createdAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp()
         )).await()
     }
@@ -1010,6 +1016,7 @@ class RestaurantOfferRepository(
                 "deliveryMinOrder" to profile.deliveryMinOrder,
                 "deliveryFreeOver" to profile.deliveryFreeOver,
                 "vatNumber" to profile.vatNumber,
+                "curbside" to profile.curbside, "payCash" to profile.payCash, "payCard" to profile.payCard,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()

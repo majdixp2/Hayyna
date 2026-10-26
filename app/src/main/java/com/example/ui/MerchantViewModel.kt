@@ -765,6 +765,30 @@ class MerchantViewModel(
         }
     }
     suspend fun storeRatings(uid: String) = repository.storeRatings(uid)
+    /** 🚗 وصلت: ننبّه المحل + نفتح واتساب برسالة جاهزة */
+    fun markArrived(o: com.example.data.model.HayynaOrder, onUrl: (String) -> Unit) {
+        launchSafely("تعذّر التبليغ") {
+            repository.markArrived(o.id)
+            toast("بلّغنا المحل إنك وصلت 🚗")
+            val st = approvedStores.value.firstOrNull { it.uid == o.storeId }
+            val d = (st?.branches?.firstOrNull()?.phone ?: st?.phone ?: "").filter { it.isDigit() }.let { if (it.startsWith("05") && it.length == 10) "966" + it.drop(1) else it }
+            if (d.isNotBlank()) onUrl("https://wa.me/$d?text=" + java.net.URLEncoder.encode("وصلت عند المحل 🚗 ${o.car}\nطلب #${o.code}", "UTF-8").replace("+", "%20"))
+        }
+    }
+    init {
+        // تنبيهات المحل: طلب جديد / العميل وصل بسيارته
+        var prevStore: Map<String, Boolean>? = null
+        viewModelScope.launch {
+            storeOrders.collect { list ->
+                val p = prevStore
+                if (p != null) list.forEach { o ->
+                    if (o.id !in p) toast("🧾 طلب جديد #${o.code} من ${o.customerName.ifBlank { "عميل" }}")
+                    else if (o.arrived && p[o.id] == false) toast("🚗 العميل وصل — طلب #${o.code} ${o.car}")
+                }
+                prevStore = list.associate { it.id to it.arrived }
+            }
+        }
+    }
 
     // ----- السلة (لكل متجر) -----
     val carts = MutableStateFlow<Map<String, Map<String, com.example.data.model.CartLine>>>(emptyMap())
@@ -790,7 +814,7 @@ class MerchantViewModel(
     }
 
     /** يحفظ الطلب (لو مسجّل) ويرجّع رابط واتساب المحل مع ملخص الطلب */
-    fun sendOrder(store: com.example.data.model.StoreProfile, branch: com.example.data.model.Branch?, mode: String, name: String, phone: String, note: String, onUrl: (String) -> Unit) {
+    fun sendOrder(store: com.example.data.model.StoreProfile, branch: com.example.data.model.Branch?, mode: String, name: String, phone: String, note: String, pay: String, car: String, onUrl: (String) -> Unit) {
         val lines = carts.value[store.uid].orEmpty().values.toList()
         if (lines.isEmpty()) return
         val cfg = catalogConfig.value
@@ -804,7 +828,7 @@ class MerchantViewModel(
             code = com.example.data.model.HayynaOrder.code(), storeId = store.uid, storeName = store.name,
             branchName = if (store.branches.size > 1) (branch?.name?.ifBlank { branch.district } ?: "") else "",
             customerName = name.trim().take(60), customerPhone = phone.trim(), items = lines, subtotal = sub, deliveryFee = fee, total = total,
-            vatRate = if (vatNo.isNotBlank()) cfg.vatRate else 0.0, vatAmount = vatAmt, vatNumber = vatNo, mode = mode,
+            vatRate = if (vatNo.isNotBlank()) cfg.vatRate else 0.0, vatAmount = vatAmt, vatNumber = vatNo, mode = mode, pay = pay, car = if (mode == "curbside") car.trim().take(60) else "",
             lat = if (mode == "delivery") loc?.latitude else null, lng = if (mode == "delivery") loc?.longitude else null, note = note.trim().take(300)
         )
         val digits = (branch?.phone ?: store.phone).filter { it.isDigit() }.let { d ->

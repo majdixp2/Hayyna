@@ -107,7 +107,9 @@ export function orderText(o) {
   L.push("━━━━━━━━━━━━");
   if (o.note) L.push(`📝 ملاحظة: ${o.note}`);
   L.push(`👤 ${[o.customerName, o.customerPhone].filter(Boolean).join(" • ")}`);
-  L.push(o.mode === "delivery" ? `📍 توصيل${o.location ? ` — https://maps.google.com/?q=${o.location.lat},${o.location.lng}` : ""}` : "🏃 استلام من المحل");
+  L.push(o.mode === "delivery" ? `📍 توصيل${o.location ? ` — https://maps.google.com/?q=${o.location.lat},${o.location.lng}` : ""}`
+    : o.mode === "curbside" ? `🚗 استلام من السيارة${o.car ? ` — ${o.car}` : ""}` : "🏃 استلام من المحل");
+  if (o.pay) L.push(`${PAY[o.pay]?.icon || "💵"} الدفع: ${PAY[o.pay]?.label || o.pay} عند الاستلام`);
   return L.join("\n");
 }
 
@@ -115,13 +117,27 @@ export const ORDER_STATUS = {
   sent: { t: "📨 أُرسل", cls: "" }, received: { t: "👍 استلمه المحل", cls: "open" }, ready: { t: "🛍️ جاهز للاستلام", cls: "open" },
   delivering: { t: "🚚 جاري التوصيل", cls: "open" }, done: { t: "✅ تم", cls: "closed" }, cancelled: { t: "✕ ملغي", cls: "urgent" },
 };
-/** وصف الحالة للزبون حسب نوع الطلب (استلام / توصيل) */
+export const PAY = { cash: { icon: "💵", label: "كاش" }, card: { icon: "💳", label: "بطاقة / شبكة" } };
+export const MODES = { pickup: "🏃 استلام من المحل", delivery: "🚚 توصيل", curbside: "🚗 استلام من السيارة" };
+/** وصف الحالة للزبون حسب نوع الطلب (استلام / توصيل / من السيارة) */
 export function statusText(o) {
-  const del = o.mode === "delivery";
-  return ({ sent: "📨 أُرسل — بانتظار المحل", received: "👍 المحل استلم طلبك ويجهّزه", ready: "🛍️ جاهز للاستلام", delivering: "🚚 جاري التوصيل",
-    done: del ? "✅ تم التوصيل" : "✅ تم الاستلام", cancelled: "✕ ملغي" })[o.status] || o.status;
+  const del = o.mode === "delivery", car = o.mode === "curbside";
+  return ({ sent: "📨 أُرسل — بانتظار المحل", received: "👍 المحل استلم طلبك ويجهّزه",
+    ready: car ? (o.arrivedAt ? "🚗 جاهز — المحل جاي لسيارتك" : "🚗 جاهز — تعال واضغط «وصلت»") : "🛍️ جاهز للاستلام", delivering: "🚚 جاري التوصيل",
+    done: del ? "✅ تم التوصيل" : car ? "✅ تم التسليم" : "✅ تم الاستلام", cancelled: "✕ ملغي" })[o.status] || o.status;
 }
+/** التوصيل: الرسوم + كم باقي للمجاني */
+export function deliveryInfo(s, sub) {
+  if (!s?.delivery) return null;
+  const fee = s.deliveryFee || 0, freeOver = s.deliveryFreeOver || 0;
+  const free = fee <= 0 || (freeOver > 0 && sub >= freeOver);
+  return { fee: free ? 0 : fee, free, freeOver, left: !free && freeOver > 0 ? Math.round((freeOver - sub) * 100) / 100 : 0,
+    label: fee <= 0 ? "🚚 توصيل مجاني" : `🚚 توصيل — ${fmt(fee)} ر.س${freeOver > 0 ? ` (مجاني من ${fmt(freeOver)})` : ""}` };
+}
+export const payMethods = (s) => { const m = []; if (s?.payCash !== false) m.push("cash"); if (s?.payCard !== false) m.push("card"); return m.length ? m : ["cash"]; };
 /** المراحل الأربع لشريط التقدّم */
-export const orderSteps = (o) => o.mode === "delivery"
+export const orderSteps = (o) => o.mode === "curbside"
+  ? [["sent", "أُرسل"], ["received", "يجهّزه"], ["ready", "جاهز"], ["done", "تسلّمته"]]
+  : o.mode === "delivery"
   ? [["sent", "أُرسل"], ["received", "يجهّزه"], ["delivering", "بالطريق"], ["done", "وصل"]]
   : [["sent", "أُرسل"], ["received", "يجهّزه"], ["ready", "جاهز"], ["done", "استلمته"]];

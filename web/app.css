@@ -628,3 +628,14 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .crop-act .btn.call { background: rgba(255,255,255,.12); color: #fff; border: 0; }
 .tile-crop { position: absolute; bottom: 4px; left: 4px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; }
 .crop-act .btn.dir { grid-column: auto; }
+/* خيارات الاستلام + التوصيل المجاني */
+.modes { display: flex; flex-direction: column; gap: 8px; }
+.mode { text-align: start; border: 1.5px solid var(--line); background: var(--card); border-radius: 14px; padding: 11px 13px; font-family: inherit; color: var(--ink); }
+.mode b { display: block; font-size: 14px; } .mode small { color: var(--muted); font-size: 12px; }
+.mode.on { border-color: var(--green); background: var(--green-soft); box-shadow: 0 0 0 2px rgba(45,106,79,.15); }
+.free-hint { background: #FFF8E6; border: 1px dashed #F2C27A; color: #7A4F00; border-radius: 12px; padding: 10px 12px; margin: 8px 0; font-size: 14px; }
+.fh-bar { height: 8px; background: rgba(0,0,0,.08); border-radius: 99px; overflow: hidden; margin: 7px 0 3px; } .fh-bar i { display: block; height: 100%; background: linear-gradient(90deg, #F59E0B, #2D6A4F); border-radius: 99px; }
+.free-hint small { opacity: .8; } .free-hint .link { display: block; margin-top: 6px; background: none; border: 0; color: var(--green); font-weight: 800; font-family: inherit; padding: 0; }
+.cart-bar small { display: block; font-size: 11px; opacity: .9; margin-top: 2px; }
+.oc-arrived { background: #111827; color: #FFD166; border-radius: 10px; padding: 7px 10px; font-weight: 800; margin-top: 6px; animation: superGlow 1.6s ease-in-out infinite; }
+[data-arrive] { margin-top: 8px; }

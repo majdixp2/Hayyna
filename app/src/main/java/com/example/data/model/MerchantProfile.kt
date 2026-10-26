@@ -28,7 +28,11 @@ data class MerchantProfile(
     // توصيل مجاني للطلبات فوق هذا المبلغ (0 = ما فيه)
     val deliveryFreeOver: Double = 0.0,
     // الرقم الضريبي (يكتبه التاجر من الويب) — نحفظه عشان ما ينمسح
-    val vatNumber: String = ""
+    val vatNumber: String = "",
+    // خيارات الطلب: استلام من السيارة + طرق الدفع عند الاستلام
+    val curbside: Boolean = false,
+    val payCash: Boolean = true,
+    val payCard: Boolean = true
 ) {
     val hasLocation: Boolean get() = latitude != 0.0 || longitude != 0.0
 }

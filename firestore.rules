@@ -443,14 +443,16 @@ service cloud.firestore {
       allow create: if isAuthenticated()
         && catalogCfg().get('orderEnabled', false) == true
         && request.resource.data.keys().hasOnly(['id', 'code', 'storeId', 'storeName', 'branchId', 'branchName', 'customerUid', 'customerName', 'customerPhone',
-            'items', 'subtotal', 'deliveryFee', 'total', 'vatRate', 'vatAmount', 'vatNumber', 'mode', 'location', 'note', 'status', 'createdAt', 'updatedAt'])
+            'items', 'subtotal', 'deliveryFee', 'total', 'vatRate', 'vatAmount', 'vatNumber', 'mode', 'location', 'note', 'pay', 'car', 'status', 'createdAt', 'updatedAt'])
+        && (!('pay' in request.resource.data) || request.resource.data.pay in ['cash', 'card'])
+        && (!('car' in request.resource.data) || (request.resource.data.car is string && request.resource.data.car.size() <= 60))
         && request.resource.data.id == orderId
         && request.resource.data.customerUid == request.auth.uid
         && request.resource.data.storeId is string && request.resource.data.storeId.size() > 0
         && request.resource.data.items is list && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 100
         && request.resource.data.total is number && request.resource.data.total >= 0
         && request.resource.data.note is string && request.resource.data.note.size() <= 300
-        && request.resource.data.mode in ['pickup', 'delivery']
+        && request.resource.data.mode in ['pickup', 'delivery', 'curbside']
         && request.resource.data.status == 'sent'
         && request.resource.data.createdAt == request.time;
       allow read: if can('merchants')
@@ -464,7 +466,12 @@ service cloud.firestore {
         || (isAuthenticated() && resource.data.customerUid == request.auth.uid
           && resource.data.status == 'sent'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
-          && request.resource.data.status == 'cancelled');
+          && request.resource.data.status == 'cancelled')
+        // 🚗 الزبون يبلّغ إنه وصل (استلام من السيارة)
+        || (isAuthenticated() && resource.data.customerUid == request.auth.uid
+          && resource.data.mode == 'curbside' && resource.data.status in ['received', 'ready']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['arrivedAt', 'updatedAt'])
+          && request.resource.data.arrivedAt == request.time);
       allow delete: if can('merchants');
     }
 

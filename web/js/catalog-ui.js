@@ -7,7 +7,7 @@ import * as X from "./logic.js";
 import { cropImage } from "./cropper.js";
 import {
   KINDS, catalogOf, vatOf, baseKindOf, kindOrder, limitOf, slotId, passCost, riyal, itemVisible, itemPaidUntil, itemGrace,
-  vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps
+  vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps, PAY, MODES, deliveryInfo, payMethods
 } from "./catalog.js";
 
 const { esc, cld } = X;
@@ -27,7 +27,15 @@ export function watchMerchantCatalog(uid, onChange) {
   M.unsubs.push(onSnapshot(query(collection(db, "items"), where("merchantId", "==", uid)), (s) => { M.items = s.docs.map((d) => ({ ...d.data(), id: d.id })); fire(); refreshPage(); }, () => {}));
   M.unsubs.push(onSnapshot(query(collection(db, "itemPasses"), where("merchantId", "==", uid)), (s) => { M.passes = s.docs.map((d) => ({ ...d.data(), id: d.id })); fire(); refreshPage(); }, () => {}));
   M.unsubs.push(onSnapshot(query(collection(db, "orders"), where("storeId", "==", uid)), (s) => {
+    const prev = new Map(M.orders.map((o) => [o.id, o]));
     M.orders = s.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt)); fire();
+    // تنبيهات المحل: طلب جديد / العميل وصل بسيارته
+    if (M.ordersLoaded) for (const o of M.orders) {
+      const p = prev.get(o.id);
+      if (!p) toast(`🧾 طلب جديد #${o.code} من ${o.customerName || "عميل"}`, true);
+      else if (o.arrivedAt && !p.arrivedAt) toast(`🚗 العميل وصل — طلب #${o.code}${o.car ? " • " + o.car : ""}`, true);
+    }
+    M.ordersLoaded = true;
     if (ordersOpen && !$("sheet").classList.contains("hidden")) M.onOrders?.();
   }, () => {}));
 }
@@ -253,7 +261,7 @@ function orderCard(o, asStore) {
   const next = asStore ? ({
     sent: [["received", "👍 استلمته"], ["cancelled", "✕ إلغاء"]],
     received: [[del ? "delivering" : "ready", del ? "🚚 طلع للتوصيل" : "🛍️ جاهز للاستلام"], ["cancelled", "✕ إلغاء"]],
-    ready: [["done", "✅ تم الاستلام"]], delivering: [["done", "✅ تم التوصيل"]],
+    ready: [["done", o.mode === "curbside" ? "✅ تم التسليم" : "✅ تم الاستلام"]], delivering: [["done", "✅ تم التوصيل"]],
   }[o.status] || []) : (o.status === "sent" ? [["cancelled", "✕ إلغاء الطلب"]] : []);
   const store = !asStore ? state.stores.find((x) => x.uid === o.storeId) : null;
   const wa = store ? X.waDigits(store.phone || store.branches?.[0]?.phone || "") : "";
@@ -262,7 +270,10 @@ function orderCard(o, asStore) {
     <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</div>
     ${stepper(o)}${etaText(o) ? `<div class="oc-eta">${etaText(o)}</div>` : ""}
     <div class="oc-items">${(o.items || []).map((i) => `${i.qty} × ${esc(i.name)}`).join("، ")}</div>
-    <div class="oc-tot">${del ? "🚚 توصيل" : "🏃 استلام"} • <b>${fmt(o.total)} ر.س</b>${o.note ? ` • 📝 ${esc(o.note)}` : ""}</div>
+    <div class="oc-tot">${MODES[o.mode] || "🏃 استلام"} • <b>${fmt(o.total)} ر.س</b>${o.pay ? ` • ${PAY[o.pay]?.icon} ${PAY[o.pay]?.label}` : ""}${o.note ? ` • 📝 ${esc(o.note)}` : ""}</div>
+    ${o.mode === "curbside" && o.car ? `<div class="oc-tot">🚗 ${esc(o.car)}</div>` : ""}
+    ${asStore && o.mode === "curbside" && o.arrivedAt && !["done", "cancelled"].includes(o.status) ? `<div class="oc-arrived">🚗 العميل وصل عند المحل!</div>` : ""}
+    ${!asStore && o.mode === "curbside" && ["received", "ready"].includes(o.status) ? (o.arrivedAt ? `<div class="oc-eta">🚗 بلّغنا المحل إنك وصلت</div>` : `<button class="btn dir" data-arrive="${esc(o.id)}">🚗 وصلت</button>`) : ""}
     ${!asStore && ["received", "ready", "delivering"].includes(o.status) ? `<div class="oc-note">المحل استلم طلبك وما يمكن إلغاؤه${wa ? ` — <a href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 تواصل مع المحل</a>` : ""}</div>` : ""}
     ${asStore && o.mode === "delivery" && o.location ? `<a class="oc-map" href="https://maps.google.com/?q=${o.location.lat},${o.location.lng}" target="_blank" rel="noopener">📍 موقع العميل</a>` : ""}
     ${next.length || !asStore ? `<div class="oc-act">${next.map(([s, l]) => `<button class="chip" data-oid="${esc(o.id)}" data-os="${s}">${l}</button>`).join("")}
@@ -316,6 +327,15 @@ function drawMyOrders() {
     MY.open = false; hideSheet(); setTimeout(() => openStore(o.storeId, true), 60);
   });
   b.querySelectorAll("[data-rate]").forEach((x) => x.onclick = () => rateOrder(list.find((y) => y.id === x.dataset.rate)));
+  // 🚗 وصلت: ننبّه المحل في حيّنا + رسالة واتساب جاهزة
+  b.querySelectorAll("[data-arrive]").forEach((x) => x.onclick = async () => {
+    const o = list.find((y) => y.id === x.dataset.arrive), store = state.stores.find((y) => y.uid === o.storeId);
+    const wa = store ? X.waDigits(store.phone || store.branches?.[0]?.phone || "") : "";
+    const w = wa ? window.open("", "_blank") : null;
+    try { await updateDoc(doc(db, "orders", o.id), { arrivedAt: serverTimestamp(), updatedAt: serverTimestamp() }); } catch (e) { console.warn(e); }
+    if (w) w.location = `https://wa.me/${wa}?text=${encodeURIComponent(`وصلت عند المحل 🚗 ${o.car || ""}\nطلب #${o.code}`)}`;
+    toast("بلّغنا المحل إنك وصلت 🚗", true);
+  });
 }
 export const myOrdersClosed = () => { MY.open = false; ordersOpen = false; };
 
@@ -399,7 +419,8 @@ function drawStoreItems(sid) {
           ${out ? `<span class="pill closed">نفد</span>` : order ? (q ? `<div class="qty"><button data-dec="${esc(it.id)}">−</button><b>${q}</b><button data-inc="${esc(it.id)}">＋</button></div>` : `<button class="add-btn" data-inc="${esc(it.id)}">＋ أضف</button>`) : ""}
         </div>`; }).join("")}`).join("")}
     </div>`;
-  }).join("") + (order && cartCount(sid) ? `<div class="cart-bar"><span>🧾 سلتك: <b>${cartCount(sid)}</b> • <b>${fmt(cartSum(sid))} ر.س</b></span><button class="btn dir" id="cartGo">اطلب</button></div>` : "");
+  }).join("") + (order && cartCount(sid) ? (() => { const di = deliveryInfo(s, cartSum(sid));
+    return `<div class="cart-bar"><span>🧾 سلتك: <b>${cartCount(sid)}</b> • <b>${fmt(cartSum(sid))} ر.س</b>${di?.left > 0 ? `<small>🚚 باقي ${fmt(di.left)} ر.س للتوصيل المجاني</small>` : di?.free && di.freeOver > 0 ? `<small>🚚 التوصيل صار مجاني 🎉</small>` : ""}</span><button class="btn dir" id="cartGo">اطلب</button></div>`; })() : "");
   box.querySelectorAll("[data-inc]").forEach((b) => b.onclick = () => { const it = items.find((x) => x.id === b.dataset.inc); const l = cart[it.id] || (cart[it.id] = { id: it.id, name: it.name, kind: it.kind, price: it.price, qty: 0 }); l.qty = Math.min(99, l.qty + 1); saveCarts(); drawStoreItems(sid); });
   box.querySelectorAll("[data-dec]").forEach((b) => b.onclick = () => { const l = cart[b.dataset.dec]; if (l) { l.qty--; if (l.qty <= 0) delete cart[b.dataset.dec]; } saveCarts(); drawStoreItems(sid); });
   box.querySelectorAll("img[data-full]").forEach((im) => im.onclick = () => { $("viewerImg").src = im.dataset.full; $("viewer").classList.remove("hidden"); });
@@ -409,25 +430,40 @@ function drawStoreItems(sid) {
 function openCheckout(sid) {
   const { s } = storeCache[sid], cart = cartOf(sid), vat = vatOf(state.config);
   const branches = s.branches || [];
-  const f = { mode: "pickup", branch: branches[0]?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null };
+  const pays = payMethods(s);
+  let savedCar = ""; try { savedCar = localStorage.getItem("hayyna_car") || ""; } catch {}
+  const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: branches[0]?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null };
   const draw = () => {
     const lines = Object.values(cart);
     if (!lines.length) { openStore(sid, false); return; }
     const sub = lines.reduce((a, l) => a + l.qty * l.price, 0);
-    const fee = f.mode === "delivery" ? (s.deliveryFreeOver > 0 && sub >= s.deliveryFreeOver ? 0 : (s.deliveryFee || 0)) : 0;
+    const di = deliveryInfo(s, sub);
+    const fee = f.mode === "delivery" && di ? di.fee : 0;
     const total = Math.round((sub + fee) * 100) / 100, vatNo = vat.enabled && validVatNumber(s.vatNumber) ? s.vatNumber : "";
     const { vat: vatAmt, net } = vatSplit(total, vat.rate);
     const minOk = f.mode !== "delivery" || !(s.deliveryMinOrder > 0) || sub >= s.deliveryMinOrder;
     showSheet(`<div class="pad form checkout"><div class="section-title">🧾 طلبك من ${esc(s.name)}</div>
       ${lines.map((l) => `<div class="co-line"><span>${esc(l.name)}</span><div class="qty"><button data-dec="${esc(l.id)}">−</button><b>${l.qty}</b><button data-inc="${esc(l.id)}">＋</button></div><b>${fmt(l.qty * l.price)}</b></div>`).join("")}
-      <div class="chips">${`<button class="chip${f.mode === "pickup" ? " on" : ""}" data-mode="pickup">🏃 استلام من المحل</button>`}${s.delivery ? `<button class="chip${f.mode === "delivery" ? " on" : ""}" data-mode="delivery">🚚 توصيل</button>` : ""}</div>
+      <label class="label">طريقة الاستلام</label>
+      ${s.delivery || s.curbside ? `<div class="modes">
+        <button class="mode${f.mode === "pickup" ? " on" : ""}" data-mode="pickup"><b>🏃 استلام من المحل</b></button>
+        ${s.curbside ? `<button class="mode${f.mode === "curbside" ? " on" : ""}" data-mode="curbside"><b>🚗 استلام من السيارة</b><small>المحل يطلّع طلبك لسيارتك</small></button>` : ""}
+        ${di ? `<button class="mode${f.mode === "delivery" ? " on" : ""}" data-mode="delivery"><b>${esc(di.label)}</b>${s.deliveryMinOrder > 0 ? `<small>أقل طلب ${fmt(s.deliveryMinOrder)} ر.س</small>` : ""}</button>` : ""}
+      </div>` : `<div class="hint-box">🏃 الطلب استلام من المحل — المحل ما يوفر توصيل</div>`}
+      ${f.mode === "delivery" && di?.left > 0 ? `<div class="free-hint">💡 أضف <b>${fmt(di.left)} ر.س</b> وصار التوصيل مجاني 🎉
+        <div class="fh-bar"><i style="width:${Math.min(100, (sub / di.freeOver) * 100).toFixed(0)}%"></i></div><small>${fmt(sub)} من ${fmt(di.freeOver)}</small>
+        <button class="link" id="coMore">‹ تصفّح المنيو وكمّل</button></div>` : ""}
+      ${f.mode === "curbside" ? `<label class="label">🚗 وصف سيارتك (عشان المحل يعرفك)</label><input id="coCar" class="input" maxlength="60" value="${esc(f.car)}" placeholder="مثال: كامري بيضاء">` : ""}
+      <label class="label">💳 الدفع عند الاستلام</label>
+      ${pays.length > 1 ? `<div class="chips">${pays.map((p) => `<button class="chip${f.pay === p ? " on" : ""}" data-pay="${p}">${PAY[p].icon} ${PAY[p].label}</button>`).join("")}</div>`
+        : `<div class="hint-box">${PAY[pays[0]].icon} ${PAY[pays[0]].label} عند الاستلام (المحل يقبل هذي الطريقة بس)</div>`}
       ${branches.length > 1 ? `<label class="label">الفرع</label><select id="coBr" class="input">${branches.map((b) => `<option value="${esc(b.id)}" ${f.branch === b.id ? "selected" : ""}>${esc(b.name || X.districtLabel(b.district) || "فرع")}</option>`).join("")}</select>` : ""}
       ${f.mode === "delivery" ? `<button class="btn call" id="coLoc">📍 ${f.loc ? "موقعي محدد ✓ (حدّثه)" : "حدد موقعي للتوصيل"}</button>` : ""}
       <div class="row2"><div><label class="label">اسمك</label><input id="coName" class="input" maxlength="60" value="${esc(f.name)}"></div>
         <div><label class="label">جوالك</label><input id="coPhone" class="input" inputmode="tel" maxlength="14" value="${esc(f.phone)}" placeholder="05xxxxxxxx"></div></div>
       <label class="label">ملاحظة (اختياري)</label><input id="coNote" class="input" maxlength="300" value="${esc(f.note)}" placeholder="مثال: بدون بصل">
       <div class="co-sum">
-        ${fee ? `<div><span>المجموع</span><b>${fmt(sub)}</b></div><div><span>🚚 التوصيل</span><b>${fmt(fee)}</b></div>` : f.mode === "delivery" && s.deliveryFreeOver > 0 && sub >= s.deliveryFreeOver ? `<div><span>🚚 التوصيل</span><b>مجاني 🎉</b></div>` : ""}
+        ${fee ? `<div><span>المجموع</span><b>${fmt(sub)}</b></div><div><span>🚚 التوصيل</span><b>${fmt(fee)}</b></div>` : f.mode === "delivery" ? `<div><span>🚚 التوصيل</span><b>مجاني 🎉</b></div>` : ""}
         ${vatNo ? `<div><span>المبلغ قبل الضريبة</span><b>${fmt(net)}</b></div><div><span>ضريبة القيمة المضافة ${vat.rate}%</span><b>${fmt(vatAmt)}</b></div>` : ""}
         <div class="tot"><span>💰 الإجمالي${vatNo ? " (شامل الضريبة)" : ""}</span><b>${fmt(total)} ر.س</b></div></div>
       ${!minOk ? `<div class="err">أقل طلب للتوصيل ${fmt(s.deliveryMinOrder)} ر.س</div>` : ""}
@@ -435,11 +471,13 @@ function openCheckout(sid) {
       <div id="coErr" class="err"></div>
       <button class="btn wa big" id="coSend" ${minOk ? "" : "disabled"}>📨 أرسل الطلب على واتساب</button>
       <button class="btn ghost" id="coBack">‹ رجوع للمتجر</button></div>`);
-    const keep = () => { f.name = $("coName").value; f.phone = $("coPhone").value; f.note = $("coNote").value; if ($("coBr")) f.branch = $("coBr").value; };
+    const keep = () => { f.name = $("coName").value; f.phone = $("coPhone").value; f.note = $("coNote").value; if ($("coBr")) f.branch = $("coBr").value; if ($("coCar")) f.car = $("coCar").value; };
     const b = $("sheetBody");
     b.querySelectorAll("[data-inc]").forEach((x) => x.onclick = () => { keep(); cart[x.dataset.inc].qty = Math.min(99, cart[x.dataset.inc].qty + 1); saveCarts(); draw(); });
     b.querySelectorAll("[data-dec]").forEach((x) => x.onclick = () => { keep(); const l = cart[x.dataset.dec]; l.qty--; if (l.qty <= 0) delete cart[x.dataset.dec]; saveCarts(); draw(); });
     b.querySelectorAll("[data-mode]").forEach((x) => x.onclick = () => { keep(); f.mode = x.dataset.mode; draw(); });
+    b.querySelectorAll("[data-pay]").forEach((x) => x.onclick = () => { keep(); f.pay = x.dataset.pay; draw(); });
+    $("coMore")?.addEventListener("click", () => openStore(sid, false));
     $("coLoc")?.addEventListener("click", () => { keep(); navigator.geolocation?.getCurrentPosition((p) => { f.loc = { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6) }; draw(); }, () => toast("ما قدرنا نحدد موقعك")); });
     $("coBack").onclick = () => openStore(sid, false);
     $("coSend").onclick = async () => {
@@ -448,6 +486,8 @@ function openCheckout(sid) {
       if (!f.name.trim()) return $("coErr").textContent = "اكتب اسمك.";
       if (!phoneOk) return $("coErr").textContent = "اكتب رقم جوال صحيح مثل 05xxxxxxxx.";
       if (f.mode === "delivery" && !f.loc) return $("coErr").textContent = "حدد موقعك للتوصيل.";
+      if (f.mode === "curbside" && !f.car.trim()) return $("coErr").textContent = "اكتب وصف سيارتك (مثال: كامري بيضاء).";
+      if (f.mode === "curbside") { try { localStorage.setItem("hayyna_car", f.car.trim()); } catch {} }
       const br = branches.find((x) => x.id === f.branch) || branches[0] || {};
       const to = X.waDigits(br.phone || s.phone || "");
       if (!to) return $("coErr").textContent = "المحل ما عنده رقم واتساب.";
@@ -456,6 +496,7 @@ function openCheckout(sid) {
         customerUid: state.user?.uid || "", customerName: f.name.trim().slice(0, 60), customerPhone: phoneOk,
         items: lines.map((l) => ({ id: l.id, name: l.name, kind: l.kind, qty: l.qty, price: l.price })), subtotal: sub, deliveryFee: fee, total,
         vatRate: vatNo ? vat.rate : 0, vatAmount: vatNo ? vatAmt : 0, vatNumber: vatNo, mode: f.mode, location: f.mode === "delivery" ? f.loc : null,
+        pay: f.pay, car: f.mode === "curbside" ? f.car.trim().slice(0, 60) : "",
         note: f.note.trim().slice(0, 300), status: "sent" };
       const url = `https://wa.me/${to}?text=${encodeURIComponent(orderText(o))}`;
       const w = window.open("", "_blank"); // نفتح النافذة الحين (قبل الانتظار) عشان المتصفح ما يمنعها

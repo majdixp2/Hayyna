@@ -104,6 +104,9 @@ fun BranchesPage(
     var deliveryFeeText by remember { mutableStateOf(moneyText(profile.deliveryFee)) }
     var deliveryMinText by remember { mutableStateOf(moneyText(profile.deliveryMinOrder)) }
     var deliveryFreeText by remember { mutableStateOf(moneyText(profile.deliveryFreeOver)) }
+    var curbside by remember { mutableStateOf(profile.curbside) }
+    var payCash by remember { mutableStateOf(profile.payCash) }
+    var payCard by remember { mutableStateOf(profile.payCard) }
     // ✂️ التاجر يقص الغلاف والشعار بيده
     var cropCover by remember { mutableStateOf<String?>(null) }
     var cropLogo by remember { mutableStateOf<String?>(null) }
@@ -290,6 +293,23 @@ fun BranchesPage(
                         onFreeChange = { deliveryFreeText = it }
                     )
 
+                    // 🚗 استلام من السيارة + 💳 طرق الدفع عند الاستلام
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("🚗 أوفّر الاستلام من السيارة", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("العميل يكتب وصف سيارته ويضغط «وصلت»", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        androidx.compose.material3.Switch(checked = curbside, onCheckedChange = { curbside = it })
+                    }
+                    Text("💳 طرق الدفع اللي أقبلها عند الاستلام", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = payCash, onCheckedChange = { payCash = it; if (!it && !payCard) payCard = true })
+                        Text("💵 كاش", fontSize = 14.sp)
+                        Spacer(Modifier.width(16.dp))
+                        androidx.compose.material3.Checkbox(checked = payCard, onCheckedChange = { payCard = it; if (!it && !payCash) payCash = true })
+                        Text("💳 بطاقة / شبكة", fontSize = 14.sp)
+                    }
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -417,7 +437,8 @@ fun BranchesPage(
                                             delivery = delivery,
                                             deliveryFee = if (delivery) deliveryFeeText.toDoubleOrNull() ?: 0.0 else 0.0,
                                             deliveryMinOrder = if (delivery) deliveryMinText.toDoubleOrNull() ?: 0.0 else 0.0,
-                                            deliveryFreeOver = if (delivery) deliveryFreeText.toDoubleOrNull() ?: 0.0 else 0.0
+                                            deliveryFreeOver = if (delivery) deliveryFreeText.toDoubleOrNull() ?: 0.0 else 0.0,
+                                            curbside = curbside, payCash = payCash, payCard = payCard
                                         ),
                                         StoreMediaEdits(newLogo = logoLocal, newCover = coverLocal)
                                     )

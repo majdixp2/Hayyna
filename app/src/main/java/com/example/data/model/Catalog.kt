@@ -86,16 +86,21 @@ data class HayynaOrder(
     val subtotal: Double = 0.0, val deliveryFee: Double = 0.0, val total: Double = 0.0,
     val vatRate: Double = 0.0, val vatAmount: Double = 0.0, val vatNumber: String = "",
     val mode: String = "pickup", val lat: Double? = null, val lng: Double? = null, val note: String = "", val status: String = "sent",
-    val createdAtMillis: Long = 0L, val etaAtMillis: Long = 0L
+    val createdAtMillis: Long = 0L, val etaAtMillis: Long = 0L,
+    val pay: String = "", val car: String = "", val arrived: Boolean = false
 ) {
     val isDelivery get() = mode == "delivery"
+    val isCurbside get() = mode == "curbside"
+    val modeText get() = when (mode) { "delivery" -> "🚚 توصيل"; "curbside" -> "🚗 من السيارة"; else -> "🏃 استلام" }
+    val payText get() = when (pay) { "cash" -> "💵 كاش"; "card" -> "💳 بطاقة / شبكة"; else -> "" }
     /** وصف الحالة للزبون حسب نوع الطلب */
     fun statusText(): String = when (status) {
-        "sent" -> "📨 أُرسل — بانتظار المحل"; "received" -> "👍 المحل استلم طلبك ويجهّزه"; "ready" -> "🛍️ جاهز للاستلام"
-        "delivering" -> "🚚 جاري التوصيل"; "done" -> if (isDelivery) "✅ تم التوصيل" else "✅ تم الاستلام"; "cancelled" -> "✕ ملغي"; else -> status
+        "sent" -> "📨 أُرسل — بانتظار المحل"; "received" -> "👍 المحل استلم طلبك ويجهّزه"
+        "ready" -> if (isCurbside) (if (arrived) "🚗 جاهز — المحل جاي لسيارتك" else "🚗 جاهز — تعال واضغط «وصلت»") else "🛍️ جاهز للاستلام"
+        "delivering" -> "🚚 جاري التوصيل"; "done" -> if (isDelivery) "✅ تم التوصيل" else if (isCurbside) "✅ تم التسليم" else "✅ تم الاستلام"; "cancelled" -> "✕ ملغي"; else -> status
     }
     val steps: List<Pair<String, String>> get() = if (isDelivery) listOf("sent" to "أُرسل", "received" to "يجهّزه", "delivering" to "بالطريق", "done" to "وصل")
-        else listOf("sent" to "أُرسل", "received" to "يجهّزه", "ready" to "جاهز", "done" to "استلمته")
+        else listOf("sent" to "أُرسل", "received" to "يجهّزه", "ready" to "جاهز", "done" to if (isCurbside) "تسلّمته" else "استلمته")
     fun etaText(now: Long): String? {
         if (status != "received" || etaAtMillis <= 0) return null
         val m = ((etaAtMillis - now) / 60000).toInt()
@@ -123,6 +128,11 @@ data class HayynaOrder(
         appendLine("━━━━━━━━━━━━")
         if (note.isNotBlank()) appendLine("📝 ملاحظة: $note")
         appendLine("👤 " + listOf(customerName, customerPhone).filter { it.isNotBlank() }.joinToString(" • "))
-        append(if (mode == "delivery") "📍 توصيل" + (if (lat != null && lng != null) " — https://maps.google.com/?q=$lat,$lng" else "") else "🏃 استلام من المحل")
+        append(when (mode) {
+            "delivery" -> "📍 توصيل" + (if (lat != null && lng != null) " — https://maps.google.com/?q=$lat,$lng" else "")
+            "curbside" -> "🚗 استلام من السيارة" + if (car.isNotBlank()) " — $car" else ""
+            else -> "🏃 استلام من المحل"
+        })
+        if (payText.isNotBlank()) append("\n$payText — الدفع عند الاستلام")
     }
 }

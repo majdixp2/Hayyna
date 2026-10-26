@@ -91,6 +91,11 @@ await t("الزبون يقيّم بعد ما يخلص", () => assertSucceeds(rat
 await t("غير صاحب الطلب ما يقيّم", () => assertFails(setDoc(doc(as("c2"), "ratings/o1"), { orderId: "o1", storeId: "m1", uid: "c2", name: "x", stars: 1, text: "", at: serverTimestamp() })));
 await t("نجوم أكثر من 5 تُرفض", async () => { await env.withSecurityRulesDisabled((c) => import("firebase/firestore").then(({ deleteDoc }) => deleteDoc(doc(c.firestore(), "ratings/o1")))); await assertFails(rate("c1", { stars: 9 })); });
 await t("الزائر يقرأ التقييمات", () => assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), "ratings/o1"))));
+await t("طلب استلام من السيارة + دفع بطاقة", () => assertSucceeds(setDoc(doc(as("c1"), "orders/o5"), order("c1", { id: "o5", mode: "curbside", pay: "card", car: "كامري بيضاء" }))));
+await t("طريقة دفع غير معروفة تُرفض", () => assertFails(setDoc(doc(as("c1"), "orders/o6"), order("c1", { id: "o6", pay: "bitcoin" }))));
+await t("الزبون ما يضغط «وصلت» قبل ما يستلمه المحل", () => assertFails(updateDoc(doc(as("c1"), "orders/o5"), { arrivedAt: serverTimestamp(), updatedAt: serverTimestamp() })));
+await updateDoc(doc(as("m1"), "orders/o5"), { status: "ready", updatedAt: serverTimestamp() });
+await t("الزبون يضغط «وصلت» 🚗", () => assertSucceeds(updateDoc(doc(as("c1"), "orders/o5"), { arrivedAt: serverTimestamp(), updatedAt: serverTimestamp() })));
 await seed({ orderEnabled: false });
 await t("الطلب مطفي: الحفظ يُرفض", () => assertFails(setDoc(doc(as("c1"), "orders/o1"), order("c1"))));
 

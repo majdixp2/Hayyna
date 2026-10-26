@@ -302,6 +302,7 @@ export function openStoreForm(claim = null) {
     fee: p.deliveryFee > 0 ? String(p.deliveryFee) : "", min: p.deliveryMinOrder > 0 ? String(p.deliveryMinOrder) : "",
     free: p.deliveryFreeOver > 0 ? String(p.deliveryFreeOver) : "",
     vatReg: !!p.vatNumber, vatNumber: p.vatNumber || "",
+    curbside: !!p.curbside, payCash: p.payCash !== false, payCard: p.payCard !== false,
     logo: p.logoUrl || "", logoFile: null, cover: p.coverUrl || "", coverFile: null,
     menu: (p.menuImages || []).map((u) => ({ url: u })), branches: JSON.parse(JSON.stringify(p.branches || [])),
   };
@@ -321,6 +322,10 @@ export function openStoreForm(claim = null) {
       <label class="label">نبذة عن المتجر</label><textarea id="sAbout" class="input" rows="3" maxlength="500" placeholder="مثال: شاورما على الفحم من 2010…">${esc(f.about)}</textarea>
       <label class="label">الأسعار تبدأ من (ر.س)</label><input id="sPrice" class="input" inputmode="decimal" value="${esc(f.priceFrom)}" placeholder="مثال: 15">
       ${deliveryFields(f)}
+      <label class="switch-row"><span>🚗 أوفّر الاستلام من السيارة <small class="hint">(العميل يكتب وصف سيارته ويضغط «وصلت»)</small></span><input type="checkbox" id="sCurb" ${f.curbside ? "checked" : ""}></label>
+      <div class="label">💳 طرق الدفع اللي أقبلها عند الاستلام</div>
+      <div class="row2"><label class="switch-row"><span>💵 كاش</span><input type="checkbox" id="sCash" ${f.payCash ? "checked" : ""}></label>
+        <label class="switch-row"><span>💳 بطاقة / شبكة</span><input type="checkbox" id="sCard" ${f.payCard ? "checked" : ""}></label></div>
       <label class="switch-row"><span>🧾 منشأتي مسجّلة في ضريبة القيمة المضافة <small class="hint">(يطلع تفصيل الضريبة ورقمك الضريبي في ملخص الطلب)</small></span><input type="checkbox" id="sVat" ${f.vatReg ? "checked" : ""}></label>
       ${f.vatReg ? `<label class="label">الرقم الضريبي (15 رقم يبدأ وينتهي بـ 3)</label><input id="sVatNo" class="input" inputmode="numeric" maxlength="15" dir="ltr" value="${esc(f.vatNumber)}" placeholder="3xxxxxxxxxxxxx3">` : ""}
       <label class="label">${X.menuLabel(f.category)} — صور (${f.menu.length}/10)</label>
@@ -336,6 +341,9 @@ export function openStoreForm(claim = null) {
     const bind = (id, k) => { const el = $(id); if (el) el.oninput = (e) => { f[k] = e.target.value; dirty = true; }; };
     bind("sName", "name"); bind("sAbout", "about"); bind("sPrice", "priceFrom"); bind("sVatNo", "vatNumber");
     $("sVat").onchange = (e) => { f.vatReg = e.target.checked; dirty = true; render(); };
+    $("sCurb").onchange = (e) => { f.curbside = e.target.checked; dirty = true; };
+    $("sCash").onchange = (e) => { f.payCash = e.target.checked; if (!f.payCash && !f.payCard) { f.payCard = true; render(); } dirty = true; };
+    $("sCard").onchange = (e) => { f.payCard = e.target.checked; if (!f.payCash && !f.payCard) { f.payCash = true; render(); } dirty = true; };
     bindDelivery(f, () => { dirty = true; render(); });
     body.querySelectorAll("[data-cat]").forEach((b) => b.onclick = () => { f.category = b.dataset.cat; dirty = true; render(); });
     // ✂️ التاجر يقص الشعار (دائري) والغلاف (عريض) بيده
@@ -384,7 +392,7 @@ export function openStoreForm(claim = null) {
         logoUrl: logo || "", branches: f.branches.slice(0, 50), coverUrl: cover || "", about: f.about.trim().slice(0, 500),
         priceFrom: Number(f.priceFrom) > 0 ? Number(f.priceFrom) : 0, menuImages: menu.slice(0, 10),
         delivery: f.delivery, deliveryFee: f.delivery ? Number(f.fee) || 0 : 0, deliveryMinOrder: f.delivery ? Number(f.min) || 0 : 0,
-        deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0, vatNumber: vatNo,
+        deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0, vatNumber: vatNo, curbside: f.curbside, payCash: f.payCash, payCard: f.payCard,
         updatedAt: serverTimestamp(),
       };
       const uid = state.user.uid, direct = canPublishDirectly();
@@ -392,7 +400,8 @@ export function openStoreForm(claim = null) {
       await setDoc(doc(db, "stores", uid), {
         uid, name: profile.restaurantName, logoUrl: profile.logoUrl, coverUrl: profile.coverUrl, about: profile.about, category: profile.cuisineType.slice(0, 60),
         priceFrom: profile.priceFrom, menuImages: profile.menuImages, branches: profile.branches, phone: (primary.phone || "").slice(0, 30), approved: direct,
-        delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver, vatNumber: vatNo, updatedAt: serverTimestamp(),
+        delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver, vatNumber: vatNo,
+        curbside: f.curbside, payCash: f.payCash, payCard: f.payCard, updatedAt: serverTimestamp(),
       }, { merge: true });
       await syncOffers(profile, direct);
       await recordReferral(uid, profile.restaurantName);

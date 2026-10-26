@@ -22,7 +22,10 @@ data class StoreProfile(
     val deliveryFee: Double = 0.0,
     val deliveryMinOrder: Double = 0.0,
     val deliveryFreeOver: Double = 0.0,
-    val vatNumber: String = ""
+    val vatNumber: String = "",
+    val curbside: Boolean = false,
+    val payCash: Boolean = true,
+    val payCard: Boolean = true
 ) {
     /** اسم قسم المنيو حسب نوع المتجر. */
     val menuLabel: String
@@ -50,7 +53,8 @@ data class StoreProfile(
             delivery = p.delivery,
             deliveryFee = p.deliveryFee,
             deliveryMinOrder = p.deliveryMinOrder,
-            deliveryFreeOver = p.deliveryFreeOver
+            deliveryFreeOver = p.deliveryFreeOver,
+            curbside = p.curbside, payCash = p.payCash, payCard = p.payCard
         )
     }
 }
