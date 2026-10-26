@@ -575,3 +575,6 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .oc-act { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .av-tog { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 800; font-family: inherit; color: #15803D; }
 .av-tog.off { color: var(--muted); }
+.store-link .name { flex: 1; }
+.icon-report { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); font-size: 14px; opacity: .75; }
+.icon-report:hover { opacity: 1; }

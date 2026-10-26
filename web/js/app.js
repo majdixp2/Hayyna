@@ -385,14 +385,15 @@ export function openOffer(id, push) {
       <div class="pad">
         <div class="store-link">
           <div class="name">${o.logoUrl ? `<img src="${esc(cld(o.logoUrl, 100))}" alt="">` : ""}<span>${esc(o.restaurantName)}${store && store.verified ? ' <span class="verified" title="متجر موثّق">✔</span>' : ""}</span></div>
-          ${store ? `<button class="btn-soft" data-store="${esc(store.uid)}">🏪 صفحة المتجر ›</button>` : ""}
+          ${store || isOwner ? `<button class="btn-soft" data-store="${esc(o.merchantId)}">🏪 ${isOwner ? "صفحة متجري" : "صفحة المتجر"} ›</button>` : ""}
+          ${isOwner ? "" : `<button class="icon-report" data-act="report" title="بلاغ عن العرض" aria-label="بلاغ">🚩</button>`}
         </div>
         <h1 class="title">${esc(o.offerTitle)}</h1>
         <div class="pills">${exclBadge(o)}${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
-        <div class="row3">
+        <div class="${isOwner ? "row3" : "row2"}">
           <button class="btn-out" data-act="fav">${heartSvg(fav)} ${fav ? "محفوظ" : "حفظ"}</button>
           <button class="btn-out" data-act="share">↗︎ مشاركة</button>
-          ${isOwner ? `<button class="btn-out" data-act="edit">✎ تعديل</button>` : `<button class="btn-out" data-act="report">🚩 بلاغ</button>`}
+          ${isOwner ? `<button class="btn-out" data-act="edit">✎ تعديل</button>` : ""}
         </div>
         <div class="big-price"><span class="p">${esc(priceLabel(o, true))}</span>${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)} ر.س</s>` : ""}${!isPercentOnly(o) && effectivePercent(o) > 0 ? `<span class="pill urgent">خصم ${effectivePercent(o)}% 🔥</span>` : ""}</div>
         ${tiers || starts ? `<div class="box">${starts ? `<div class="soon">🔜 ${esc(starts)}</div>` : ""}${tiers ? `<div>📅 ${esc(tiers)}</div>` : ""}</div>` : ""}
@@ -444,8 +445,13 @@ function reportOffer(o) {
 }
 
 // ---------------- صفحة المتجر ----------------
-export function openStore(uid, push) {
-  const s = state.stores.find((x) => x.uid === uid);
+export async function openStore(uid, push) {
+  let s = state.stores.find((x) => x.uid === uid), preview = false;
+  // صاحب المتجر يشوف صفحته حتى لو ما انعتمدت للحين (معاينة)
+  if (!s && state.user?.uid === uid) {
+    try { const d = await getDoc(doc(db, "stores", uid)); if (d.exists()) { s = { ...d.data(), uid }; preview = !s.approved; } } catch {}
+    if (!s) { toast("جهّز صفحة متجرك أول من «حسابي» 🏪"); return; }
+  }
   if (!s) { if (state.storesLoaded) { toast("صفحة المتجر غير متاحة"); go("/", true); } return; }
   state.view = { type: "s", id: uid };
   if (push) history.pushState({ v: "s", id: uid }, "", `/s/${encodeURIComponent(uid)}`);
@@ -454,6 +460,7 @@ export function openStore(uid, push) {
   const del = deliveryText(s), phone = s.phone || (s.branches || [])[0]?.phone || "";
   showSheet(`${s.coverUrl ? `<img class="cover" src="${esc(cld(s.coverUrl, 1000))}" alt="">` : `<div class="cover"></div>`}
     <div class="pad">
+      ${preview ? `<div class="hint warn">👀 معاينة: صفحتك بانتظار المراجعة، وما يشوفها الزبائن للحين.</div>` : ""}
       <div class="store-head">${s.logoUrl ? `<img src="${esc(cld(s.logoUrl, 200))}" alt="">` : `<div class="logo-ph">🏪</div>`}<div class="nm">${esc(s.name)}${s.verified ? ' <span class="verified">✔ موثّق</span>' : ""}</div></div>
       ${s.category ? `<div class="pills"><span class="pill">${esc(s.category)}</span></div>` : ""}
       ${s.priceFrom > 0 ? `<div class="box">💰 الأسعار تبدأ من ${money(s.priceFrom)} ر.س</div>` : ""}

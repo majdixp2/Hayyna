@@ -261,6 +261,10 @@ fun RestaurantOfferDetailSheet(
                         )
                     }
                 }
+                if (!isOwner) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    ReportIcon(onReport = onReport)
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,7 +42,23 @@ import com.example.data.OfferSharer
 import com.example.data.model.RestaurantOffer
 import kotlinx.coroutines.launch
 
-/** صف أزرار العرض: مفضلة، مشاركة، إبلاغ — وتعديل لصاحب العرض. */
+/** أيقونة بلاغ صغيرة (جنب اسم المحل) */
+@Composable
+fun ReportIcon(onReport: (reason: String) -> Unit) {
+    var show by remember { mutableStateOf(false) }
+    androidx.compose.material3.Surface(
+        shape = androidx.compose.foundation.shape.CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        modifier = Modifier.size(32.dp).clickable { show = true }
+    ) {
+        androidx.compose.foundation.layout.Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+            Icon(Icons.Default.Flag, contentDescription = "بلاغ عن العرض", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+        }
+    }
+    if (show) ReportOfferDialog(onDismiss = { show = false }, onSubmit = { r -> show = false; onReport(r) })
+}
+
+/** صف أزرار العرض: مفضلة، مشاركة — وتعديل لصاحب العرض. (البلاغ أيقونة صغيرة جنب اسم المحل) */
 @Composable
 fun OfferActionsRow(
     offer: RestaurantOffer,
@@ -54,7 +71,6 @@ fun OfferActionsRow(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var showReport by remember { mutableStateOf(false) }
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -82,25 +98,7 @@ fun OfferActionsRow(
                 onClick = onEdit,
                 modifier = Modifier.weight(1f)
             )
-        } else {
-            ActionButton(
-                icon = Icons.Default.Flag,
-                label = "إبلاغ",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = { showReport = true },
-                modifier = Modifier.weight(1f)
-            )
         }
-    }
-
-    if (showReport) {
-        ReportOfferDialog(
-            onDismiss = { showReport = false },
-            onSubmit = { reason ->
-                showReport = false
-                onReport(reason)
-            }
-        )
     }
 }
 

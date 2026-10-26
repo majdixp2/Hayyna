@@ -3,7 +3,7 @@ import {
   collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDocs, getDoc, serverTimestamp, Timestamp, writeBatch, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { MAPS_WEB_KEY } from "../config.js";
-import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
+import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, openStore, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
 import { watchMerchantCatalog, catalogPanelHtml, bindCatalogPanel } from "./catalog-ui.js";
@@ -57,6 +57,7 @@ function draw() {
         <small>${hasStore ? `${p.branches.length} ${p.branches.length === 1 ? "فرع" : "فروع"} • ${esc(p.cuisineType || "")}` : "ما جهّزت صفحة متجرك للحين"}</small></div>
       <button class="btn-soft" id="editStore">✎ صفحة متجري</button>
     </div>
+    ${hasStore ? `<button class="btn call" id="viewStore">👀 شوف صفحة متجري مثل ما يشوفها الزبون</button>` : ""}
     ${!st.verified ? `<div class="hint-box">✔ توثيق المتجر (السجل التجاري / العمل الحر) متاح حالياً من تطبيق أندرويد.</div>` : ""}
     <div class="stat-row">
       <div class="stat"><b>${active.length}</b><small>عرض نشط</small></div>
@@ -71,6 +72,7 @@ function draw() {
     <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
     <button class="btn call" id="mContact">💬 تواصل معنا</button>`;
   $("editStore").onclick = () => openStoreForm();
+  $("viewStore")?.addEventListener("click", () => openStore(state.user.uid, true));
   // جاي من "أنا صاحب المحل" على الخريطة: نفتح صفحة المتجر بموقع المحل
   const claim = takeClaim();
   if (claim) setTimeout(() => openStoreForm(claim), 50);
