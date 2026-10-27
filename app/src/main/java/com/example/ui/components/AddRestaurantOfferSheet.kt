@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.draw.alpha
+import androidx.compose.material3.Switch
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -85,7 +88,7 @@ private const val MAX_IMAGES = 3
  * - إذا التاجر عنده فروع: يختار "كل الفروع" أو فروع معيّنة.
  * - إذا ما عنده فروع: يحدد موقع المحل هنا، ويصير أول فرع له تلقائياً.
  */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun AddRestaurantOfferSheet(
     onDismiss: () -> Unit,
@@ -99,9 +102,24 @@ fun AddRestaurantOfferSheet(
     onAutofill: (imageUri: String, onResult: (com.example.data.AiAutofill.Draft) -> Unit) -> Unit = { _, _ -> },
     categories: List<String> = com.example.data.repository.RestaurantOfferRepository.DEFAULT_CATEGORIES,
     // رصيد العروض (null = النشر مجاني/الرصيد مطفي)
-    publish: PublishInfo? = null
+    publish: PublishInfo? = null,
+    // 🎁 العروض مع المنيو: أصناف التاجر + الإعدادات (null = مطفية)
+    catalogItems: List<com.example.data.model.CatalogItem> = emptyList(),
+    dealsCfg: com.example.data.model.CatalogConfig? = null
 ) {
     val isEditing = editingOffer != null
+    val dealTypes = com.example.data.model.DealType.entries.filter { dealsCfg != null && dealsCfg.enabled && dealsCfg.feat(it.feat) }
+    val dealsOn = dealTypes.isNotEmpty()
+    val ed = com.example.data.model.OfferDeal.from(editingOffer?.deal)
+    var dealType by remember { mutableStateOf(ed?.type ?: if (isEditing) "promo" else "") }
+    var dScope by remember { mutableStateOf(if (ed?.type == "discount") ed.scope else "all") }
+    var dKind by remember { mutableStateOf(ed?.kind.orEmpty()) }
+    var dSection by remember { mutableStateOf(ed?.section.orEmpty()) }
+    val dItems = remember { mutableStateListOf<String>().apply { if (ed?.type == "discount") addAll(ed.itemIds) } }
+    val packIds = remember { mutableStateListOf<String>().apply { if (ed?.type == "bundle") addAll(ed.itemIds) } }
+    var bogoItem by remember { mutableStateOf(ed?.itemId.orEmpty()) }
+    var getPct by remember { mutableStateOf(if (ed?.getPct == 50) 50 else 100) }
+    var orderable by remember { mutableStateOf(ed?.orderable ?: false) }
     val paid = publish != null && !isEditing
     // الحصري ما ينشال بعد ما انتشر بخصم (لما المكافأة شغّالة)
     val exclLocked = editingOffer?.exclusive == true && publish?.rewardOn == true && publish.isAdmin.not()
@@ -208,6 +226,9 @@ fun AddRestaurantOfferSheet(
     }
 
     fun submit() {
+        val dt = if (!isNewProduct && dealsOn) dealType else ""
+        val bogoIt = catalogItems.firstOrNull { it.id == bogoItem }
+        if (dt == "bogo" && bogoIt != null) { priceText = formatPrice(bogoIt.price); originalPriceText = "" }
         val price = if (percentMode) 0.0 else if (isNewProduct && priceText.isBlank()) 0.0 else priceText.toDoubleOrNull()
         val original = if (percentMode) null else originalPriceText.toDoubleOrNull()
         val pct = percentText.trim().toIntOrNull()
@@ -243,6 +264,12 @@ fun AddRestaurantOfferSheet(
             )
         }
         errorMessage = when {
+            !isNewProduct && dealsOn && dt.isBlank() -> "اختر نوع عرضك من فوق 👆"
+            dt == "discount" && catalogItems.isNotEmpty() && dScope == "kind" && dKind.isBlank() -> "اختر النوع."
+            dt == "discount" && catalogItems.isNotEmpty() && dScope == "section" && dSection.isBlank() -> "اختر القسم."
+            dt == "discount" && catalogItems.isNotEmpty() && dScope == "items" && dItems.isEmpty() -> "اختر صنف واحد على الأقل."
+            dt == "bogo" && bogoIt == null -> "اختر الصنف اللي عليه العرض."
+            dt == "promo" && orderable && (priceText.toDoubleOrNull() ?: 0.0) <= 0.0 -> "عشان الزبون يطلبه، اكتب سعر العرض."
             paid && !useTiers && newExpiry == null -> "اختر مدة العرض."
             restaurantName.isBlank() -> "يرجى كتابة اسم المتجر."
             offerTitle.isBlank() -> if (isNewProduct) "اكتب اسم المنتج." else "يرجى كتابة عنوان العرض."
@@ -263,10 +290,22 @@ fun AddRestaurantOfferSheet(
         if (errorMessage.isNotBlank() || price == null) return
 
         val primary = chosenBranches.first()
+        val packSum = catalogItems.filter { it.id in packIds }.sumOf { it.price }
+        val original2 = if (dt == "bundle" && original == null && packSum > price) Math.round(packSum * 100) / 100.0 else original
+        val deal: Map<String, Any>? = when (dt) {
+            "" -> null
+            "discount" -> com.example.data.model.OfferDeal("discount", if (catalogItems.isEmpty()) "all" else dScope, if (dScope == "kind") dKind else "", if (dScope == "section") dSection else "", if (dScope == "items") dItems.toList() else emptyList()).toMap()
+            "bundle" -> com.example.data.model.OfferDeal("bundle", itemIds = packIds.filter { id -> catalogItems.any { it.id == id } }).toMap()
+            "bogo" -> com.example.data.model.OfferDeal("bogo", itemId = bogoItem, getPct = getPct).toMap()
+            else -> com.example.data.model.OfferDeal("promo", orderable = orderable && price > 0).toMap()
+        }
+        val autoScope = if (dt == "discount" && catalogItems.isNotEmpty()) when (dScope) {
+            "kind" -> "على " + com.example.data.model.ItemKind.of(dKind).title; "section" -> "على $dSection"; "items" -> "على أصناف مختارة"; else -> "على كل المنيو"
+        }.take(40) else null
         val discountPct = when {
             useTiers -> steps.first()
             percentMode -> pct ?: 0
-            original != null && original > price -> ((original - price) / original * 100).toInt()
+            original2 != null && original2 > price -> ((original2 - price) / original2 * 100).toInt()
             else -> 0
         }
         val badge = when {
@@ -282,8 +321,9 @@ fun AddRestaurantOfferSheet(
             postType = if (isNewProduct) "new" else "offer",
             cuisineType = cuisineType,
             price = price,
-            originalPrice = original,
+            originalPrice = original2,
             discountBadge = badge,
+            deal = deal,
             mediaType = mediaType,
             mediaUri = media.first(),
             mediaUris = media.toList(),
@@ -302,7 +342,7 @@ fun AddRestaurantOfferSheet(
             startsAt = startMillis?.let { com.google.firebase.Timestamp(java.util.Date(it)) },
             discountPercent = if (percentMode) (if (useTiers) steps.first() else pct ?: 0) else 0,
             dailyPercents = if (useTiers) steps.map { it.toLong() } else emptyList(),
-            itemsScope = if (percentMode) itemsScope.trim().take(40) else "",
+            itemsScope = if (percentMode) (autoScope ?: itemsScope.trim().take(40)) else "",
             grandOpening = grandOpening && !isNewProduct,
             exclusive = exclusive && ExclusiveBadge.label.isNotBlank(),
             tags = parseTags(tagsText),
@@ -520,6 +560,51 @@ fun AddRestaurantOfferSheet(
                         }
                     }
 
+                    // 🎁 وش نوع عرضك؟ (العروض مع المنيو)
+                    val dt = if (!isNewProduct && dealsOn) dealType else ""
+                    if (!isNewProduct && dealsOn) {
+                        Text("وش نوع عرضك؟", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                        dealTypes.chunked(2).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                row.forEach { t ->
+                                    val need = (t.id == "discount" || t.id == "bogo") && catalogItems.isEmpty()
+                                    val sel = dealType == t.id
+                                    OutlinedCard(
+                                        onClick = {
+                                            if (need) return@OutlinedCard
+                                            dealType = t.id
+                                            when (t.id) { "discount" -> percentMode = true; "bundle", "bogo" -> percentMode = false }
+                                        },
+                                        border = BorderStroke(if (sel) 2.dp else 1.dp, if (sel) CalmSagePrimary else MaterialTheme.colorScheme.outlineVariant),
+                                        colors = CardDefaults.outlinedCardColors(containerColor = if (sel) CalmSagePrimary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface),
+                                        modifier = Modifier.weight(1f).alpha(if (need) 0.5f else 1f)
+                                    ) {
+                                        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                            Text("${t.icon} ${t.title}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            Text(if (need) "أضف أصناف للمنيو أول" else t.desc, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                                if (row.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    if (dt == "bogo") {
+                        Text("➕ على أي صنف؟ *", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            catalogItems.forEach { it ->
+                                FilterChip(selected = bogoItem == it.id, onClick = {
+                                    bogoItem = it.id
+                                    if (offerTitle.isBlank()) offerTitle = "${if (getPct == 50) "الثاني بنص السعر" else "1+1 مجاناً"} على ${it.name}"
+                                }, label = { Text("${it.name} • ${formatPrice(it.price)}", fontSize = 12.sp) })
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = getPct == 100, onClick = { getPct = 100 }, label = { Text("1+1 مجاناً", fontSize = 12.sp) })
+                            FilterChip(selected = getPct == 50, onClick = { getPct = 50 }, label = { Text("الثاني بنص السعر", fontSize = 12.sp) })
+                        }
+                    }
+
                     OutlinedTextField(
                         value = offerTitle,
                         onValueChange = { offerTitle = it },
@@ -530,16 +615,17 @@ fun AddRestaurantOfferSheet(
                     )
 
                     // نوع الخصم: سعر محدد أو نسبة (على جميع الأصناف)
-                    if (!isNewProduct) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (!isNewProduct && dt !in listOf("discount", "bundle", "bogo")) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = !percentMode, onClick = { percentMode = false }, label = { Text("💰 سعر محدد", fontSize = 12.sp) })
                         FilterChip(selected = percentMode, onClick = { percentMode = true }, label = { Text("٪ خصم بالنسبة", fontSize = 12.sp) })
                     }
-                    if (!percentMode) {
+                    if (dt == "bogo") Unit
+                    else if (!percentMode) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedTextField(
                                 value = priceText,
                                 onValueChange = { priceText = it },
-                                label = { Text(if (isNewProduct) "السعر (اختياري)" else "السعر (ر.س) *") },
+                                label = { Text(if (isNewProduct) "السعر (اختياري)" else if (dt == "bundle") "سعر الباقة *" else "السعر (ر.س) *") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
                                 modifier = Modifier.weight(1f).testTag("input_offer_price")
@@ -596,7 +682,10 @@ fun AddRestaurantOfferSheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        OutlinedTextField(
+                        if (dt == "discount" && catalogItems.isNotEmpty()) {
+                            Text("على وش الخصم؟", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            DealScopePicker(catalogItems, dScope, dKind, dSection, dItems, { dScope = it }, { dKind = it }, { dSection = it })
+                        } else OutlinedTextField(
                             value = itemsScope,
                             onValueChange = { itemsScope = it.take(40) },
                             label = { Text("على وش الخصم؟") },
@@ -604,6 +693,23 @@ fun AddRestaurantOfferSheet(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
+                    }
+                    if (dt == "bundle" && catalogItems.isNotEmpty()) {
+                        Text("🎁 وش فيها الباقة؟ (اختياري — من منيوك)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        catalogItems.forEach { it ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Checkbox(checked = it.id in packIds, onCheckedChange = { c -> if (c) packIds.add(it.id) else packIds.remove(it.id) })
+                                Text(it.name, fontSize = 13.sp, modifier = Modifier.weight(1f)); Text(formatPrice(it.price), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        val sum = catalogItems.filter { it.id in packIds }.sumOf { it.price }
+                        val pv = priceText.toDoubleOrNull() ?: 0.0
+                        if (sum > 0) Text("مجموع الأصناف ${formatPrice(sum)} ر.س" + if (pv in 0.01..(sum - 0.01)) " — الزبون يوفّر ${formatPrice(sum - pv)} ر.س 🎉" else "", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary)
+                        else Text("لو الباقة شي جديد ما هو في المنيو، اكتب محتواها في التفاصيل.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (dt == "promo" && dealsCfg?.orderEnabled == true) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🛒 الزبون يقدر يطلبه من حيّنا (لازم سعر)", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Switch(checked = orderable, onCheckedChange = { orderable = it })
                     }
 
                     OutlinedTextField(
@@ -942,3 +1048,31 @@ private fun StartDatePickerDialog(initialMillis: Long?, onPick: (Long?) -> Unit,
 
 private fun formatPrice(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
+
+/** اختيار نطاق الخصم: الكل / نوع / قسم / أصناف */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun DealScopePicker(
+    items: List<com.example.data.model.CatalogItem>, scope: String, kind: String, section: String, picked: MutableList<String>,
+    onScope: (String) -> Unit, onKind: (String) -> Unit, onSection: (String) -> Unit
+) {
+    val kinds = items.map { it.kind }.distinct(); val secs = items.map { it.section }.filter { it.isNotBlank() }.distinct()
+    val scopes = listOf("all" to "كل الأصناف", "kind" to "نوع معيّن", "section" to "قسم معيّن", "items" to "أصناف أختارها")
+        .filter { (k, _) -> k == "all" || (k == "kind" && kinds.size > 1) || (k == "section" && secs.isNotEmpty()) || k == "items" }
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        scopes.forEach { (k, t) -> FilterChip(selected = scope == k, onClick = { onScope(k) }, label = { Text(t, fontSize = 12.sp) }) }
+    }
+    if (scope == "kind") androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        kinds.forEach { k -> val K = com.example.data.model.ItemKind.of(k); FilterChip(selected = kind == k, onClick = { onKind(k) }, label = { Text("${K.icon} ${K.title}", fontSize = 12.sp) }) }
+    }
+    if (scope == "section") androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        secs.forEach { x -> FilterChip(selected = section == x, onClick = { onSection(x) }, label = { Text(x, fontSize = 12.sp) }) }
+    }
+    if (scope == "items") items.forEach { it ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Checkbox(checked = it.id in picked, onCheckedChange = { c -> if (c) picked.add(it.id) else picked.remove(it.id) })
+            Text(it.name, fontSize = 13.sp, modifier = Modifier.weight(1f)); Text(formatPrice(it.price), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}

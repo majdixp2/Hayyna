@@ -34,6 +34,21 @@ service cloud.firestore {
       return !(key in data) || (data[key] is int && data[key] >= -1 && data[key] <= 1439);
     }
 
+    // العروض مع المنيو: خصم / باقة / 1+1 / إعلان
+    function validDeal(d) {
+      return d is map
+        && d.keys().hasOnly(['type', 'scope', 'kind', 'section', 'itemIds', 'itemId', 'getPct', 'orderable'])
+        && d.type in ['discount', 'bundle', 'bogo', 'promo']
+        && (!('scope' in d) || d.scope in ['all', 'kind', 'section', 'items'])
+        && (!('kind' in d) || (d.kind is string && d.kind.size() <= 20))
+        && (!('section' in d) || (d.section is string && d.section.size() <= 40))
+        && (!('itemIds' in d) || (d.itemIds is list && d.itemIds.size() <= 50))
+        && (!('itemId' in d) || (d.itemId is string && d.itemId.size() <= 120))
+        && (!('getPct' in d) || d.getPct in [50, 100])
+        && (!('orderable' in d) || d.orderable is bool)
+        && (d.type != 'bogo' || ('itemId' in d && d.itemId.size() > 0));
+    }
+
     function isValidOffer(data) {
       return data.id is string && data.id.size() > 0 && data.id.size() <= 100
         && data.merchantId is string
@@ -65,6 +80,7 @@ service cloud.firestore {
         && (!('exclusive' in data) || data.exclusive is bool)
         && (!('draft' in data) || data.draft is bool)
         && (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 300))
+        && (!('deal' in data) || data.deal == null || validDeal(data.deal))
         && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12))
         && (!('delivery' in data) || data.delivery is bool)
         && (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5))
@@ -446,7 +462,7 @@ service cloud.firestore {
       allow create: if isAuthenticated()
         && catalogCfg().get('orderEnabled', false) == true
         && request.resource.data.keys().hasOnly(['id', 'code', 'storeId', 'storeName', 'branchId', 'branchName', 'customerUid', 'customerName', 'customerPhone',
-            'items', 'subtotal', 'deliveryFee', 'total', 'vatRate', 'vatAmount', 'vatNumber', 'mode', 'location', 'note', 'pay', 'car', 'status', 'createdAt', 'updatedAt'])
+            'items', 'subtotal', 'discount', 'deliveryFee', 'total', 'vatRate', 'vatAmount', 'vatNumber', 'mode', 'location', 'note', 'pay', 'car', 'status', 'createdAt', 'updatedAt'])
         && (!('pay' in request.resource.data) || request.resource.data.pay in ['cash', 'card'])
         && (!('car' in request.resource.data) || (request.resource.data.car is string && request.resource.data.car.size() <= 60))
         && request.resource.data.id == orderId
@@ -454,6 +470,7 @@ service cloud.firestore {
         && request.resource.data.storeId is string && request.resource.data.storeId.size() > 0
         && request.resource.data.items is list && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 100
         && request.resource.data.total is number && request.resource.data.total >= 0
+        && (!('discount' in request.resource.data) || (request.resource.data.discount is number && request.resource.data.discount >= 0))
         && request.resource.data.note is string && request.resource.data.note.size() <= 300
         && request.resource.data.mode in ['pickup', 'delivery', 'curbside']
         && (request.resource.data.mode != 'curbside' || featureOn('curbside'))
@@ -573,6 +590,26 @@ service cloud.firestore {
         && request.resource.data.targetName is string && request.resource.data.targetName.size() <= 200
         && request.resource.data.details is string && request.resource.data.details.size() <= 1500;
       allow update, delete: if false;
+    }
+
+    // ⚡ الخصم السريع على المنيو (وثيقة وحدة لكل تاجر)
+    match /quickDeals/{uid} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() && request.auth.uid == uid
+        && featureOn('quickDeal') && featureOn('dealDiscount')
+        && !isSuspended(uid)
+        && request.resource.data.keys().hasOnly(['merchantId', 'pct', 'scope', 'kind', 'section', 'itemIds', 'endsAt', 'updatedAt'])
+        && request.resource.data.merchantId == uid
+        && request.resource.data.pct is int && request.resource.data.pct >= 1 && request.resource.data.pct <= 90
+        && request.resource.data.scope in ['all', 'kind', 'section', 'items']
+        && request.resource.data.kind is string && request.resource.data.kind.size() <= 20
+        && request.resource.data.section is string && request.resource.data.section.size() <= 40
+        && request.resource.data.itemIds is list && request.resource.data.itemIds.size() <= 50
+        && request.resource.data.endsAt is timestamp
+        && request.resource.data.endsAt > request.time
+        && request.resource.data.endsAt <= request.time + duration.value(31, 'd')
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if (isAuthenticated() && request.auth.uid == uid) || can('merchants');
     }
 
     match /offers/{offerId} {

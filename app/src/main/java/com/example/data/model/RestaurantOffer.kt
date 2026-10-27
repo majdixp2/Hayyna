@@ -86,6 +86,8 @@ data class RestaurantOffer(
     val logoUrl: String = "",
     // الفروع اللي يشملها العرض (نسخة من ملف المطعم وقت النشر)
     val branches: List<Branch> = emptyList(),
+    // 🎁 العروض مع المنيو: {type: discount|bundle|bogo|promo, scope, kind, section, itemIds, itemId, getPct, orderable}
+    val deal: Map<String, Any>? = null,
     @ServerTimestamp
     val createdAt: Timestamp? = null,
     // محلي فقط (ما ينحفظ): الفرع اللي اختاره المستخدم أو الأقرب له

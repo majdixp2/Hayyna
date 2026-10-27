@@ -794,11 +794,81 @@ class MerchantViewModel(
 
     // ----- السلة (لكل متجر) -----
     val carts = MutableStateFlow<Map<String, Map<String, com.example.data.model.CartLine>>>(emptyMap())
+    /** عروض كل متجر (خصم / 1+1 / باقات) — تتحسب لما تنفتح صفحة المتجر */
+    val storeDeals = MutableStateFlow<Map<String, com.example.data.model.StoreDeals>>(emptyMap())
+    fun dealsOf(storeId: String) = storeDeals.value[storeId] ?: com.example.data.model.StoreDeals()
     fun cartAdd(storeId: String, it: com.example.data.model.CatalogItem, delta: Int) {
         val cart = carts.value[storeId].orEmpty().toMutableMap()
         val q = (cart[it.id]?.qty ?: 0) + delta
-        if (q <= 0) cart.remove(it.id) else cart[it.id] = com.example.data.model.CartLine(it.id, it.name, it.kind, it.price, q.coerceAtMost(99))
+        val (price, was, _) = dealsOf(storeId).price(it)
+        if (q <= 0) cart.remove(it.id) else cart[it.id] = com.example.data.model.CartLine(it.id, it.name, it.kind, price, q.coerceAtMost(99), was = was)
         carts.value = carts.value + (storeId to cart)
+    }
+    fun cartAddPack(storeId: String, p: com.example.data.model.DealPack, delta: Int) {
+        val cart = carts.value[storeId].orEmpty().toMutableMap()
+        val q = (cart[p.id]?.qty ?: 0) + delta
+        if (q <= 0) cart.remove(p.id) else cart[p.id] = com.example.data.model.CartLine(p.id, p.name, "deal", p.price, q.coerceAtMost(99), was = p.was)
+        carts.value = carts.value + (storeId to cart)
+    }
+    /** نحدّث أسعار السلة حسب المنيو والعروض الحالية (ونشيل اللي ما عاد موجود) */
+    private fun syncCart(storeId: String, items: List<com.example.data.model.CatalogItem>) {
+        val d = dealsOf(storeId)
+        val cart = carts.value[storeId] ?: return
+        val out = cart.mapNotNull { (id, l) ->
+            d.packs.firstOrNull { it.id == id }?.let { p -> return@mapNotNull id to l.copy(name = p.name, price = p.price, was = p.was) }
+            val it = items.firstOrNull { x -> x.id == id && x.available } ?: return@mapNotNull null
+            val (price, was, _) = d.price(it); id to l.copy(price = price, was = was)
+        }.toMap()
+        carts.value = carts.value + (storeId to out)
+    }
+    /** نص زر «🛒 اطلب» في شاشة العرض (null = العرض ما ينطلب) */
+    fun offerOrderLabel(o: RestaurantOffer): String? {
+        val cfg = catalogConfig.value
+        val d = com.example.data.model.OfferDeal.from(o.deal) ?: return null
+        val t = com.example.data.model.DealType.of(d.type) ?: return null
+        if (!cfg.enabled || !cfg.orderEnabled || !cfg.feat(t.feat)) return null
+        return when (t) {
+            com.example.data.model.DealType.DISCOUNT -> "🛍️ تسوّق بالخصم من المنيو"
+            com.example.data.model.DealType.BOGO -> "🛒 اطلب العرض (1+1)"
+            else -> if ((t == com.example.data.model.DealType.BUNDLE || d.orderable) && o.price > 0) "🛒 اطلب العرض" else null
+        }
+    }
+    // ⚡ الخصم السريع (التاجر)
+    suspend fun myQuickDeal(): com.example.data.model.QuickDeal? = currentUser.value?.uid?.let { repository.quickDeal(it) }
+    fun saveQuickDeal(q: com.example.data.model.QuickDeal, done: () -> Unit) {
+        val uid = currentUser.value?.uid ?: return
+        viewModelScope.launch {
+            runCatching { repository.saveQuickDeal(uid, q) }
+                .onSuccess { toast("⚡ شغّلنا خصم ${q.pct}% على منيوك"); done() }
+                .onFailure { toast("تعذّر الحفظ: ${it.message ?: ""}") }
+        }
+    }
+    fun stopQuickDeal(done: () -> Unit) {
+        val uid = currentUser.value?.uid ?: return
+        viewModelScope.launch { runCatching { repository.deleteQuickDeal(uid) }.onSuccess { toast("وقّفنا الخصم ⏹️"); done() }.onFailure { toast("تعذّر الإيقاف") } }
+    }
+    /** طلب مباشر لعرض (المتجر ما عنده منيو مفتوح) */
+    val directCheckout = MutableStateFlow<com.example.data.model.StoreProfile?>(null)
+    /** 🛒 اطلب من شاشة العرض: لو المتجر عنده منيو مفتوح نضيفه للسلة ونفتح المتجر، وإلا نطلبه مباشرة */
+    fun orderFromOffer(o: RestaurantOffer) {
+        viewModelScope.launch {
+            val st = approvedStores.value.firstOrNull { it.uid == o.merchantId } ?: runCatching { repository.getStore(o.merchantId) }.getOrNull()
+            if (st == null) { toast("صفحة المتجر مو جاهزة"); return@launch }
+            val items = loadStoreCatalog(st.uid)
+            val d = com.example.data.model.OfferDeal.from(o.deal) ?: return@launch
+            when (d.type) {
+                "discount" -> openStorePage(st)
+                "bogo" -> { items.firstOrNull { it.id == d.itemId && it.available }?.let { cartAdd(st.uid, it, 2) }; openStorePage(st) }
+                else -> {
+                    val pk = dealsOf(st.uid).packs.firstOrNull { it.offerId == o.id }
+                    when {
+                        pk == null -> openStorePage(st)
+                        items.any { it.available } -> { cartAddPack(st.uid, pk, 1); toast("انضاف العرض لسلتك 🛒 كمّل من صفحة المتجر"); openStorePage(st) }
+                        else -> { carts.value = carts.value + (st.uid to emptyMap()); cartAddPack(st.uid, pk, 1); activeDetailOffer.value = null; directCheckout.value = st }
+                    }
+                }
+            }
+        }
     }
     fun cartLineAdd(storeId: String, id: String, delta: Int) {
         val cart = carts.value[storeId].orEmpty().toMutableMap()
@@ -812,7 +882,12 @@ class MerchantViewModel(
         if (!cfg.enabled) return emptyList()
         val (items, passes) = runCatching { repository.storeCatalog(uid) }.getOrDefault(emptyList<com.example.data.model.CatalogItem>() to emptyList())
         val now = System.currentTimeMillis()
-        return items.filter { cfg.visible(it, passes, now) }
+        val visible = items.filter { cfg.visible(it, passes, now) }
+        val quick = if (cfg.feat("quickDeal")) repository.quickDeal(uid) else null
+        val offers = (approvedOffers.value + merchantOffers.value).distinctBy { it.id }.filter { it.merchantId == uid }
+        storeDeals.value = storeDeals.value + (uid to com.example.data.model.StoreDeals.build(cfg, offers, quick, visible, now))
+        syncCart(uid, visible)
+        return visible
     }
 
     /** يحفظ الطلب (لو مسجّل) ويرجّع رابط واتساب المحل مع ملخص الطلب */
@@ -820,8 +895,9 @@ class MerchantViewModel(
         val lines = carts.value[store.uid].orEmpty().values.toList()
         if (lines.isEmpty()) return
         val cfg = catalogConfig.value
-        val sub = lines.sumOf { it.price * it.qty }
-        val fee = if (mode == "delivery") (if (store.deliveryFreeOver > 0 && sub >= store.deliveryFreeOver) 0.0 else store.deliveryFee) else 0.0
+        val tot = dealsOf(store.uid).totals(lines)
+        val sub = tot.sub
+        val fee = if (mode == "delivery") (if (store.deliveryFee <= 0 || (store.deliveryFreeOver > 0 && sub >= store.deliveryFreeOver)) 0.0 else store.deliveryFee) else 0.0
         val total = Math.round((sub + fee) * 100) / 100.0
         val vatNo = if (cfg.vatEnabled && com.example.data.model.CatalogConfig.validVat(store.vatNumber)) store.vatNumber else ""
         val vatAmt = if (vatNo.isNotBlank()) Math.round(total * cfg.vatRate / (100 + cfg.vatRate) * 100) / 100.0 else 0.0
@@ -829,7 +905,7 @@ class MerchantViewModel(
         val o = com.example.data.model.HayynaOrder(
             code = com.example.data.model.HayynaOrder.code(), storeId = store.uid, storeName = store.name,
             branchName = if (store.branches.size > 1) (branch?.name?.ifBlank { branch.district } ?: "") else "",
-            customerName = name.trim().take(60), customerPhone = phone.trim(), items = lines, subtotal = sub, deliveryFee = fee, total = total,
+            customerName = name.trim().take(60), customerPhone = phone.trim(), items = tot.lines, subtotal = sub, discount = tot.saved, deliveryFee = fee, total = total,
             vatRate = if (vatNo.isNotBlank()) cfg.vatRate else 0.0, vatAmount = vatAmt, vatNumber = vatNo, mode = mode, pay = pay, car = if (mode == "curbside") car.trim().take(60) else "",
             lat = if (mode == "delivery") loc?.latitude else null, lng = if (mode == "delivery") loc?.longitude else null, note = note.trim().take(300)
         )

@@ -1,13 +1,14 @@
 // واجهة المنتجات/الخدمات/المنيو: إدارة التاجر + عرضها في صفحة المتجر + السلة والطلب على واتساب + سجل الطلبات.
 import {
-  collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDocs, getDocsFromServer, serverTimestamp, Timestamp, writeBatch
+  collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getDocsFromServer, serverTimestamp, Timestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openStore } from "./app.js";
 import * as X from "./logic.js";
 import { cropImage } from "./cropper.js";
 import {
   KINDS, catalogOf, vatOf, baseKindOf, kindOrder, limitOf, slotId, passCost, riyal, itemVisible, itemPaidUntil, itemGrace,
-  vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps, PAY, MODES, deliveryInfo, payMethods, feat
+  vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps, PAY, MODES, deliveryInfo, payMethods, feat,
+  DEAL_TYPES, DEAL_SCOPES, storeDeals, dealPrice, cartTotals
 } from "./catalog.js";
 const F = (k) => feat(state.config, k); // مزايا الطلب من الأدمن
 
@@ -54,12 +55,75 @@ export function catalogPanelHtml(category) {
     <div class="cc-kinds">${kindOrder(base).map((k) => { const n = M.items.filter((x) => x.kind === k).length, lim = limitOf(c, k);
       return `<span style="background:${KINDS[k].bg};color:${KINDS[k].color}">${KINDS[k].icon} ${KINDS[k].label}: <b>${n}</b>${lim ? `/${lim}` : ""}</span>`; }).join("")}</div>
     <div class="row2"><button class="btn dir" id="ccManage">🛍️ إدارة منتجاتي</button>${c.orderEnabled ? `<button class="btn call" id="ccOrders">🧾 الطلبات${newOrders ? ` <span class="nb">${newOrders}</span>` : ""}</button>` : ""}</div>
+    ${M.items.length && F("quickDeal") && F("dealDiscount") ? `<button class="btn ghost" id="ccQuick">⚡ خصم سريع على المنيو</button>` : ""}
   </div>`;
 }
 export function bindCatalogPanel(ctx) {
   M.ctx = ctx;
   $("ccManage")?.addEventListener("click", () => openManager());
   $("ccOrders")?.addEventListener("click", openStoreOrders);
+  $("ccQuick")?.addEventListener("click", openQuickDeal);
+}
+/** أصناف التاجر (لربط العروض بالمنيو) */
+export async function loadMyItems(uid) {
+  if (M.uid === uid && M.items.length) return M.items;
+  try { return (await getDocs(query(collection(db, "items"), where("merchantId", "==", uid)))).docs.map((d) => ({ ...d.data(), id: d.id })); } catch { return []; }
+}
+/** اختيار نطاق الخصم (الكل / نوع / قسم / أصناف) — يُستخدم في الخصم السريع ونموذج العرض */
+export function scopePickerHtml(f, items) {
+  const kinds = [...new Set(items.map((x) => x.kind))], secs = [...new Set(items.map((x) => x.section).filter(Boolean))];
+  return `<div class="chips wrap">${Object.entries(DEAL_SCOPES).filter(([k]) => k === "all" || (k === "kind" && kinds.length > 1) || (k === "section" && secs.length) || (k === "items" && items.length))
+      .map(([k, t]) => `<button class="chip${f.scope === k ? " on" : ""}" data-dscope="${k}">${t}</button>`).join("")}</div>
+    ${f.scope === "kind" ? `<div class="chips wrap">${kinds.map((k) => `<button class="chip${f.kind === k ? " on" : ""}" data-dkind="${k}">${KINDS[k].icon} ${KINDS[k].title}</button>`).join("")}</div>` : ""}
+    ${f.scope === "section" ? `<div class="chips wrap">${secs.map((x) => `<button class="chip${f.section === x ? " on" : ""}" data-dsec="${esc(x)}">${esc(x)}</button>`).join("")}</div>` : ""}
+    ${f.scope === "items" ? `<div class="pick-list">${items.map((it) => `<label class="switch-row sub"><span>${KINDS[it.kind]?.icon || ""} ${esc(it.name)} <small>${fmt(it.price)} ر.س</small></span><input type="checkbox" data-ditem="${esc(it.id)}" ${f.itemIds.includes(it.id) ? "checked" : ""}></label>`).join("")}</div>` : ""}`;
+}
+export function bindScopePicker(root, f, redraw) {
+  root.querySelectorAll("[data-dscope]").forEach((b) => b.onclick = () => { f.scope = b.dataset.dscope; redraw(); });
+  root.querySelectorAll("[data-dkind]").forEach((b) => b.onclick = () => { f.kind = b.dataset.dkind; redraw(); });
+  root.querySelectorAll("[data-dsec]").forEach((b) => b.onclick = () => { f.section = b.dataset.dsec; redraw(); });
+  root.querySelectorAll("[data-ditem]").forEach((c) => c.onchange = () => { f.itemIds = c.checked ? [...new Set([...f.itemIds, c.dataset.ditem])] : f.itemIds.filter((x) => x !== c.dataset.ditem); });
+}
+export const scopeError = (f) => f.scope === "kind" && !f.kind ? "اختر النوع." : f.scope === "section" && !f.section ? "اختر القسم." : f.scope === "items" && !f.itemIds.length ? "اختر صنف واحد على الأقل." : "";
+
+/** ⚡ الخصم السريع: نسبة على المنيو بدون ما يسوي عرض بصورة */
+async function openQuickDeal() {
+  const uid = M.uid, ref = doc(db, "quickDeals", uid);
+  let cur = null; try { const q = await getDoc(ref); cur = q.exists() ? q.data() : null; } catch {}
+  const on = cur && X.ms(cur.endsAt) > Date.now();
+  const f = { pct: on ? String(cur.pct) : "", scope: on ? cur.scope || "all" : "all", kind: on ? cur.kind || "" : "", section: on ? cur.section || "" : "", itemIds: on ? cur.itemIds || [] : [], days: 1 };
+  const draw = () => {
+    showSheet(`<div class="pad form"><div class="section-title">⚡ خصم سريع على ${KINDS[baseKindOf(state.config, M.ctx.category())].title}</div>
+      ${on ? `<div class="banner green" style="margin:0 0 8px">شغّال الحين: ${cur.pct}% لين ${new Date(X.ms(cur.endsAt)).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" })}</div>` : ""}
+      <p class="desc tr">الخصم ينطبق لحاله على أسعار المنيو في صفحة متجرك، والزبون يشوف السعر القديم مشطوب.</p>
+      <label class="label">نسبة الخصم %</label>
+      <div class="chips wrap">${[10, 15, 20, 25, 30, 40, 50].map((n) => `<button class="chip${+f.pct === n ? " on" : ""}" data-qp="${n}">${n}%</button>`).join("")}</div>
+      <input id="qPct" class="input" inputmode="numeric" maxlength="2" value="${esc(f.pct)}" placeholder="أو اكتب نسبة (1 - 90)">
+      <label class="label">على وش؟</label>${scopePickerHtml(f, M.items)}
+      <label class="label">المدة</label>
+      <div class="chips wrap">${[[1, "اليوم بس"], [3, "3 أيام"], [7, "أسبوع"], [14, "أسبوعين"], [30, "شهر"]].map(([d, t]) => `<button class="chip${f.days === d ? " on" : ""}" data-qd="${d}">${t}</button>`).join("")}</div>
+      <div id="qErr" class="err"></div>
+      <button class="btn dir big" id="qSave">⚡ ${on ? "حدّث الخصم" : "شغّل الخصم"}</button>
+      ${on ? `<button class="btn danger" id="qStop">⏹️ أوقف الخصم</button>` : ""}</div>`);
+    const b = $("sheetBody");
+    $("qPct").oninput = (e) => { f.pct = e.target.value.replace(/\D/g, "").slice(0, 2); };
+    b.querySelectorAll("[data-qp]").forEach((x) => x.onclick = () => { f.pct = x.dataset.qp; draw(); });
+    b.querySelectorAll("[data-qd]").forEach((x) => x.onclick = () => { f.days = +x.dataset.qd; draw(); });
+    bindScopePicker(b, f, draw);
+    $("qStop")?.addEventListener("click", async () => { try { await deleteDoc(ref); hideSheet(); toast("وقّفنا الخصم ⏹️", true); } catch { toast("تعذّر الإيقاف"); } });
+    $("qSave").onclick = async () => {
+      const pct = parseInt(f.pct, 10);
+      if (!(pct >= 1 && pct <= 90)) return $("qErr").textContent = "اكتب نسبة من 1 إلى 90.";
+      const se = scopeError(f); if (se) return $("qErr").textContent = se;
+      const end = f.days === 1 ? new Date(new Date().setHours(23, 59, 0, 0)).getTime() : Date.now() + f.days * 86400000;
+      try {
+        await setDoc(ref, { merchantId: uid, pct, scope: f.scope, kind: f.scope === "kind" ? f.kind : "", section: f.scope === "section" ? f.section : "",
+          itemIds: f.scope === "items" ? f.itemIds.slice(0, 50) : [], endsAt: Timestamp.fromMillis(end), updatedAt: serverTimestamp() });
+        hideSheet(); toast(`⚡ شغّلنا خصم ${pct}% على منيوك`, true);
+      } catch (e) { console.warn(e); $("qErr").textContent = "تعذّر الحفظ — حدّث الصفحة وجرّب."; }
+    };
+  };
+  draw();
 }
 
 let page = null; // { kind }
@@ -408,8 +472,26 @@ try { Object.assign(carts, JSON.parse(localStorage.getItem("hayyna_carts") || "{
 const saveCarts = () => { try { localStorage.setItem("hayyna_carts", JSON.stringify(carts)); } catch {} };
 const cartOf = (sid) => (carts[sid] = carts[sid] || {});
 const cartCount = (sid) => Object.values(cartOf(sid)).reduce((a, l) => a + l.qty, 0);
-const cartSum = (sid) => Object.values(cartOf(sid)).reduce((a, l) => a + l.qty * l.price, 0);
+const totalsOf = (sid) => cartTotals(Object.values(cartOf(sid)), storeCache[sid]?.D);
+const cartSum = (sid) => totalsOf(sid).sub;
 const storeCache = {};
+/** عروض المتجر الشغّالة (من العروض المحمّلة + الخصم السريع) */
+async function loadDeals(sid, items) {
+  let quick = null;
+  if (feat(state.config, "quickDeal")) { try { const q = await getDoc(doc(db, "quickDeals", sid)); quick = q.exists() ? q.data() : null; } catch {} }
+  return storeDeals(state.config, (state.offers || []).filter((o) => o.merchantId === sid), quick, items);
+}
+/** نحدّث أسعار السلة حسب المنيو والعروض (ونشيل اللي ما عاد موجود) */
+function syncCart(sid) {
+  const { items, D } = storeCache[sid], cart = cartOf(sid);
+  Object.keys(cart).forEach((id) => {
+    const pk = D.packs.find((x) => x.id === id);
+    if (pk) { Object.assign(cart[id], { name: pk.name, price: pk.price, was: pk.was || 0 }); return; }
+    const it = items.find((x) => x.id === id && x.available !== false);
+    if (!it) { delete cart[id]; return; }
+    const dp = dealPrice(it, D); Object.assign(cart[id], { price: dp.price, was: dp.was });
+  });
+}
 
 /** يرسم منتجات المتجر داخل صفحة المتجر (عنصر #storeItems) */
 export async function renderStoreItems(s) {
@@ -424,20 +506,25 @@ export async function renderStoreItems(s) {
   } catch (e) { console.warn("items", e); return; }
   const now = Date.now();
   items = items.filter((it) => itemVisible(it, passes, c, now));
-  storeCache[s.uid] = { s, items };
+  const D = await loadDeals(s.uid, items);
+  storeCache[s.uid] = { s, items, D };
   if (!$("storeItems")) return;
-  // نشيل من السلة اللي ما عاد موجود، ونحدّث الأسعار
-  const cart = cartOf(s.uid);
-  Object.keys(cart).forEach((id) => { const it = items.find((x) => x.id === id && x.available !== false); if (!it) delete cart[id]; else cart[id].price = it.price; });
+  syncCart(s.uid); saveCarts();
   drawStoreItems(s.uid);
 }
 function drawStoreItems(sid) {
   const box = $("storeItems"), data = storeCache[sid];
   if (!box || !data) return;
-  const { s, items } = data, c = cat(), base = baseKindOf(state.config, s.category), cart = cartOf(sid);
-  if (!items.length) { box.innerHTML = ""; return; }
-  const order = c.orderEnabled;
-  box.innerHTML = kindOrder(base).map((k) => {
+  const { s, items, D } = data, c = cat(), base = baseKindOf(state.config, s.category), cart = cartOf(sid);
+  const order = c.orderEnabled, packs = order ? D.packs : [];
+  if (!items.length && !packs.length) { box.innerHTML = ""; return; }
+  const qtyBtns = (id, q) => q ? `<div class="qty"><button data-dec="${esc(id)}">−</button><b>${q}</b><button data-inc="${esc(id)}">＋</button></div>` : `<button class="add-btn" data-inc="${esc(id)}">＋ أضف</button>`;
+  box.innerHTML = (D.banners.length ? `<div class="deal-bar">${D.banners.map((b) => `<span class="deal-chip${b.quick ? " quick" : ""}">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : "")
+    + (packs.length ? `<div class="kind-sec deal-sec"><div class="ks-title">🎁 عروض تقدر تطلبها <small>(${packs.length})</small></div>${packs.map((p) => `<div class="icard deal">
+        ${p.imageUrl ? `<img src="${esc(cld(p.imageUrl, 240))}" data-full="${esc(cld(p.imageUrl, 1400))}" alt="">` : `<div class="iph">🎁</div>`}
+        <div class="ic-main"><b>${esc(p.name)}</b>${p.desc ? `<small>${esc(p.desc)}</small>` : ""}<div class="ic-price">${fmt(p.price)} ر.س${p.was ? ` <s>${fmt(p.was)}</s>` : ""}</div></div>
+        ${qtyBtns(p.id, cart[p.id]?.qty || 0)}</div>`).join("")}</div>` : "")
+    + kindOrder(base).map((k) => {
     const list = items.filter((x) => x.kind === k);
     if (!list.length) return "";
     const K = KINDS[k], secs = [...new Set([...list].sort((a, b) => a.slot - b.slot).map((x) => x.section || ""))]; // ترتيب الأقسام حسب ترتيب إضافة التاجر
@@ -447,17 +534,60 @@ function drawStoreItems(sid) {
         const q = cart[it.id]?.qty || 0, out = it.available === false;
         return `<div class="icard${out ? " out" : ""}">
           ${it.imageUrl ? `<img src="${esc(cld(it.imageUrl, 240))}" data-full="${esc(cld(it.imageUrl, 1400))}" alt="">` : `<div class="iph">${K.icon}</div>`}
-          <div class="ic-main"><b>${esc(it.name)}</b>${it.desc ? `<small>${esc(it.desc)}</small>` : ""}<div class="ic-price">${fmt(it.price)} ر.س</div></div>
-          ${out ? `<span class="pill closed">نفد</span>` : order ? (q ? `<div class="qty"><button data-dec="${esc(it.id)}">−</button><b>${q}</b><button data-inc="${esc(it.id)}">＋</button></div>` : `<button class="add-btn" data-inc="${esc(it.id)}">＋ أضف</button>`) : ""}
+          <div class="ic-main"><b>${esc(it.name)}</b>${it.desc ? `<small>${esc(it.desc)}</small>` : ""}<div class="ic-price">${(() => { const dp = dealPrice(it, D), b = D.bogo[it.id];
+            return `${fmt(dp.price)} ر.س${dp.pct ? ` <s>${fmt(dp.was)}</s> <span class="deal-pct">−${dp.pct}%</span>` : ""}${b ? ` <span class="deal-pct bogo">${esc(b.label)}</span>` : ""}`; })()}</div></div>
+          ${out ? `<span class="pill closed">نفد</span>` : order ? qtyBtns(it.id, q) : ""}
         </div>`; }).join("")}`).join("")}
     </div>`;
   }).join("") + (order && cartCount(sid) ? (() => { const di = deliveryInfo(s, cartSum(sid));
     return `<div class="cart-bar"><span>🧾 سلتك: <b>${cartCount(sid)}</b> • <b>${fmt(cartSum(sid))} ر.س</b>${!F("freeHint") ? "" : di?.left > 0 ? `<small>🚚 باقي ${fmt(di.left)} ر.س للتوصيل المجاني</small>` : di?.free && di.freeOver > 0 ? `<small>🚚 التوصيل صار مجاني 🎉</small>` : ""}</span><button class="btn dir" id="cartGo">اطلب</button></div>`; })() : "");
-  box.querySelectorAll("[data-inc]").forEach((b) => b.onclick = () => { const it = items.find((x) => x.id === b.dataset.inc); const l = cart[it.id] || (cart[it.id] = { id: it.id, name: it.name, kind: it.kind, price: it.price, qty: 0 }); l.qty = Math.min(99, l.qty + 1); saveCarts(); drawStoreItems(sid); });
+  box.querySelectorAll("[data-inc]").forEach((b) => b.onclick = () => { addToCart(sid, b.dataset.inc); drawStoreItems(sid); });
   box.querySelectorAll("[data-dec]").forEach((b) => b.onclick = () => { const l = cart[b.dataset.dec]; if (l) { l.qty--; if (l.qty <= 0) delete cart[b.dataset.dec]; } saveCarts(); drawStoreItems(sid); });
   box.querySelectorAll("img[data-full]").forEach((im) => im.onclick = () => { $("viewerImg").src = im.dataset.full; $("viewer").classList.remove("hidden"); });
   $("cartGo")?.addEventListener("click", () => openCheckout(sid));
 }
+
+function addToCart(sid, id, n = 1) {
+  const { items, D } = storeCache[sid], cart = cartOf(sid);
+  const pk = D.packs.find((x) => x.id === id), it = pk ? null : items.find((x) => x.id === id);
+  if (!pk && !it) return;
+  const dp = it ? dealPrice(it, D) : { price: pk.price, was: pk.was || 0 };
+  const l = cart[id] || (cart[id] = { id, name: (pk || it).name, kind: pk ? "deal" : it.kind, price: dp.price, was: dp.was, qty: 0 });
+  Object.assign(l, { price: dp.price, was: dp.was }); l.qty = Math.min(99, l.qty + n); saveCarts();
+}
+/** 🛒 اطلب من شاشة العرض: لو المتجر عنده منيو مفتوح نضيفه للسلة ونروح للمتجر، وإلا نطلبه مباشرة */
+export async function orderFromOffer(o) {
+  const sid = o.merchantId, s = state.stores.find((x) => x.uid === sid), d = o.deal || {};
+  if (!s) return toast("صفحة المتجر مو جاهزة");
+  const c = cat();
+  let items = [];
+  if (c.enabled) {
+    try {
+      const [its, passes] = await Promise.all([
+        getDocs(query(collection(db, "items"), where("merchantId", "==", sid), where("approved", "==", true))).then((r) => r.docs.map((x) => ({ ...x.data(), id: x.id }))),
+        c.pricing.enabled ? getDocs(query(collection(db, "itemPasses"), where("merchantId", "==", sid))).then((r) => r.docs.map((x) => x.data())) : [],
+      ]);
+      items = its.filter((it) => itemVisible(it, passes, c, Date.now()));
+    } catch (e) { console.warn(e); }
+  }
+  const D = await loadDeals(sid, items);
+  storeCache[sid] = { s, items, D };
+  const menuOpen = items.some((x) => x.available !== false);
+  if (d.type === "discount") return openStore(sid, true);
+  if (d.type === "bogo") { if (d.itemId && items.some((x) => x.id === d.itemId)) addToCart(sid, d.itemId, 2); return openStore(sid, true); }
+  const pk = D.packs.find((x) => x.offerId === o.id);
+  if (!pk) return openStore(sid, true);
+  if (menuOpen) { addToCart(sid, pk.id); toast("انضاف العرض لسلتك 🛒 كمّل من صفحة المتجر", true); return openStore(sid, true); }
+  // المتجر ما عنده منيو: طلب مباشر للعرض بس
+  carts[sid] = {}; addToCart(sid, pk.id); openCheckout(sid);
+}
+export const offerOrderable = (o) => {
+  const d = o?.deal; if (!d || !ordersOn() || !DEAL_TYPES[d.type] || !feat(state.config, DEAL_TYPES[d.type].feat)) return null;
+  if (d.type === "discount") return "🛍️ تسوّق بالخصم من المنيو";
+  if (d.type === "bogo") return "🛒 اطلب العرض (1+1)";
+  if ((d.type === "bundle" || (d.type === "promo" && d.orderable)) && o.price > 0) return "🛒 اطلب العرض";
+  return null;
+};
 
 function openCheckout(sid) {
   const { s } = storeCache[sid], cart = cartOf(sid), vat = vatOf(state.config);
@@ -466,16 +596,16 @@ function openCheckout(sid) {
   let savedCar = ""; try { savedCar = localStorage.getItem("hayyna_car") || ""; } catch {}
   const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: branches[0]?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null };
   const draw = () => {
-    const lines = Object.values(cart);
-    if (!lines.length) { openStore(sid, false); return; }
-    const sub = lines.reduce((a, l) => a + l.qty * l.price, 0);
+    if (!Object.values(cart).length) { openStore(sid, false); return; }
+    const T = cartTotals(Object.values(cart), storeCache[sid].D), lines = T.lines, sub = T.sub;
     const di = deliveryInfo(s, sub);
     const fee = f.mode === "delivery" && di ? di.fee : 0;
     const total = Math.round((sub + fee) * 100) / 100, vatNo = vat.enabled && validVatNumber(s.vatNumber) ? s.vatNumber : "";
     const { vat: vatAmt, net } = vatSplit(total, vat.rate);
     const minOk = f.mode !== "delivery" || !(s.deliveryMinOrder > 0) || sub >= s.deliveryMinOrder;
     showSheet(`<div class="pad form checkout"><div class="section-title">🧾 طلبك من ${esc(s.name)}</div>
-      ${lines.map((l) => `<div class="co-line"><span>${esc(l.name)}</span><div class="qty"><button data-dec="${esc(l.id)}">−</button><b>${l.qty}</b><button data-inc="${esc(l.id)}">＋</button></div><b>${fmt(l.qty * l.price)}</b></div>`).join("")}
+      ${lines.map((l) => `<div class="co-line"><span>${esc(l.name)}${l.was > l.price ? ` <s>${fmt(l.was)}</s>` : ""}${l.bogo ? `<small class="deal-pct bogo">${esc(l.bogo)}${l.off > 0 ? ` −${fmt(l.off)}` : " (أضف واحد ثاني)"}</small>` : ""}</span><div class="qty"><button data-dec="${esc(l.id)}">−</button><b>${l.qty}</b><button data-inc="${esc(l.id)}">＋</button></div><b>${fmt(l.qty * l.price - l.off)}</b></div>`).join("")}
+      ${T.saved > 0 ? `<div class="saved-line">🔥 وفّرت <b>${fmt(T.saved)} ر.س</b> بالعروض</div>` : ""}
       <label class="label">طريقة الاستلام</label>
       ${s.delivery || curb ? `<div class="modes">
         <button class="mode${f.mode === "pickup" ? " on" : ""}" data-mode="pickup"><b>🏃 استلام من المحل</b></button>
@@ -526,7 +656,8 @@ function openCheckout(sid) {
       const ref = doc(collection(db, "orders"));
       const o = { id: ref.id, code: orderCode(), storeId: sid, storeName: s.name, branchId: br.id || "", branchName: branches.length > 1 ? (br.name || X.districtLabel(br.district) || "") : "",
         customerUid: state.user?.uid || "", customerName: f.name.trim().slice(0, 60), customerPhone: phoneOk,
-        items: lines.map((l) => ({ id: l.id, name: l.name, kind: l.kind, qty: l.qty, price: l.price })), subtotal: sub, deliveryFee: fee, total,
+        items: lines.map((l) => ({ id: l.id, name: l.name, kind: l.kind, qty: l.qty, price: l.price, ...(l.was > l.price ? { was: l.was } : {}), ...(l.off > 0 ? { off: l.off, bogo: l.bogo } : {}) })),
+        subtotal: sub, discount: T.saved, deliveryFee: fee, total,
         vatRate: vatNo ? vat.rate : 0, vatAmount: vatNo ? vatAmt : 0, vatNumber: vatNo, mode: f.mode, location: f.mode === "delivery" ? f.loc : null,
         pay: F("payChoice") ? f.pay : "", car: f.mode === "curbside" ? f.car.trim().slice(0, 60) : "",
         note: f.note.trim().slice(0, 300), status: "sent" };

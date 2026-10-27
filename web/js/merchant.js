@@ -7,8 +7,8 @@ import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadI
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
 import { cropImage } from "./cropper.js";
-import { watchMerchantCatalog, catalogPanelHtml, bindCatalogPanel } from "./catalog-ui.js";
-import { vatOf, validVatNumber, feat } from "./catalog.js";
+import { watchMerchantCatalog, catalogPanelHtml, bindCatalogPanel, loadMyItems, scopePickerHtml, bindScopePicker, scopeError } from "./catalog-ui.js";
+import { vatOf, validVatNumber, feat, catalogOf, DEAL_TYPES, KINDS, fmt } from "./catalog.js";
 import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict, rewardOf, discounted, rewardText } from "./credits.js";
 
 const { esc, cld, thumb, priceLabel, districtLabel, money } = X;
@@ -510,7 +510,13 @@ export async function openOfferForm(editing) {
   const p = m.profile || {};
   if (!(p.branches || []).length) { toast("جهّز صفحة متجرك أول 📍"); openStoreForm(); return; }
   const e = editing || null;
+  // العروض مع المنيو: نوع العرض + ربطه بالأصناف
+  const dealsOn = catalogOf(state.config).enabled && Object.values(DEAL_TYPES).some((t) => feat(state.config, t.feat));
+  const myItems = dealsOn ? (await loadMyItems(state.user.uid)).filter((x) => x.approved && !x.adminNote) : [];
+  const ed = e?.deal || {};
   const f = {
+    dealType: ed.type || (e ? "promo" : ""), dScope: { scope: ed.scope || "all", kind: ed.kind || "", section: ed.section || "", itemIds: ed.type === "discount" ? ed.itemIds || [] : [] },
+    packIds: ed.type === "bundle" ? ed.itemIds || [] : [], bogoItem: ed.itemId || "", getPct: ed.getPct === 50 ? 50 : 100, orderable: !!ed.orderable,
     title: e?.offerTitle || "", desc: e?.description || "", category: e?.cuisineType || p.cuisineType || categories()[0],
     percentMode: e ? X.isPercentOnly(e) : false, price: e && e.price > 0 ? X.money(e.price) : "", original: e?.originalPrice ? X.money(e.originalPrice) : "",
     pct: e?.discountPercent > 0 && !(e.dailyPercents || []).length ? String(e.discountPercent) : "", tiered: (e?.dailyPercents || []).length > 0,
@@ -540,6 +546,12 @@ export async function openOfferForm(editing) {
   const render = () => {
     const isNew = f.kind === "new";
     if (isNew) f.percentMode = false;
+    const dt = !isNew && dealsOn ? f.dealType : "";
+    if (dt === "discount") f.percentMode = true;
+    if (dt === "bundle" || dt === "bogo") f.percentMode = false;
+    const bogoIt = myItems.find((x) => x.id === f.bogoItem);
+    if (dt === "bogo" && bogoIt) { f.price = X.money(bogoIt.price); f.original = ""; }
+    const packSum = myItems.filter((x) => f.packIds.includes(x.id)).reduce((a, x) => a + (+x.price || 0), 0);
     const pr = paid ? priceFor("publish", Math.max(1, daysOf()), f.exclusive) : null, r = rw();
     $("pageBody").innerHTML = `<div class="form">
       ${paid && !m.ctx?.isAdmin ? `<div class="bal-bar${bal() < (pr?.cost || 0) ? " low" : ""}"><span>💰 رصيدك: <b>${bal()}</b> نقطة</span><span>📢 النشر: ${pubItem.price} ${pubItem.unit === "day" ? "نقاط باليوم" : "نقاط"}</span>${r.on ? `<span class="bb-excl">💎 الحصري: ${r.free ? "نشره مجاني" : `خصم ${r.percent}%`}</span>` : ""}</div>` : ""}
@@ -547,20 +559,28 @@ export async function openOfferForm(editing) {
         <button class="kind-btn${!isNew ? " on" : ""}" data-kind="offer"><b>🔥 عرض</b><small>خصم أو سعر خاص</small></button>
         <button class="kind-btn new${isNew ? " on" : ""}" data-kind="new"><b>✨ جديدنا</b><small>صنف أو منتج جديد</small></button>
       </div>
+      ${!isNew && dealsOn ? `<div class="section-title">وش نوع عرضك؟</div><div class="deal-grid">${Object.entries(DEAL_TYPES).filter(([, t]) => feat(state.config, t.feat)).map(([k, t]) => {
+        const need = (k === "discount" || k === "bogo") && !myItems.length;
+        return `<button class="deal-type${f.dealType === k ? " on" : ""}" data-dt="${k}" ${need ? "disabled" : ""}><b>${t.icon} ${t.t}</b><small>${need ? "أضف أصناف للمنيو أول" : t.d}</small></button>`; }).join("")}</div>` : ""}
       <label class="label">${isNew ? "صور المنتج (حتى 3) أو فيديو *" : "صور العرض (حتى 3) أو فيديو *"}</label>
       <div class="tiles">${f.media.map((it, i) => f.isVideo ? `<div class="tile"><div class="vid">🎬 فيديو</div><button class="tile-x" data-rm="${i}">✕</button></div>`
         : mediaTile(it.file ? URL.createObjectURL(it.file) : cld(it.url, 300), String(i), i === 0 ? "الغلاف" : "").replace(/<\/div>$/, it.file ? `<button class="tile-crop" data-crop="${i}" title="قص">✂️</button></div>` : "</div>")).join("")}
         ${!f.isVideo && f.media.length < 3 ? `<label class="tile add">＋ صور<input type="file" accept="image/*" multiple id="oImgs" hidden></label>` : ""}
         ${!f.media.length ? `<label class="tile add">🎬 فيديو<input type="file" accept="video/*" id="oVid" hidden></label>` : ""}</div>
       <label class="label">${isNew ? "اسم المنتج الجديد *" : "عنوان العرض *"}</label><input id="oTitle" class="input" value="${esc(f.title)}" maxlength="150" placeholder="${isNew ? "مثال: برجر الترافل الجديد" : "مثال: خصم 30% على كل المنتجات"}">
-      ${isNew ? "" : `<div class="chips"><button class="chip${!f.percentMode ? " on" : ""}" data-mode="price">💰 سعر محدد</button><button class="chip${f.percentMode ? " on" : ""}" data-mode="pct">٪ خصم بالنسبة</button></div>`}
-      ${!f.percentMode ? `<div class="row2"><div><label class="label">${isNew ? "السعر (اختياري)" : "السعر (ر.س) *"}</label><input id="oPrice" class="input" inputmode="decimal" value="${esc(f.price)}"></div>
+      ${dt === "bogo" ? `<label class="label">➕ على أي صنف؟ *</label><div class="chips wrap">${myItems.map((it) => `<button class="chip${f.bogoItem === it.id ? " on" : ""}" data-bogo="${esc(it.id)}">${esc(it.name)} • ${fmt(it.price)}</button>`).join("")}</div>
+        <div class="chips"><button class="chip${f.getPct === 100 ? " on" : ""}" data-getpct="100">1+1 مجاناً</button><button class="chip${f.getPct === 50 ? " on" : ""}" data-getpct="50">الثاني بنص السعر</button></div>` : ""}
+      ${isNew || dt === "discount" || dt === "bundle" || dt === "bogo" ? "" : `<div class="chips"><button class="chip${!f.percentMode ? " on" : ""}" data-mode="price">💰 سعر محدد</button><button class="chip${f.percentMode ? " on" : ""}" data-mode="pct">٪ خصم بالنسبة</button></div>`}
+      ${dt === "bogo" ? "" : !f.percentMode ? `<div class="row2"><div><label class="label">${isNew ? "السعر (اختياري)" : dt === "bundle" ? "سعر الباقة (ر.س) *" : "السعر (ر.س) *"}</label><input id="oPrice" class="input" inputmode="decimal" value="${esc(f.price)}"></div>
         <div><label class="label">${isNew ? "قبل الخصم (لو عليه خصم)" : "قبل الخصم"}</label><input id="oOrig" class="input" inputmode="decimal" value="${esc(f.original)}"></div></div>`
       : `<label class="switch-row"><span>الخصم يتغيّر حسب اليوم (مثل: أول يوم 50% وبعدها 30%)</span><input type="checkbox" id="oTier" ${f.tiered ? "checked" : ""}></label>
         ${!f.tiered ? `<label class="label">نسبة الخصم % *</label><input id="oPct" class="input" inputmode="numeric" value="${esc(f.pct)}" maxlength="2">`
         : `${f.days.map((v, i) => `<div class="tier"><span>اليوم ${X.ordinal(i)}</span><input class="input" inputmode="numeric" data-day="${i}" value="${esc(v)}" maxlength="2" placeholder="%">${f.days.length > 2 ? `<button class="icon-btn" data-dayrm="${i}">✕</button>` : ""}</div>`).join("")}
           ${f.days.length < 14 ? `<button class="btn ghost" id="oAddDay">＋ أضف يوم</button>` : ""}<small class="hint">مدة العرض = ${f.days.length} أيام، والخصم يتغيّر تلقائياً.</small>`}
-        <label class="label">على وش الخصم؟</label><input id="oScope" class="input" value="${esc(f.scope)}" maxlength="40" placeholder="على جميع الأصناف">`}
+        <label class="label">على وش الخصم؟</label>${dt === "discount" && myItems.length ? scopePickerHtml(f.dScope, myItems) : `<input id="oScope" class="input" value="${esc(f.scope)}" maxlength="40" placeholder="على جميع الأصناف">`}`}
+      ${dt === "bundle" && myItems.length ? `<label class="label">🎁 وش فيها الباقة؟ (اختياري — من منيوك)</label><div class="pick-list">${myItems.map((it) => `<label class="switch-row sub"><span>${KINDS[it.kind]?.icon || ""} ${esc(it.name)} <small>${fmt(it.price)} ر.س</small></span><input type="checkbox" data-pack="${esc(it.id)}" ${f.packIds.includes(it.id) ? "checked" : ""}></label>`).join("")}</div>
+        ${packSum ? `<div class="hint-box" id="packHint">مجموع الأصناف <b>${fmt(packSum)} ر.س</b>${+f.price > 0 && +f.price < packSum ? ` — الزبون يوفّر <b>${fmt(packSum - +f.price)} ر.س</b> 🎉` : ""}</div>` : `<small class="hint">لو الباقة شي جديد ما هو في المنيو، اكتب محتواها في التفاصيل.</small>`}` : ""}
+      ${dt === "promo" && dealsOn && catalogOf(state.config).orderEnabled ? `<label class="switch-row"><span>🛒 الزبون يقدر يطلبه من حيّنا <small class="hint">(لازم سعر)</small></span><input type="checkbox" id="oOrderable" ${f.orderable ? "checked" : ""}></label>` : ""}
       <label class="label">${isNew ? "وصف المنتج" : "تفاصيل العرض"}</label><textarea id="oDesc" class="input" rows="3" maxlength="2000">${esc(f.desc)}</textarea>
       <label class="label">الأصناف (للبحث)</label><input id="oTags" class="input" value="${esc(f.tags)}" placeholder="شاورما، برجر، بروست">
       ${deliveryFields(f)}
@@ -585,6 +605,14 @@ export async function openOfferForm(editing) {
     const set = (id, k) => { const el = $(id); if (el) el.oninput = (ev) => { f[k] = ev.target.value; dirty = true; }; };
     set("oTitle", "title"); set("oPrice", "price"); set("oOrig", "original"); set("oPct", "pct"); set("oScope", "scope"); set("oDesc", "desc"); set("oTags", "tags");
     const body = $("pageBody");
+    body.querySelectorAll("[data-dt]").forEach((b) => b.onclick = () => { f.dealType = b.dataset.dt; dirty = true; render(); });
+    body.querySelectorAll("[data-bogo]").forEach((b) => b.onclick = () => { f.bogoItem = b.dataset.bogo; const it = myItems.find((x) => x.id === f.bogoItem); if (it && !f.title.trim()) f.title = `${f.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"} على ${it.name}`; dirty = true; render(); });
+    body.querySelectorAll("[data-getpct]").forEach((b) => b.onclick = () => { f.getPct = +b.dataset.getpct; dirty = true; render(); });
+    body.querySelectorAll("[data-pack]").forEach((c) => c.onchange = () => { f.packIds = c.checked ? [...new Set([...f.packIds, c.dataset.pack])] : f.packIds.filter((x) => x !== c.dataset.pack); const y = window.scrollY, pb = $("pageBody").scrollTop; render(); $("pageBody").scrollTop = pb; });
+    $("oOrderable")?.addEventListener("change", (ev) => { f.orderable = ev.target.checked; dirty = true; });
+    if (dt === "discount") bindScopePicker(body, f.dScope, () => { dirty = true; render(); });
+    // الباقة: نحدّث «كم يوفّر الزبون» وهو يكتب (بدون إعادة رسم الصفحة)
+    if (dt === "bundle") $("oPrice")?.addEventListener("input", () => { const h = $("packHint"), v = +f.price; if (h && packSum) h.innerHTML = `مجموع الأصناف <b>${fmt(packSum)} ر.س</b>${v > 0 && v < packSum ? ` — الزبون يوفّر <b>${fmt(packSum - v)} ر.س</b> 🎉` : ""}`; });
     bindDelivery(f, () => { dirty = true; render(); });
     $("oImgs")?.addEventListener("change", (ev) => { [...ev.target.files].slice(0, 3 - f.media.length).forEach((file) => f.media.push({ file })); f.isVideo = false; dirty = true; render(); });
     $("oVid")?.addEventListener("change", (ev) => { const file = ev.target.files[0]; if (!file) return; if (file.size > 95 * 1024 * 1024) return toast("الفيديو كبير، الحد 95 ميجا"); f.media = [{ file }]; f.isVideo = true; dirty = true; render(); });
@@ -646,7 +674,12 @@ export async function openOfferForm(editing) {
       : f.keepExpiry && e ? X.ms(e.expiresAt)
       : f.durIdx === -1 ? ((+f.customDays >= 1 && +f.customDays <= 90) ? base + (+f.customDays) * DAY : null)
       : (X.DURATIONS[f.durIdx].days ? base + X.DURATIONS[f.durIdx].days * DAY : null);
+    const dt = f.kind !== "new" && dealsOn ? f.dealType : "";
     if (!f.media.length) return err("أرفق صورة أو فيديو للعرض.");
+    if (f.kind !== "new" && dealsOn && !dt) return err("اختر نوع عرضك من فوق 👆");
+    if (dt === "discount" && myItems.length) { const se = scopeError(f.dScope); if (se) return err(se); }
+    if (dt === "bogo" && !myItems.some((x) => x.id === f.bogoItem)) return err("اختر الصنف اللي عليه العرض.");
+    if (dt === "promo" && f.orderable && !(Number(f.price) > 0)) return err("عشان الزبون يطلبه، اكتب سعر العرض.");
     if (!f.title.trim()) return err(f.kind === "new" ? "اكتب اسم المنتج." : "اكتب عنوان العرض.");
     if (!useTiers && !f.keepExpiry && f.durIdx === -1 && !(+f.customDays >= 1 && +f.customDays <= 90)) return err("اكتب عدد أيام العرض (من 1 إلى 90).");
     const isNew = f.kind === "new";
@@ -683,7 +716,14 @@ export async function openOfferForm(editing) {
         delivery: f.delivery, deliveryFee: f.delivery ? Number(f.fee) || 0 : 0, deliveryMinOrder: f.delivery ? Number(f.min) || 0 : 0,
         deliveryFreeOver: f.delivery ? Number(f.free) || 0 : 0,
         logoUrl: p.logoUrl || "", branches: branches.slice(0, 50),
+        deal: !dt ? null
+          : dt === "discount" ? { type: "discount", scope: myItems.length ? f.dScope.scope : "all", kind: f.dScope.scope === "kind" ? f.dScope.kind : "", section: f.dScope.scope === "section" ? f.dScope.section : "", itemIds: f.dScope.scope === "items" ? f.dScope.itemIds.slice(0, 50) : [] }
+          : dt === "bundle" ? { type: "bundle", itemIds: f.packIds.filter((id) => myItems.some((x) => x.id === id)).slice(0, 20) }
+          : dt === "bogo" ? { type: "bogo", itemId: f.bogoItem, getPct: f.getPct }
+          : { type: "promo", orderable: !!f.orderable && price > 0 },
       };
+      if (dt === "discount" && myItems.length) data.itemsScope = f.dScope.scope === "all" ? "على كل المنيو" : f.dScope.scope === "kind" ? `على ${KINDS[f.dScope.kind]?.title || ""}` : f.dScope.scope === "section" ? `على ${f.dScope.section}`.slice(0, 40) : "على أصناف مختارة";
+      if (dt === "bundle" && !original) { const sum = myItems.filter((x) => f.packIds.includes(x.id)).reduce((a, x) => a + (+x.price || 0), 0); if (sum > price) { data.originalPrice = Math.round(sum * 100) / 100; data.discountBadge = `خصم ${Math.floor((sum - price) / sum * 100)}% 🔥`; } }
       if (e) {
         // عرض مرجّع من الأدمن: يرجع للمراجعة بعد التعديل، والملاحظة تنمسح
         await updateDoc(doc(db, "offers", e.id), { ...data, adminNote: "", isApproved: e.adminNote ? false : direct ? e.isApproved : false });

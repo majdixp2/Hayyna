@@ -539,6 +539,9 @@ class RestaurantOfferRepository(
             runCatching { d.toObject(com.example.data.model.StoreProfile::class.java)?.copy(uid = d.id) }.getOrNull()
         } ?: emptyList()
 
+    suspend fun getStore(uid: String): com.example.data.model.StoreProfile? =
+        storesCollection.document(uid).get().await().let { d -> if (!d.exists()) null else runCatching { d.toObject(com.example.data.model.StoreProfile::class.java)?.copy(uid = d.id) }.getOrNull() }
+
     /** المتاجر المعتمدة (للعملاء). */
     val approvedStores: Flow<List<com.example.data.model.StoreProfile>> = callbackFlow {
         val listener = storesCollection.whereEqualTo("approved", true).addSnapshotListener { snap, error ->
@@ -728,6 +731,7 @@ class RestaurantOfferRepository(
             "exclusive" to exclusive,
             "draft" to draft,
             "adminNote" to adminNote,
+            "deal" to deal,
             "tags" to tags.take(12),
             "delivery" to delivery,
             "deliveryFee" to deliveryFee,
@@ -890,8 +894,10 @@ class RestaurantOfferRepository(
         id = d.id, code = d.getString("code").orEmpty(), storeId = d.getString("storeId").orEmpty(), storeName = d.getString("storeName").orEmpty(),
         branchName = d.getString("branchName").orEmpty(), customerName = d.getString("customerName").orEmpty(), customerPhone = d.getString("customerPhone").orEmpty(),
         items = (d.get("items") as? List<Map<String, Any?>>).orEmpty().map {
-            com.example.data.model.CartLine(it["id"] as? String ?: "", it["name"] as? String ?: "", it["kind"] as? String ?: "", (it["price"] as? Number)?.toDouble() ?: 0.0, (it["qty"] as? Number)?.toInt() ?: 1)
+            com.example.data.model.CartLine(it["id"] as? String ?: "", it["name"] as? String ?: "", it["kind"] as? String ?: "", (it["price"] as? Number)?.toDouble() ?: 0.0, (it["qty"] as? Number)?.toInt() ?: 1,
+                was = (it["was"] as? Number)?.toDouble() ?: 0.0, off = (it["off"] as? Number)?.toDouble() ?: 0.0, bogo = it["bogo"] as? String ?: "")
         },
+        discount = d.getDouble("discount") ?: 0.0,
         subtotal = d.getDouble("subtotal") ?: 0.0, deliveryFee = d.getDouble("deliveryFee") ?: 0.0, total = d.getDouble("total") ?: 0.0,
         vatRate = d.getDouble("vatRate") ?: 0.0, vatAmount = d.getDouble("vatAmount") ?: 0.0, vatNumber = d.getString("vatNumber").orEmpty(),
         mode = d.getString("mode") ?: "pickup", note = d.getString("note").orEmpty(), status = d.getString("status") ?: "sent",
@@ -936,13 +942,33 @@ class RestaurantOfferRepository(
         ref.set(hashMapOf(
             "id" to ref.id, "code" to o.code, "storeId" to o.storeId, "storeName" to o.storeName, "branchId" to branchId, "branchName" to o.branchName,
             "customerUid" to customerUid, "customerName" to o.customerName, "customerPhone" to o.customerPhone,
-            "items" to o.items.map { mapOf("id" to it.id, "name" to it.name, "kind" to it.kind, "qty" to it.qty.toLong(), "price" to it.price) },
-            "subtotal" to o.subtotal, "deliveryFee" to o.deliveryFee, "total" to o.total, "vatRate" to o.vatRate, "vatAmount" to o.vatAmount, "vatNumber" to o.vatNumber,
+            "items" to o.items.map { l ->
+                mutableMapOf<String, Any>("id" to l.id, "name" to l.name, "kind" to l.kind, "qty" to l.qty.toLong(), "price" to l.price).apply {
+                    if (l.was > l.price) put("was", l.was)
+                    if (l.off > 0) { put("off", l.off); put("bogo", l.bogo) }
+                }
+            },
+            "subtotal" to o.subtotal, "discount" to o.discount, "deliveryFee" to o.deliveryFee, "total" to o.total, "vatRate" to o.vatRate, "vatAmount" to o.vatAmount, "vatNumber" to o.vatNumber,
             "mode" to o.mode, "location" to (if (o.lat != null && o.lng != null) mapOf("lat" to o.lat, "lng" to o.lng) else null),
             "pay" to o.pay, "car" to o.car.take(60),
             "note" to o.note.take(300), "status" to "sent", "createdAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp()
         )).await()
     }
+
+    // ⚡ الخصم السريع على المنيو
+    suspend fun quickDeal(uid: String): com.example.data.model.QuickDeal? = runCatching {
+        val d = db.collection("quickDeals").document(uid).get().await()
+        if (!d.exists()) null else com.example.data.model.QuickDeal(
+            (d.getLong("pct") ?: 0L).toInt(), d.getString("scope") ?: "all", d.getString("kind").orEmpty(), d.getString("section").orEmpty(),
+            (d.get("itemIds") as? List<*>).orEmpty().mapNotNull { it as? String }, d.getTimestamp("endsAt")?.toDate()?.time ?: 0L)
+    }.getOrNull()
+    suspend fun saveQuickDeal(uid: String, q: com.example.data.model.QuickDeal) {
+        db.collection("quickDeals").document(uid).set(hashMapOf(
+            "merchantId" to uid, "pct" to q.pct.toLong(), "scope" to q.scope, "kind" to q.kind, "section" to q.section, "itemIds" to q.itemIds.take(50),
+            "endsAt" to Timestamp(java.util.Date(q.endsAt)), "updatedAt" to FieldValue.serverTimestamp()
+        )).await()
+    }
+    suspend fun deleteQuickDeal(uid: String) { db.collection("quickDeals").document(uid).delete().await() }
 
     suspend fun insertOffer(offer: RestaurantOffer): String {
         val docRef = if (offer.id.isNotBlank()) offersCollection.document(offer.id) else offersCollection.document()

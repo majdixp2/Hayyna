@@ -661,3 +661,27 @@ textarea.input { resize: vertical; line-height: 1.6; }
 :root[data-theme="dark"] .g-new > summary { background: #222B27; } :root[data-theme="dark"] .g-prep > summary { background: #4A3F17; }
 :root[data-theme="dark"] .g-ready > summary { background: #1E3550; } :root[data-theme="dark"] .g-done > summary { background: #1E4029; }
 :root[data-theme="dark"] .g-cancelled > summary { background: #4A2222; }
+
+/* ===== العروض مع المنيو ===== */
+.deal-bar { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.deal-chip { background: #FFF1E3; color: #C2410C; border: 1px solid #F8C9A0; border-radius: 999px; padding: 5px 11px; font-size: 13px; font-weight: 800; }
+.deal-chip.quick { background: #FEF3C7; color: #92400E; border-color: #F5D58A; }
+.deal-sec { --kc: #B45309; --kb: #FFF7E6; }
+.icard.deal { border-color: #F5D58A; background: linear-gradient(135deg, #FFFBEB, var(--card)); }
+.ic-price s, .co-line s, .big-price s { color: var(--muted); font-weight: 400; font-size: .85em; }
+.deal-pct { display: inline-block; background: #FDECEC; color: #B42318; border-radius: 8px; padding: 0 6px; font-size: 11px; font-weight: 800; margin-inline-start: 4px; }
+.deal-pct.bogo { background: #EDE9FE; color: #6D28D9; }
+.co-line small.deal-pct { display: table; margin-top: 3px; margin-inline-start: 0; }
+.saved-line { background: #FDECEC; color: #B42318; border-radius: 10px; padding: 7px 10px; font-size: 13px; margin: 6px 0; text-align: center; }
+.deal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+.deal-type { border: 1.5px solid var(--line); background: var(--card); border-radius: 14px; padding: 10px; text-align: start; font: inherit; color: var(--ink); display: flex; flex-direction: column; gap: 3px; cursor: pointer; }
+.deal-type b { font-size: 14px; } .deal-type small { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.deal-type.on { border-color: var(--green); background: var(--green-soft); box-shadow: 0 0 0 2px var(--green-soft); }
+.deal-type:disabled { opacity: .5; }
+.pick-list { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 2px 8px; margin-bottom: 6px; }
+.pick-list .switch-row small { color: var(--muted); }
+.deal-go { margin: 10px 0 4px; }
+:root[data-theme="dark"] .deal-chip { background: #3A2516; color: #F8B98A; border-color: #5C3A20; }
+:root[data-theme="dark"] .icard.deal { background: linear-gradient(135deg, #2E2614, var(--card)); border-color: #5C4E1E; }
+:root[data-theme="dark"] .saved-line, :root[data-theme="dark"] .deal-pct { background: #3A1C1C; color: #F8A5A5; }
+:root[data-theme="dark"] .deal-pct.bogo { background: #2A1F45; color: #C4B5FD; }

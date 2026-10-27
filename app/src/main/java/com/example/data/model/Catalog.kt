@@ -89,7 +89,9 @@ object CatalogFlags {
     @Volatile var ratings = true
 }
 
-data class CartLine(val id: String, val name: String, val kind: String, val price: Double, val qty: Int)
+data class CartLine(val id: String, val name: String, val kind: String, val price: Double, val qty: Int,
+    // السعر قبل الخصم + خصم 1+1 على السطر (يتعبّى وقت الحساب)
+    val was: Double = 0.0, val off: Double = 0.0, val bogo: String = "")
 
 data class HayynaOrder(
     val id: String = "", val code: String = "", val storeId: String = "", val storeName: String = "", val branchName: String = "",
@@ -98,7 +100,8 @@ data class HayynaOrder(
     val vatRate: Double = 0.0, val vatAmount: Double = 0.0, val vatNumber: String = "",
     val mode: String = "pickup", val lat: Double? = null, val lng: Double? = null, val note: String = "", val status: String = "sent",
     val createdAtMillis: Long = 0L, val etaAtMillis: Long = 0L,
-    val pay: String = "", val car: String = "", val arrived: Boolean = false
+    val pay: String = "", val car: String = "", val arrived: Boolean = false,
+    val discount: Double = 0.0
 ) {
     val isDelivery get() = mode == "delivery"
     val isCurbside get() = mode == "curbside"
@@ -127,8 +130,12 @@ data class HayynaOrder(
         appendLine("🧾 ملخص طلب من حيّنا — رقم #$code")
         appendLine("🏪 $storeName" + if (branchName.isNotBlank()) " — $branchName" else "")
         appendLine("━━━━━━━━━━━━")
-        items.forEach { appendLine("${it.qty} × ${it.name} ........ ${f(it.price * it.qty)} ر.س") }
+        items.forEach {
+            appendLine("${it.qty} × ${it.name} ........ ${f(it.price * it.qty)} ر.س" + if (it.was > it.price) " (بدل ${f(it.was * it.qty)})" else "")
+            if (it.off > 0) appendLine("   🎁 ${it.bogo.ifBlank { "1+1" }}: −${f(it.off)} ر.س")
+        }
         appendLine("━━━━━━━━━━━━")
+        if (discount > 0) appendLine("🔥 وفّرت: ${f(discount)} ر.س")
         if (deliveryFee > 0) { appendLine("المجموع: ${f(subtotal)} ر.س"); appendLine("🚚 التوصيل: ${f(deliveryFee)} ر.س") }
         if (vatNumber.isNotBlank()) {
             appendLine("المبلغ قبل الضريبة: ${f(total - vatAmount)} ر.س")
@@ -145,5 +152,110 @@ data class HayynaOrder(
             else -> "🏃 استلام من المحل"
         })
         if (payText.isNotBlank()) append("\n$payText — الدفع عند الاستلام")
+    }
+}
+
+
+// =================== العروض مع المنيو (نفس منطق الويب: storeDeals / dealPrice / cartTotals) ===================
+
+enum class DealType(val id: String, val icon: String, val title: String, val desc: String, val feat: String) {
+    DISCOUNT("discount", "🔥", "خصم على المنيو", "نسبة خصم على أصنافك، تنطبق لحالها", "dealDiscount"),
+    BUNDLE("bundle", "🎁", "باقة", "وجبة + وجبة، خدمة + خدمة، بسعر واحد", "dealBundle"),
+    BOGO("bogo", "➕", "اشترِ واحصل", "1+1 مجاناً، أو الثاني بنص السعر", "dealBogo"),
+    PROMO("promo", "📣", "إعلان", "افتتاح، منتج جديد، أي خبر", "dealPromo");
+    companion object { fun of(id: String?) = entries.firstOrNull { it.id == id } }
+}
+
+/** نوع العرض كما ينحفظ في offers.deal */
+data class OfferDeal(
+    val type: String, val scope: String = "all", val kind: String = "", val section: String = "",
+    val itemIds: List<String> = emptyList(), val itemId: String = "", val getPct: Int = 100, val orderable: Boolean = false
+) {
+    fun toMap(): Map<String, Any> = when (type) {
+        "discount" -> mapOf("type" to type, "scope" to scope, "kind" to kind, "section" to section, "itemIds" to itemIds.take(50))
+        "bundle" -> mapOf("type" to type, "itemIds" to itemIds.take(20))
+        "bogo" -> mapOf("type" to type, "itemId" to itemId, "getPct" to (if (getPct == 50) 50L else 100L))
+        else -> mapOf("type" to "promo", "orderable" to orderable)
+    }
+    companion object {
+        fun from(m: Map<String, Any>?): OfferDeal? {
+            val t = m?.get("type") as? String ?: return null
+            if (DealType.of(t) == null) return null
+            return OfferDeal(t, m["scope"] as? String ?: "all", m["kind"] as? String ?: "", m["section"] as? String ?: "",
+                (m["itemIds"] as? List<*>).orEmpty().mapNotNull { it as? String }, m["itemId"] as? String ?: "",
+                (m["getPct"] as? Number)?.toInt() ?: 100, m["orderable"] as? Boolean ?: false)
+        }
+    }
+}
+
+/** ⚡ الخصم السريع (quickDeals/{uid}) */
+data class QuickDeal(val pct: Int = 0, val scope: String = "all", val kind: String = "", val section: String = "", val itemIds: List<String> = emptyList(), val endsAt: Long = 0L)
+
+data class DealRule(val pct: Int, val scope: String, val kind: String, val section: String, val itemIds: List<String>)
+data class DealPack(val id: String, val offerId: String, val name: String, val desc: String, val price: Double, val was: Double, val imageUrl: String)
+data class CartTotals(val lines: List<CartLine>, val sub: Double, val saved: Double)
+
+data class StoreDeals(
+    val rules: List<DealRule> = emptyList(),
+    val bogo: Map<String, Pair<Int, String>> = emptyMap(), // itemId -> (getPct, label)
+    val packs: List<DealPack> = emptyList(),
+    val banners: List<String> = emptyList()
+) {
+    /** سعر الصنف بعد أفضل خصم واحد: (السعر، قبل الخصم أو 0، النسبة) */
+    fun price(it: CatalogItem): Triple<Double, Double, Int> {
+        var pct = 0
+        rules.forEach { r ->
+            val hit = r.scope == "all" || (r.scope == "kind" && r.kind == it.kind) || (r.scope == "section" && r.section.isNotBlank() && r.section == it.section) ||
+                (r.scope == "items" && it.id in r.itemIds)
+            if (hit && r.pct > pct) pct = r.pct
+        }
+        return if (pct > 0) Triple(r2(it.price * (100 - pct) / 100), it.price, pct) else Triple(it.price, 0.0, 0)
+    }
+    fun totals(lines: List<CartLine>): CartTotals {
+        var sub = 0.0; var saved = 0.0; var bo = 0.0
+        val out = lines.map { l ->
+            val b = bogo[l.id]
+            val off = if (b != null) r2((l.qty / 2) * l.price * b.first / 100) else 0.0
+            sub += l.price * l.qty; bo += off; if (l.was > l.price) saved += (l.was - l.price) * l.qty
+            l.copy(off = off, bogo = b?.second.orEmpty())
+        }
+        return CartTotals(out, r2(sub - bo), r2(saved + bo))
+    }
+    companion object {
+        fun r2(d: Double) = Math.round(d * 100) / 100.0
+        fun build(cfg: CatalogConfig, offers: List<RestaurantOffer>, quick: QuickDeal?, items: List<CatalogItem>, now: Long): StoreDeals {
+            val rules = mutableListOf<DealRule>(); val bogo = mutableMapOf<String, Pair<Int, String>>(); val packs = mutableListOf<DealPack>(); val banners = mutableListOf<String>()
+            fun scopeText(r: DealRule) = when (r.scope) {
+                "kind" -> ItemKind.of(r.kind).title; "section" -> r.section
+                "items" -> items.filter { it.id in r.itemIds }.take(3).joinToString("، ") { it.name }; else -> "كل شي"
+            }
+            offers.forEach { o ->
+                val d = OfferDeal.from(o.deal) ?: return@forEach
+                val t = DealType.of(d.type) ?: return@forEach
+                if (!cfg.feat(t.feat) || o.draft || !o.isApproved || OfferTime.isExpired(o, now) || OfferPricing.isUpcoming(o, now)) return@forEach
+                when (t) {
+                    DealType.DISCOUNT -> {
+                        val pct = OfferPricing.currentPercent(o, now)
+                        if (pct in 1..99) { val r = DealRule(pct, d.scope, d.kind, d.section, d.itemIds); rules += r; banners += "🔥 $pct% على ${scopeText(r)}" }
+                    }
+                    DealType.BOGO -> items.firstOrNull { it.id == d.itemId }?.let { it ->
+                        val g = if (d.getPct == 50) 50 else 100; val label = if (g == 100) "1+1 مجاناً" else "الثاني بنص السعر"
+                        bogo[it.id] = g to label; banners += "➕ ${it.name}: $label"
+                    }
+                    else -> if ((t == DealType.BUNDLE || d.orderable) && o.price > 0) {
+                        val linked = d.itemIds.mapNotNull { id -> items.firstOrNull { it.id == id } }
+                        val sum = r2(linked.sumOf { it.price })
+                        val was = if (sum > o.price) sum else if ((o.originalPrice ?: 0.0) > o.price) o.originalPrice!! else 0.0
+                        packs += DealPack("deal_${o.id}", o.id, o.offerTitle, if (linked.isNotEmpty()) linked.joinToString(" + ") { it.name } else o.description.take(120),
+                            o.price, was, if (o.mediaType == MediaType.VIDEO) "" else o.mediaUri)
+                    }
+                }
+            }
+            if (quick != null && cfg.feat("dealDiscount") && cfg.feat("quickDeal") && quick.pct in 1..99 && quick.endsAt > now) {
+                val r = DealRule(quick.pct, quick.scope, quick.kind, quick.section, quick.itemIds); rules += r
+                banners.add(0, "⚡ خصم ${quick.pct}% على ${scopeText(r)}")
+            }
+            return StoreDeals(rules, bogo, packs, banners)
+        }
     }
 }

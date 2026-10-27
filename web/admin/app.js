@@ -812,7 +812,7 @@ function catalogPage() {
         <td>${esc(o.storeName)}<br><small class="muted">${esc(o.customerName || "")}</small></td>
         <td>${esc(MODES[o.mode] || MODES.pickup)}${o.car ? `<br><small class="muted">🚗 ${esc(o.car)}${o.arrivedAt ? " • وصل" : ""}</small>` : ""}</td>
         <td>${o.pay ? `${PAY[o.pay]?.icon} ${esc(PAY[o.pay]?.label || o.pay)}` : "—"}</td>
-        <td>${(o.total || 0).toFixed(2)}</td><td>${esc(ORDER_STATUS[o.status]?.t || o.status)}</td></tr>`).join("")}</tbody></table>
+        <td>${(o.total || 0).toFixed(2)}${o.discount > 0 ? `<br><small class="muted">🔥 خصم عروض ${(+o.discount).toFixed(2)}</small>` : ""}</td><td>${esc(ORDER_STATUS[o.status]?.t || o.status)}</td></tr>`).join("")}</tbody></table>
       ${ordF.length > 60 ? `<p class="muted">يعرض أحدث 60 من ${ordF.length}</p>` : ""}</div>` : ""}
 
     ${can("merchants") ? `<h2 id="ct-rates">⭐ التقييمات (${state.ratings.length}) — المتوسط ${avgStars}</h2>

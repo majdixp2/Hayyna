@@ -75,7 +75,10 @@ fun RestaurantOfferDetailSheet(
     // نفس العرض في كل فرع (مرتّب من الأقرب). فاضي = فرع واحد.
     branchOffers: List<RestaurantOffer> = emptyList(),
     onOpenStore: (() -> Unit)? = null,
-    isVerified: Boolean = false
+    isVerified: Boolean = false,
+    // 🛒 اطلب العرض (باقة / 1+1 / خصم المنيو) — null = العرض ما ينطلب
+    orderLabel: String? = null,
+    onOrder: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val orderScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -467,6 +470,15 @@ fun RestaurantOfferDetailSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            if (orderLabel != null && !isOwner) {
+                Button(
+                    onClick = onOrder,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309)),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text(orderLabel, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1) }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
             // Big CTA: التوجه إلى المطعم (Google Maps Directions)
             Button(
                 onClick = {

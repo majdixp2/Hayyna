@@ -120,6 +120,7 @@ fun MerchantStoreScreen(
 
     val merchantEmail by viewModel.merchantEmail.collectAsStateWithLifecycle()
     val isMerchantLoggedIn by viewModel.isMerchantLoggedIn.collectAsStateWithLifecycle()
+    val myCatalogItems by viewModel.myItems.collectAsStateWithLifecycle()
     val merchantRestaurantName by viewModel.merchantRestaurantName.collectAsStateWithLifecycle()
     val merchantOffers by viewModel.merchantOffers.collectAsStateWithLifecycle()
     val isAdmin by viewModel.isAdmin.collectAsStateWithLifecycle()
@@ -833,7 +834,9 @@ fun MerchantStoreScreen(
                     offer.branches.map { viewModel.offerAtBranch(offer, it) }.sortedBy { it.distanceKm }
                 } else emptyList(),
                 onOpenStore = approvedStores.firstOrNull { it.uid == offer.merchantId }?.let { st -> { viewModel.openStorePage(st) } },
-                isVerified = approvedStores.firstOrNull { it.uid == offer.merchantId }?.verified == true
+                isVerified = approvedStores.firstOrNull { it.uid == offer.merchantId }?.verified == true,
+                orderLabel = viewModel.offerOrderLabel(offer),
+                onOrder = { viewModel.orderFromOffer(offer) }
             )
         }
 
@@ -897,6 +900,7 @@ fun MerchantStoreScreen(
             )
         }
         if (showMyOrders) com.example.ui.components.MyOrdersDialog(viewModel) { showMyOrders = false }
+        com.example.ui.components.DirectCheckoutHost(viewModel)
 
         // Add Restaurant Offer Sheet
         if (isAddOfferSheetOpen) {
@@ -920,7 +924,9 @@ fun MerchantStoreScreen(
                         rewardOn = creditsCfg.rewardOn, rewardPercent = creditsCfg.rewardPercent, isAdmin = isAdmin,
                         cost = { d, ex -> viewModel.priceFor("publish", d, ex).let { p -> (p?.full ?: 0L) to (p?.cost ?: 0L) } }
                     )
-                } else null
+                } else null,
+                catalogItems = myCatalogItems.filter { it.approved && it.adminNote.isBlank() },
+                dealsCfg = catalogCfg.takeIf { it.enabled }
             )
           }
         }

@@ -12,7 +12,7 @@ import * as X from "./logic.js";
 import { createMap } from "./map.js";
 import { startI18n } from "./i18n.js";
 import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
-import { renderStoreItems, openMyOrders, ordersOn, watchMyOrders, myOrdersClosed, renderStoreRatings } from "./catalog-ui.js";
+import { renderStoreItems, openMyOrders, ordersOn, watchMyOrders, myOrdersClosed, renderStoreRatings, orderFromOffer, offerOrderable } from "./catalog-ui.js";
 startI18n();
 
 const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf, km, distText, openNow, hoursText,
@@ -401,7 +401,7 @@ export function openOffer(id, push) {
           ${isOwner ? "" : `<button class="icon-report" data-act="report" title="بلاغ عن العرض" aria-label="بلاغ">🚩</button>`}
         </div>
         <h1 class="title">${esc(o.offerTitle)}</h1>
-        <div class="pills">${exclBadge(o)}${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+        <div class="pills">${exclBadge(o)}${o.deal?.type === "bundle" ? '<span class="pill">🎁 باقة</span>' : o.deal?.type === "bogo" ? `<span class="pill urgent">➕ ${o.deal.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"}</span>` : ""}${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
         <div class="${isOwner ? "row3" : "row2"}">
           <button class="btn-out" data-act="fav">${heartSvg(fav)} ${fav ? "محفوظ" : "حفظ"}</button>
           <button class="btn-out" data-act="share">↗︎ مشاركة</button>
@@ -416,6 +416,7 @@ export function openOffer(id, push) {
           const bd = state.me ? km(state.me, { lat: b.latitude, lng: b.longitude }) : null;
           return `<button class="branch${b === br ? " on" : ""}" data-branch="${esc(b.id)}"><div class="b-main"><div class="b-name">${esc(b.name || districtLabel(b.district) || "الفرع")}</div><div class="b-sub">${esc([districtLabel(b.district), b.landmark, hoursText(b)].filter(Boolean).join(" • "))}</div></div><div class="b-sub">${esc(distText(bd))}</div></button>`;
         }).join("")}</div>` : `<div class="info-pill gray">📍 ${esc([districtLabel(br.district), br.landmark, br.region].filter(Boolean).join(" • "))}${d != null ? ` — ${esc(distText(d))} عنك` : ""}</div>`}
+        ${!isOwner && offerOrderable(o) ? `<button class="btn dir big deal-go" data-act="dealgo">${esc(offerOrderable(o))}</button>` : ""}
         <div class="actions">
           <a class="btn dir" data-act="dir" href="https://www.google.com/maps/dir/?api=1&destination=${br.latitude},${br.longitude}" target="_blank" rel="noopener">🧭 الاتجاهات إلى المحل</a>
           <a class="btn wa" data-act="wa" href="https://wa.me/${waDigits(br.phone || o.phone)}?text=${encodeURIComponent(`مرحباً، أود طلب العرض: ${o.offerTitle} (${priceLabel(o)}) المعلن عنه في حيّنا\n${offerUrl(o)}`)}" target="_blank" rel="noopener">💬 طلب واتساب</a>
@@ -434,6 +435,7 @@ export function openOffer(id, push) {
     body.querySelector('[data-act="fav"]').onclick = () => { toggleFav(o.id); draw(); };
     body.querySelector('[data-act="share"]').onclick = () => share(`🔥 ${o.offerTitle}\n📍 ${o.restaurantName}${o.district ? " — " + o.district : ""}\n💰 ${priceLabel(o, true)}`, offerUrl(o), o.offerTitle);
     body.querySelector('[data-act="report"]')?.addEventListener("click", () => reportOffer(o));
+    body.querySelector('[data-act="dealgo"]')?.addEventListener("click", (e) => { e.currentTarget.disabled = true; orderFromOffer(o).finally(() => { const b = body.querySelector('[data-act="dealgo"]'); if (b) b.disabled = false; }); });
     body.querySelector('[data-act="edit"]')?.addEventListener("click", async () => { const m = await import("./merchant.js"); m.openOfferForm(o); });
     body.querySelectorAll(".gallery img").forEach((im) => im.onclick = () => openViewer(im.dataset.full));
   };

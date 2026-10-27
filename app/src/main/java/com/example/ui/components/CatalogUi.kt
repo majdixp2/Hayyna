@@ -99,13 +99,43 @@ private fun FullDialog(title: String, onDismiss: () -> Unit, content: @Composabl
 fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
     val cfg by vm.catalogConfig.collectAsStateWithLifecycle()
     val carts by vm.carts.collectAsStateWithLifecycle()
+    val allDeals by vm.storeDeals.collectAsStateWithLifecycle()
     var items by remember(store.uid) { mutableStateOf<List<CatalogItem>>(emptyList()) }
     var checkout by remember { mutableStateOf(false) }
     LaunchedEffect(store.uid, cfg.enabled) { items = vm.loadStoreCatalog(store.uid) }
-    if (!cfg.enabled || items.isEmpty()) return
+    val deals = allDeals[store.uid] ?: com.example.data.model.StoreDeals()
+    val packs = if (cfg.orderEnabled) deals.packs else emptyList()
+    if (!cfg.enabled || (items.isEmpty() && packs.isEmpty())) return
     val cart = carts[store.uid].orEmpty()
     val base = cfg.baseKind(store.category)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        // 🔥 شريط العروض الشغّالة
+        if (deals.banners.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            deals.banners.forEach { b -> Surface(shape = RoundedCornerShape(50), color = Color(0xFFFFF1E3), border = BorderStroke(1.dp, Color(0xFFF8C9A0))) { Text(b, color = Color(0xFFC2410C), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)) } }
+        }
+        // 🎁 عروض تقدر تطلبها (باقات / إعلان قابل للطلب)
+        if (packs.isNotEmpty()) {
+            Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF7E6), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text("🎁 عروض تقدر تطلبها (${packs.size})", color = Color(0xFFB45309), fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp))
+            }
+            packs.forEach { p ->
+                val q = cart[p.id]?.qty ?: 0
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(60.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFFFF7E6)), contentAlignment = Alignment.Center) {
+                        if (p.imageUrl.isNotBlank()) AsyncImage(model = CloudinaryUrls.image(p.imageUrl, 240), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        else Text("🎁", fontSize = 24.sp)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(p.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (p.desc.isNotBlank()) Text(p.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        PriceLine(p.price, p.was, 0, "", Color(0xFFB45309))
+                    }
+                    if (q == 0) OutlinedButton(onClick = { vm.cartAddPack(store.uid, p, 1) }, border = BorderStroke(1.dp, Color(0xFFB45309)), contentPadding = PaddingValues(horizontal = 10.dp)) { Text("＋ أضف", color = Color(0xFFB45309), fontWeight = FontWeight.Bold) }
+                    else QtyControl(q, Color(0xFFB45309), onMinus = { vm.cartAddPack(store.uid, p, -1) }, onPlus = { vm.cartAddPack(store.uid, p, 1) })
+                }
+            }
+        }
         ItemKind.order(base).forEach { k ->
             val list = items.filter { it.kind == k.id }.sortedBy { it.slot }
             if (list.isEmpty()) return@forEach
@@ -125,7 +155,8 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
                         Column(Modifier.weight(1f)) {
                             Text(it.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             if (it.desc.isNotBlank()) Text(it.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text("${money(it.price)} ر.س", color = k.color, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                            val (dp, was, pct) = deals.price(it)
+                            PriceLine(dp, was, pct, deals.bogo[it.id]?.second.orEmpty(), k.color)
                         }
                         when {
                             !it.available -> Text("نفد", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -141,10 +172,29 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
             Button(
                 onClick = { checkout = true }, colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(top = 6.dp)
-            ) { Text("🧾 سلتك: ${cart.values.sumOf { it.qty }} • ${money(cart.values.sumOf { it.qty * it.price })} ر.س — اطلب", fontWeight = FontWeight.ExtraBold) }
+            ) { Text("🧾 سلتك: ${cart.values.sumOf { it.qty }} • ${money(deals.totals(cart.values.toList()).sub)} ر.س — اطلب", fontWeight = FontWeight.ExtraBold) }
         }
     }
     if (checkout) CheckoutDialog(store, vm, onDismiss = { checkout = false })
+}
+
+/** السعر بعد الخصم + القديم مشطوب + شارة النسبة / 1+1 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PriceLine(price: Double, was: Double, pct: Int, bogo: String, color: Color) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
+        Text("${money(price)} ر.س", color = color, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+        if (was > price) Text(money(was), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
+        if (pct > 0) Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFDECEC)) { Text("−$pct%", color = Color(0xFFB42318), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 6.dp)) }
+        if (bogo.isNotBlank()) Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFEDE9FE)) { Text(bogo, color = Color(0xFF6D28D9), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 6.dp)) }
+    }
+}
+
+/** طلب مباشر لعرض من شاشة العرض (المتجر ما عنده منيو مفتوح) */
+@Composable
+fun DirectCheckoutHost(vm: MerchantViewModel) {
+    val st by vm.directCheckout.collectAsStateWithLifecycle()
+    st?.let { CheckoutDialog(it, vm, onDismiss = { vm.directCheckout.value = null }) }
 }
 
 @Composable
@@ -165,7 +215,9 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     val userName by vm.userName.collectAsStateWithLifecycle()
     val userPhone by vm.userPhone.collectAsStateWithLifecycle()
     val loc by vm.userLocation.collectAsStateWithLifecycle()
-    val lines = carts[store.uid].orEmpty().values.toList()
+    val allDeals by vm.storeDeals.collectAsStateWithLifecycle()
+    val tot = (allDeals[store.uid] ?: com.example.data.model.StoreDeals()).totals(carts[store.uid].orEmpty().values.toList())
+    val lines = tot.lines
     var mode by remember { mutableStateOf("pickup") }
     val pays = listOfNotNull(if (store.payCash) "cash" else null, if (store.payCard) "card" else null).ifEmpty { listOf("cash") }
     var pay by remember { mutableStateOf(pays.first()) }
@@ -176,7 +228,7 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     var note by remember { mutableStateOf("") }
     var err by remember { mutableStateOf("") }
     LaunchedEffect(lines.isEmpty()) { if (lines.isEmpty()) onDismiss() }
-    val sub = lines.sumOf { it.price * it.qty }
+    val sub = tot.sub
     val freeDel = store.deliveryFee <= 0 || (store.deliveryFreeOver > 0 && sub >= store.deliveryFreeOver)
     val fee = if (mode == "delivery" && !freeDel) store.deliveryFee else 0.0
     val total = sub + fee
@@ -187,10 +239,19 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             lines.forEach { l ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(l.name, modifier = Modifier.weight(1f), fontSize = 14.sp)
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(l.name, fontSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
+                            if (l.was > l.price) Text("  " + money(l.was), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
+                        }
+                        if (l.bogo.isNotBlank()) Text("${l.bogo}" + if (l.off > 0) " −${money(l.off)}" else " (أضف واحد ثاني)", fontSize = 11.sp, color = Color(0xFF6D28D9), fontWeight = FontWeight.Bold)
+                    }
                     QtyControl(l.qty, CalmSagePrimary, { vm.cartLineAdd(store.uid, l.id, -1) }, { vm.cartLineAdd(store.uid, l.id, 1) })
-                    Spacer(Modifier.width(10.dp)); Text(money(l.qty * l.price), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(10.dp)); Text(money(l.qty * l.price - l.off), fontWeight = FontWeight.Bold)
                 }
+            }
+            if (tot.saved > 0) Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFFDECEC), modifier = Modifier.fillMaxWidth()) {
+                Text("🔥 وفّرت ${money(tot.saved)} ر.س بالعروض", color = Color(0xFFB42318), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
             HorizontalDivider()
             Text("طريقة الاستلام", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -433,6 +494,7 @@ fun MerchantCatalogCard(vm: MerchantViewModel, category: String, balance: Long) 
     val orders by vm.storeOrders.collectAsStateWithLifecycle()
     var manage by remember { mutableStateOf(false) }
     var showOrders by remember { mutableStateOf(false) }
+    var quick by remember { mutableStateOf(false) }
     if (!cfg.enabled) return
     val base = cfg.baseKind(category)
     val now = System.currentTimeMillis()
@@ -452,8 +514,10 @@ fun MerchantCatalogCard(vm: MerchantViewModel, category: String, balance: Long) 
                 Button(onClick = { manage = true }, colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary), modifier = Modifier.weight(1f)) { Text("🛍️ إدارة منتجاتي", fontWeight = FontWeight.Bold) }
                 if (cfg.orderEnabled) OutlinedButton(onClick = { showOrders = true }, modifier = Modifier.weight(1f)) { Text("🧾 الطلبات" + if (newOrders > 0) " ($newOrders)" else "", fontWeight = FontWeight.Bold) }
             }
+            if (items.isNotEmpty() && cfg.feat("quickDeal") && cfg.feat("dealDiscount")) TextButton(onClick = { quick = true }, modifier = Modifier.fillMaxWidth()) { Text("⚡ خصم سريع على المنيو", fontWeight = FontWeight.Bold) }
         }
     }
+    if (quick) QuickDealDialog(vm, items.filter { it.approved }, base) { quick = false }
     if (manage) CatalogManagerDialog(vm, base, balance) { manage = false }
     if (showOrders) OrdersDialog("🧾 الطلبات (${orders.size})", orders, asStore = true, onStatus = { o, s, eta -> vm.setOrderStatus(o.id, s, eta) }, onDismiss = { showOrders = false })
 }
@@ -658,4 +722,59 @@ private fun orderTint(status: String): Pair<Color?, Color?> = when (status) {
     "done" -> Color(0xFFEAF7EE) to Color(0xFFBFE3CB)
     "cancelled" -> Color(0xFFFDECEC) to Color(0xFFF5C2C2)
     else -> null to null
+}
+
+
+/** ⚡ الخصم السريع: نسبة على المنيو بدون ما يسوي عرض بصورة */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun QuickDealDialog(vm: MerchantViewModel, items: List<CatalogItem>, base: ItemKind, onDismiss: () -> Unit) {
+    var cur by remember { mutableStateOf<com.example.data.model.QuickDeal?>(null) }
+    var loaded by remember { mutableStateOf(false) }
+    var pct by remember { mutableStateOf("") }
+    var scope by remember { mutableStateOf("all") }
+    var kind by remember { mutableStateOf("") }
+    var section by remember { mutableStateOf("") }
+    val picked = remember { mutableStateListOf<String>() }
+    var days by remember { mutableStateOf(1) }
+    var err by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        cur = vm.myQuickDeal()?.takeIf { it.endsAt > System.currentTimeMillis() }
+        cur?.let { pct = it.pct.toString(); scope = it.scope; kind = it.kind; section = it.section; picked.addAll(it.itemIds) }
+        loaded = true
+    }
+    FullDialog("⚡ خصم سريع على ${base.title}", onDismiss) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (!loaded) { androidx.compose.material3.CircularProgressIndicator(); return@Column }
+            cur?.let { c -> Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFE7F6EC)) { Text("شغّال الحين: ${c.pct}% لين ${dm(c.endsAt)}", color = CalmSagePrimary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(10.dp)) } }
+            Text("الخصم ينطبق لحاله على أسعار المنيو في صفحة متجرك، والزبون يشوف السعر القديم مشطوب.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("نسبة الخصم %", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf(10, 15, 20, 25, 30, 40, 50).forEach { n -> FilterChip(selected = pct == "$n", onClick = { pct = "$n" }, label = { Text("$n%") }) } }
+            OutlinedTextField(pct, { v -> pct = v.filter { it.isDigit() }.take(2) }, label = { Text("أو اكتب نسبة (1 - 90)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+            Text("على وش؟", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            DealScopePicker(items, scope, kind, section, picked, { scope = it }, { kind = it }, { section = it })
+            Text("المدة", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(1 to "اليوم بس", 3 to "3 أيام", 7 to "أسبوع", 14 to "أسبوعين", 30 to "شهر").forEach { (d, t) -> FilterChip(selected = days == d, onClick = { days = d }, label = { Text(t) }) }
+            }
+            if (err.isNotBlank()) Text(err, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            Button(onClick = {
+                val p = pct.toIntOrNull()
+                err = when {
+                    p == null || p !in 1..90 -> "اكتب نسبة من 1 إلى 90."
+                    scope == "kind" && kind.isBlank() -> "اختر النوع."
+                    scope == "section" && section.isBlank() -> "اختر القسم."
+                    scope == "items" && picked.isEmpty() -> "اختر صنف واحد على الأقل."
+                    else -> ""
+                }
+                if (err.isNotBlank() || p == null) return@Button
+                val end = if (days == 1) java.util.Calendar.getInstance().apply { set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 59) }.timeInMillis
+                    else System.currentTimeMillis() + days * 86_400_000L
+                vm.saveQuickDeal(com.example.data.model.QuickDeal(p, scope, if (scope == "kind") kind else "", if (scope == "section") section else "", if (scope == "items") picked.toList() else emptyList(), end), onDismiss)
+            }, colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                Text(if (cur != null) "⚡ حدّث الخصم" else "⚡ شغّل الخصم", fontWeight = FontWeight.ExtraBold)
+            }
+            if (cur != null) OutlinedButton(onClick = { vm.stopQuickDeal(onDismiss) }, modifier = Modifier.fillMaxWidth()) { Text("⏹️ أوقف الخصم", color = MaterialTheme.colorScheme.error) }
+        }
+    }
 }
