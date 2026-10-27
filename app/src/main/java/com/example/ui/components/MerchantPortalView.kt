@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -429,10 +431,7 @@ private fun CustomerAccountView(
 
         ContactUsButton(unread = unreadReplies, onClick = onOpenContact)
 
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = { showPrivacy = true }) { Text("سياسة الخصوصية") }
-            TextButton(onClick = { confirmDelete = true }) { Text("حذف حسابي", color = MaterialTheme.colorScheme.error) }
-        }
+        AccountSettingsSection(onPrivacy = { showPrivacy = true }, onDelete = { confirmDelete = true })
     }
 
     if (showPrivacy) PrivacyPolicyDialog(onDismiss = { showPrivacy = false })
@@ -688,17 +687,7 @@ private fun MerchantDashboard(
 
         // الحساب والخصوصية
         item {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp)
-            ) {
-                TextButton(onClick = { showPrivacy = true }) { Text("سياسة الخصوصية") }
-                TextButton(onClick = { confirmDeleteAccount = true }) {
-                    Text("حذف حسابي", color = MaterialTheme.colorScheme.error)
-                }
-            }
+            AccountSettingsSection(onPrivacy = { showPrivacy = true }, onDelete = { confirmDeleteAccount = true }, modifier = Modifier.padding(top = 12.dp))
         }
     }
 
@@ -859,6 +848,39 @@ private fun MerchantStatTile(
             Column {
                 Text(value, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(title, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+
+/** ⚙️ إعدادات الحساب: مطوية افتراضياً، وحذف الحساب داخلها (عشان ما ينضغط بالغلط) */
+@Composable
+fun AccountSettingsSection(onPrivacy: () -> Unit, onDelete: () -> Unit, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 14.dp, vertical = 12.dp)
+            ) {
+                Text("⚙️ إعدادات الحساب", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text(if (open) "▴" else "▾", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (open) {
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth().clickable { onPrivacy() }.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Text("🔒 سياسة الخصوصية", fontSize = 14.sp, modifier = Modifier.weight(1f)); Text("›", fontSize = 18.sp)
+                }
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth().clickable { onDelete() }.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Text("🗑️ حذف الحساب نهائياً", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f)); Text("›", fontSize = 18.sp, color = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }

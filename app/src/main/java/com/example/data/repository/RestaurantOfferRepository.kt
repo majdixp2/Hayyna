@@ -991,8 +991,32 @@ class RestaurantOfferRepository(
 
     private val merchantsCollection = db.collection("merchants")
 
-    suspend fun getMerchantProfile(uid: String): MerchantProfile? =
-        merchantsCollection.document(uid).get().await().toObject(MerchantProfile::class.java)
+    suspend fun getMerchantProfile(uid: String): MerchantProfile? {
+        val d = merchantsCollection.document(uid).get().await()
+        if (!d.exists()) return null
+        // لو فيه حقل نوعه غريب (من الويب مثلاً) ما نخلي الملف كله يطيح: نقرأه يدوي
+        return runCatching { d.toObject(MerchantProfile::class.java) }.getOrNull() ?: runCatching {
+            fun n(k: String) = (d.get(k) as? Number)?.toDouble() ?: 0.0
+            fun i(k: String, def: Int = -1) = (d.get(k) as? Number)?.toInt() ?: def
+            fun t(k: String) = d.getString(k).orEmpty()
+            fun b(k: String, def: Boolean) = d.getBoolean(k) ?: def
+            val br = (d.get("branches") as? List<*>).orEmpty().mapNotNull { m ->
+                (m as? Map<*, *>)?.let {
+                    fun bn(k: String) = (it[k] as? Number)?.toDouble() ?: 0.0
+                    fun bi(k: String) = (it[k] as? Number)?.toInt() ?: -1
+                    fun bt(k: String) = it[k]?.toString().orEmpty()
+                    com.example.data.model.Branch(id = bt("id"), name = bt("name"), latitude = bn("latitude"), longitude = bn("longitude"),
+                        region = bt("region"), district = bt("district"), phone = bt("phone"), openMinute = bi("openMinute"), closeMinute = bi("closeMinute"), landmark = bt("landmark"))
+                }
+            }
+            MerchantProfile(restaurantName = t("restaurantName"), phone = t("phone"), latitude = n("latitude"), longitude = n("longitude"),
+                region = t("region"), district = t("district"), cuisineType = t("cuisineType"), openMinute = i("openMinute"), closeMinute = i("closeMinute"),
+                logoUrl = t("logoUrl"), branches = br, coverUrl = t("coverUrl"), about = t("about"), priceFrom = n("priceFrom"),
+                menuImages = (d.get("menuImages") as? List<*>).orEmpty().mapNotNull { it as? String },
+                delivery = b("delivery", false), deliveryFee = n("deliveryFee"), deliveryMinOrder = n("deliveryMinOrder"), deliveryFreeOver = n("deliveryFreeOver"),
+                vatNumber = t("vatNumber"), curbside = b("curbside", false), payCash = b("payCash", true), payCard = b("payCard", true))
+        }.onFailure { android.util.Log.w("Hayyna", "merchant profile parse failed", it) }.getOrNull()
+    }
 
     suspend fun saveMerchantProfile(uid: String, profile: MerchantProfile) {
         merchantsCollection.document(uid).set(

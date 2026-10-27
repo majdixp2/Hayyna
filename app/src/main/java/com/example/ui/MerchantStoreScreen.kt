@@ -741,7 +741,7 @@ fun MerchantStoreScreen(
                                     onPublishDraft = { viewModel.openPublishDraft(it) },
                                     onBoost = { viewModel.openBoost(it) }
                                 ) else null,
-                                catalogCard = if (catalogCfg.enabled && isMerchantLoggedIn && (merchantProfile?.branches?.isNotEmpty() == true)) {
+                                catalogCard = if (catalogCfg.enabled && isMerchantLoggedIn) {
                                     { com.example.ui.components.MerchantCatalogCard(viewModel, merchantProfile?.cuisineType.orEmpty(), if (isAdmin) 999_999L else (walletBal ?: 0L).coerceAtLeast(0L)) }
                                 } else null,
                                 onMyOrders = if (catalogCfg.enabled && catalogCfg.orderEnabled && isMerchantLoggedIn) ({ showMyOrders = true }) else null,
