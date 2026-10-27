@@ -95,6 +95,7 @@ private fun FullDialog(title: String, onDismiss: () -> Unit, content: @Composabl
 // =================== الزبون: صفحة المتجر ===================
 
 /** المنيو/المنتجات/الخدمات داخل صفحة المتجر + السلة */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
     val cfg by vm.catalogConfig.collectAsStateWithLifecycle()
