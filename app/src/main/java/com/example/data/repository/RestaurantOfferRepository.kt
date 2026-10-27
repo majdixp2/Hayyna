@@ -408,7 +408,7 @@ class RestaurantOfferRepository(
             val items = (cr["items"] as? Map<String, Any?>)?.mapNotNull { (id, v) ->
                 val m = v as? Map<String, Any?> ?: return@mapNotNull null
                 CreditItem(
-                    id = id, name = m["name"] as? String ?: id, effect = m["effect"] as? String ?: "",
+                    id = id, name = (m["name"] as? String ?: id).let { n -> if (Regex("إبراز|مُبرز").containsMatchIn(n)) n.replace(Regex("🚀\\s*"), "").replace(Regex("الإبراز|إبراز|مُبرز"), "🚀 عرض سوبر") else n }, effect = m["effect"] as? String ?: "",
                     unit = m["unit"] as? String ?: "fixed", price = (m["price"] as? Number)?.toLong() ?: 0L,
                     days = (m["days"] as? Number)?.toInt() ?: 1, active = m["active"] as? Boolean ?: false,
                     order = (m["order"] as? Number)?.toInt() ?: 0

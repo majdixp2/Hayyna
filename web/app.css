@@ -639,3 +639,25 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .cart-bar small { display: block; font-size: 11px; opacity: .9; margin-top: 2px; }
 .oc-arrived { background: #111827; color: #FFD166; border-radius: 10px; padding: 7px 10px; font-weight: 800; margin-top: 6px; animation: superGlow 1.6s ease-in-out infinite; }
 [data-arrive] { margin-top: 8px; }
+
+/* ألوان فاتحة لحالة الطلب + مجموعات منسدلة عند المحل */
+.ocard.s-sent { background: var(--card); }
+.ocard.s-received { background: #FFF8DB; border-color: #F3DE8A; }
+.ocard.s-ready, .ocard.s-delivering { background: #E8F2FF; border-color: #BFD7F7; }
+.ocard.s-done { background: #EAF7EE; border-color: #BFE3CB; }
+.ocard.s-cancelled { background: #FDECEC; border-color: #F5C2C2; }
+.ogrp { margin-bottom: 10px; }
+.ogrp > summary { list-style: none; cursor: pointer; font-weight: 800; font-size: 14px; padding: 9px 12px; border-radius: 12px; background: var(--bg2, #f3f4f1); display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ogrp > summary::-webkit-details-marker { display: none; }
+.ogrp > summary::after { content: "▾"; margin-inline-start: auto; color: var(--muted); transition: transform .15s; }
+.ogrp:not([open]) > summary::after { transform: rotate(90deg); }
+.ogrp .cnt { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 12px; }
+.g-new > summary { background: #F4F5F2; } .g-prep > summary { background: #FFF1B8; } .g-ready > summary { background: #D6E8FF; }
+.g-done > summary { background: #D7F0DF; } .g-cancelled > summary { background: #FADADA; }
+:root[data-theme="dark"] .ocard.s-received { background: #3A3216; border-color: #5C4E1E; }
+:root[data-theme="dark"] .ocard.s-ready, :root[data-theme="dark"] .ocard.s-delivering { background: #18293F; border-color: #27415F; }
+:root[data-theme="dark"] .ocard.s-done { background: #17311F; border-color: #24503A; }
+:root[data-theme="dark"] .ocard.s-cancelled { background: #3A1C1C; border-color: #5A2A2A; }
+:root[data-theme="dark"] .g-new > summary { background: #222B27; } :root[data-theme="dark"] .g-prep > summary { background: #4A3F17; }
+:root[data-theme="dark"] .g-ready > summary { background: #1E3550; } :root[data-theme="dark"] .g-done > summary { background: #1E4029; }
+:root[data-theme="dark"] .g-cancelled > summary { background: #4A2222; }

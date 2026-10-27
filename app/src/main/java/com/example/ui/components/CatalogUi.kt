@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -293,8 +294,9 @@ fun OrdersDialog(
     FullDialog(title, onDismiss) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (orders.isEmpty()) Text(if (asStore) "ما وصلتك طلبات للحين" else "ما طلبت شي للحين — ادخل صفحة أي متجر واطلب منه 🛍️", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            orders.take(100).forEach { o ->
-                Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(if (asStore && o.status == "sent") 2.dp else 1.dp, if (asStore && o.status == "sent") CalmSagePrimary else MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+            val card: @Composable (HayynaOrder) -> Unit = { o ->
+                val (bg, line) = orderTint(o.status)
+                Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(if (asStore && o.status == "sent") 2.dp else 1.dp, if (asStore && o.status == "sent") CalmSagePrimary else line ?: MaterialTheme.colorScheme.outlineVariant), color = bg ?: MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row { Text("#${o.code}", fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f)); Text(if (asStore) HayynaOrder.STATUS[o.status] ?: o.status else o.statusText(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary) }
                         Text((if (asStore) listOf(o.customerName, o.customerPhone.let { p -> val d = p.filter { it.isDigit() }; if (d.startsWith("966")) "0" + d.drop(3) else p }).filter { it.isNotBlank() }.joinToString(" • ") else "🏪 ${o.storeName}") + if (o.createdAtMillis > 0) " • ${dm(o.createdAtMillis)}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -333,6 +335,22 @@ fun OrdersDialog(
                             }
                         }
                     }
+                }
+            }
+            if (!asStore) orders.take(100).forEach { card(it) }
+            else ORDER_GROUPS.forEach { g ->
+                val os = orders.filter { it.status in g.statuses }.take(100)
+                if (os.isNotEmpty()) {
+                    var open by rememberSaveable(g.key) { mutableStateOf(g.open) }
+                    Surface(shape = RoundedCornerShape(12.dp), color = g.head, modifier = Modifier.fillMaxWidth().clickable { open = !open }) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(g.title, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = Color(0xFF1F2937))
+                            Surface(shape = RoundedCornerShape(50), color = Color.White, modifier = Modifier.padding(start = 8.dp)) { Text("${os.size}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F2937), modifier = Modifier.padding(horizontal = 8.dp)) }
+                            Spacer(Modifier.weight(1f))
+                            Text(if (open) "▾" else "◂", fontSize = 16.sp, color = Color(0xFF6B7280))
+                        }
+                    }
+                    if (open) os.forEach { card(it) }
                 }
             }
         }
@@ -621,4 +639,23 @@ private fun ItemPayDialog(vm: MerchantViewModel, startKind: ItemKind, balance: L
         confirmButton = { TextButton(onClick = { confirm = false; vm.buyItemPass(scope, kind.id, sel.toList(), days); onDismiss() }, enabled = cost <= balance) { Text(if (cost <= balance) "تأكيد" else "رصيدك ما يكفي", fontWeight = FontWeight.Bold) } },
         dismissButton = { TextButton(onClick = { confirm = false }) { Text("إلغاء") } }
     )
+}
+
+
+/** مجموعات طلبات المحل: اللي فيها شغل مفتوحة، والمنتهية والملغية مطوية */
+private class OrderGroup(val key: String, val title: String, val statuses: List<String>, val open: Boolean, val head: Color)
+private val ORDER_GROUPS = listOf(
+    OrderGroup("new", "🆕 الجديدة", listOf("sent"), true, Color(0xFFF4F5F2)),
+    OrderGroup("prep", "👨‍🍳 جاري التجهيز", listOf("received"), true, Color(0xFFFFF1B8)),
+    OrderGroup("ready", "🛍️ جاهز / 🚚 بالطريق", listOf("ready", "delivering"), true, Color(0xFFD6E8FF)),
+    OrderGroup("done", "✅ المنتهية", listOf("done"), false, Color(0xFFD7F0DF)),
+    OrderGroup("cancelled", "✕ الملغية", listOf("cancelled"), false, Color(0xFFFADADA))
+)
+/** لون فاتح لبطاقة الطلب حسب حالته (null = الافتراضي) */
+private fun orderTint(status: String): Pair<Color?, Color?> = when (status) {
+    "received" -> Color(0xFFFFF8DB) to Color(0xFFF3DE8A)
+    "ready", "delivering" -> Color(0xFFE8F2FF) to Color(0xFFBFD7F7)
+    "done" -> Color(0xFFEAF7EE) to Color(0xFFBFE3CB)
+    "cancelled" -> Color(0xFFFDECEC) to Color(0xFFF5C2C2)
+    else -> null to null
 }

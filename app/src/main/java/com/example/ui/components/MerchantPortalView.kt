@@ -514,13 +514,19 @@ private fun MerchantDashboard(
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(
-                                text = merchantName.ifBlank { "لوحة التاجر" },
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 17.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = merchantName.ifBlank { "لوحة التاجر" },
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 17.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (isVerified) Surface(shape = RoundedCornerShape(50), color = Color(0xFFE0F2FE), modifier = Modifier.padding(start = 6.dp)) {
+                                    Text("✓ موثّق", color = Color(0xFF0369A1), fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                                }
+                            }
                             Text(
                                 text = merchantEmail,
                                 fontSize = 12.sp,
@@ -575,36 +581,6 @@ private fun MerchantDashboard(
             }
         }
 
-        // التوثيق ✓
-        if (isVerified) {
-            item {
-                Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFE0F2FE), modifier = Modifier.fillMaxWidth()) {
-                    Text("✓ متجرك موثّق — العملاء يشوفون العلامة جنب اسمك", color = Color(0xFF0369A1), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(12.dp))
-                }
-            }
-        } else if (verifyEnabled) {
-            item {
-                Card(
-                    onClick = onOpenVerify,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F2FE)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("✓ وثّق متجرك", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color(0xFF0369A1))
-                            Text(
-                                verifyStatus ?: "علامة ✓ جنب اسمك، وثقة أكثر، وعروضك تنزل مباشرة",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Text("›", fontSize = 22.sp, color = Color(0xFF0369A1))
-                    }
-                }
-            }
-        }
-
         // حالة الحساب: موقوف / جديد (عروضه تُراجع)
         if (isSuspended || !isTrusted) {
             item {
@@ -626,23 +602,10 @@ private fun MerchantDashboard(
             }
         }
 
-        // الإحصائيات الحقيقية
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MerchantStatTile("العروض النشطة", "$activeCount", Icons.Default.LocalOffer, Modifier.weight(1f))
-                    MerchantStatTile("المشاهدات", "${offers.sumOf { it.viewsCount }}", Icons.Default.Visibility, Modifier.weight(1f))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MerchantStatTile("طلبوا الاتجاه", "${offers.sumOf { it.directionsCount }}", Icons.Default.Directions, Modifier.weight(1f))
-                    MerchantStatTile("تواصلوا واتساب", "${offers.sumOf { it.whatsappCount }}", Icons.Default.Chat, Modifier.weight(1f))
-                }
-            }
-        }
-
-        if (credits != null) item { WalletCard(credits.balance, credits.items) }
+        // ٢. المنيو والطلبات
         if (catalogCard != null) item { catalogCard() }
 
+        // ٣. العروض
         item {
             Text(
                 text = "عروضك (${offers.size})",
@@ -680,6 +643,47 @@ private fun MerchantDashboard(
                     onEdit = { onEditOffer(offer) },
                     onDelete = { offerPendingDelete = offer }
                 )
+            }
+        }
+
+        // ٤. الرصيد
+        if (credits != null) item { WalletCard(credits.balance, credits.items) }
+
+        // ٥. الإحصائيات الحقيقية
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MerchantStatTile("العروض النشطة", "$activeCount", Icons.Default.LocalOffer, Modifier.weight(1f))
+                    MerchantStatTile("المشاهدات", "${offers.sumOf { it.viewsCount }}", Icons.Default.Visibility, Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MerchantStatTile("طلبوا الاتجاه", "${offers.sumOf { it.directionsCount }}", Icons.Default.Directions, Modifier.weight(1f))
+                    MerchantStatTile("تواصلوا واتساب", "${offers.sumOf { it.whatsappCount }}", Icons.Default.Chat, Modifier.weight(1f))
+                }
+            }
+        }
+
+        // التوثيق ✓
+        if (!isVerified && verifyEnabled) {
+            item {
+                Card(
+                    onClick = onOpenVerify,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F2FE)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("✓ وثّق متجرك", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color(0xFF0369A1))
+                            Text(
+                                verifyStatus ?: "علامة ✓ جنب اسمك، وثقة أكثر، وعروضك تنزل مباشرة",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text("›", fontSize = 22.sp, color = Color(0xFF0369A1))
+                    }
+                }
             }
         }
 

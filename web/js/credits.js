@@ -17,10 +17,12 @@ export const DEFAULT_ITEMS = {
 };
 export const DEFAULT_PACKS = [{ points: 50, price: 50 }, { points: 100, price: 98 }, { points: 500, price: 475 }];
 
+// الاسم القديم «إبراز» صار «🚀 عرض سوبر» (لو الإعدادات المحفوظة فيها الاسم القديم)
+const superName = (items) => Object.fromEntries(Object.entries(items).map(([k, it]) => [k, it?.name && /إبراز|مُبرز/.test(it.name) ? { ...it, name: it.name.replace(/🚀\s*/, "").replace(/الإبراز|إبراز|مُبرز/, "🚀 عرض سوبر") } : it]));
 export const creditsOf = (config) => {
   const c = config?.credits || {};
   return { enabled: !!c.enabled, enabledAt: c.enabledAt || null, graceUntil: c.graceUntil || null, graceDays: c.graceDays ?? 14, spotlightMax: c.spotlightMax ?? 3,
-    welcome: c.welcome || 0, items: c.items || DEFAULT_ITEMS, packs: c.packs || DEFAULT_PACKS };
+    welcome: c.welcome || 0, items: superName(c.items || DEFAULT_ITEMS), packs: c.packs || DEFAULT_PACKS };
 };
 export const itemList = (items) => Object.entries(items || {}).map(([id, it]) => ({ id, ...it })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 export const costOf = (it, days) => it.unit === "day" ? it.price * days : it.price;

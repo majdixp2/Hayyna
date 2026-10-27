@@ -49,29 +49,31 @@ function draw() {
   const banner = st.suspended ? `<div class="banner red">⛔ حسابك موقوف حالياً. تواصل مع إدارة حيّنا.</div>`
     : canPublishDirectly() ? `<div class="banner green">⚡ حسابك ينشر مباشرة — عروضك تظهر بدون مراجعة</div>`
     : `<div class="banner amber">⏳ حساب جديد: عروضك تنراجع قبل ما تظهر (عادة خلال ساعات). بعد عرضين معتمدين تنشر مباشرة.</div>`;
+  const warn = st.suspended || !canPublishDirectly();
   root.innerHTML = `
     ${m.ctx.isAdmin ? `<a class="btn dir" href="/admin/">🛡️ لوحة الإدارة</a>` : ""}
-    ${banner}
+    ${warn ? banner : ""}
     <div class="store-card">
       ${p.logoUrl ? `<img src="${esc(cld(p.logoUrl, 120))}" alt="">` : `<div class="logo-ph">🏪</div>`}
       <div class="sc-main"><b>${esc(p.restaurantName || "متجرك")}</b>${st.verified ? ' <span class="verified">✔ موثّق</span>' : ""}<br>
         <small>${hasStore ? `${p.branches.length} ${p.branches.length === 1 ? "فرع" : "فروع"} • ${esc(p.cuisineType || "")}` : "ما جهّزت صفحة متجرك للحين"}</small></div>
       <button class="btn-soft" id="editStore">✎ صفحة متجري</button>
     </div>
+    <button class="btn dir big" id="newOffer" ${st.suspended ? "disabled" : ""}>＋ عرض جديد</button>
     ${hasStore ? `<button class="btn call" id="viewStore">👀 شوف صفحة متجري مثل ما يشوفها الزبون</button>` : ""}
-    ${!st.verified ? `<div class="hint-box">✔ توثيق المتجر (السجل التجاري / العمل الحر) متاح حالياً من تطبيق أندرويد.</div>` : ""}
+    ${hasStore ? catalogPanelHtml(p.cuisineType) : ""}
+    ${m.offers.some((o) => o.adminNote) ? `<div class="banner red">↩️ عندك ${m.offers.filter((o) => o.adminNote).length === 1 ? "عرض يحتاج تعديل" : m.offers.filter((o) => o.adminNote).length + " عروض تحتاج تعديل"} من فريق حيّنا — شوف الملاحظة تحت العرض واضغط ✎</div>` : ""}
+    <div class="section-title">عروضي (${m.offers.length})</div>
+    <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
+    ${walletCard()}
     <div class="stat-row">
       <div class="stat"><b>${active.length}</b><small>عرض نشط</small></div>
       <div class="stat"><b>${sum("viewsCount")}</b><small>مشاهدة</small></div>
       <div class="stat"><b>${sum("directionsCount")}</b><small>اتجاهات</small></div>
       <div class="stat"><b>${sum("whatsappCount")}</b><small>واتساب</small></div>
     </div>
-    ${walletCard()}
-    ${m.offers.some((o) => o.adminNote) ? `<div class="banner red">↩️ عندك ${m.offers.filter((o) => o.adminNote).length === 1 ? "عرض يحتاج تعديل" : m.offers.filter((o) => o.adminNote).length + " عروض تحتاج تعديل"} من فريق حيّنا — شوف الملاحظة تحت العرض واضغط ✎</div>` : ""}
-    ${hasStore ? catalogPanelHtml(p.cuisineType) : ""}
-    <button class="btn dir big" id="newOffer" ${st.suspended ? "disabled" : ""}>＋ عرض جديد</button>
-    <div class="section-title">عروضي (${m.offers.length})</div>
-    <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
+    ${!warn ? banner : ""}
+    ${!st.verified ? `<div class="hint-box">✔ توثيق المتجر (السجل التجاري / العمل الحر) متاح حالياً من تطبيق أندرويد.</div>` : ""}
     <button class="btn call" id="mContact">💬 تواصل معنا</button>`;
   $("editStore").onclick = () => openStoreForm();
   $("viewStore")?.addEventListener("click", () => openStore(state.user.uid, true));
