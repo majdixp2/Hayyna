@@ -16,7 +16,12 @@ const android = { ...stored, deal: { type: "promo", orderable: false } };
 const db = env.authenticatedContext(U).firestore();
 const pick = (keys) => Object.fromEntries(Object.entries(android).filter(([k]) => keys.includes(k) || k === "deal"));
 const ks = Object.keys(android).filter((k) => k !== "deal");
+const upd = (over, data) => env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "offers", ID), { ...stored, ...over })).then(() => updateDoc(doc(db, "offers", ID), data));
 const tries = [
+  ["create with deal", async () => { const o = { ...stored, id: "NEW1", deal: { type: "promo", orderable: false } }; delete o.createdAt; const { serverTimestamp } = await import("firebase/firestore"); return setDoc(doc(db, "offers", "NEW1"), { ...o, viewsCount: 0, createdAt: serverTimestamp() }); }],
+  ["deal only, no branches", () => upd({ branches: [] }, { deal: { type: "promo" } })],
+  ["title only, 3 branches", () => upd({ branches: [br, br, br] }, { offerTitle: "x" })],
+  ["deal only, no tags/mediaUris/dailyPercents", () => upd({ tags: null, mediaUris: null, dailyPercents: null }, { deal: { type: "promo" } })],
   ["deal only", () => updateDoc(doc(db, "offers", ID), { deal: { type: "promo", orderable: false } })],
   ["deal bundle only", () => updateDoc(doc(db, "offers", ID), { deal: { type: "bundle", itemIds: [] } })],
   ["deal + first half", () => updateDoc(doc(db, "offers", ID), pick(ks.slice(0, ks.length / 2)))],
