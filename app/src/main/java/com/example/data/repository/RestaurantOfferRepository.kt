@@ -826,7 +826,9 @@ class RestaurantOfferRepository(
                 vatEnabled = vat["enabled"] as? Boolean ?: true,
                 vatRate = (vat["rate"] as? Number)?.toDouble() ?: 15.0,
                 categoryTypes = types.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap(),
-                features = (c["features"] as? Map<*, *>)?.mapNotNull { (k, v) -> (k as? String)?.let { kk -> (v as? Boolean)?.let { kk to it } } }?.toMap() ?: emptyMap()
+                features = (c["features"] as? Map<*, *>)?.mapNotNull { (k, v) -> (k as? String)?.let { kk -> (v as? Boolean)?.let { kk to it } } }?.toMap() ?: emptyMap(),
+                noshow = (c["noshow"] as? Map<*, *>).let { n -> com.example.data.model.NoshowCfg(
+                    (n?.get("max") as? Number)?.toInt() ?: 3, (n?.get("days") as? Number)?.toInt() ?: 60, (n?.get("blockDays") as? Number)?.toInt() ?: 7) }
             ))
         }
         awaitClose { l.remove() }
@@ -904,6 +906,10 @@ class RestaurantOfferRepository(
         createdAtMillis = d.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: 0L,
         etaAtMillis = d.getTimestamp("etaAt")?.toDate()?.time ?: 0L,
         pay = d.getString("pay").orEmpty(), car = d.getString("car").orEmpty(), arrived = d.get("arrivedAt") != null,
+        customerUid = d.getString("customerUid").orEmpty(), spot = d.getString("spot").orEmpty(),
+        readyAtMillis = (d.getTimestamp("readyAt") ?: d.getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE))?.toDate()?.time ?: 0L,
+        cancelReq = d.getString("cancelReq").orEmpty(), cancelReqAns = d.getString("cancelReqAns").orEmpty(),
+        cancelBy = d.getString("cancelBy").orEmpty(), cancelReason = d.getString("cancelReason").orEmpty(),
         lat = (d.get("location") as? Map<String, Any?>)?.get("lat") as? Double, lng = (d.get("location") as? Map<String, Any?>)?.get("lng") as? Double
     )
     fun myOrdersFlow(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
@@ -924,18 +930,53 @@ class RestaurantOfferRepository(
             .sortedByDescending { it.getTimestamp("at")?.toDate()?.time ?: 0L }
             .map { Triple((it.getLong("stars") ?: 0L).toInt(), it.getString("name").orEmpty(), it.getString("text").orEmpty()) }
     }.getOrDefault(emptyList())
-    fun storeOrders(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
-        val l = db.collection("orders").whereEqualTo("storeId", uid).addSnapshotListener { s, _ -> trySend(s?.documents.orEmpty().map { parseOrder(it) }.sortedByDescending { it.createdAtMillis }) }
+    /** طلبات المحل + هل الدفعة من الكاش (أول دفعة من السيرفر هي «الأساس» عشان ما نحسب القديمة «جديدة») */
+    fun storeOrders(uid: String): Flow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>> = callbackFlow {
+        val l = db.collection("orders").whereEqualTo("storeId", uid).addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { s, _ ->
+            if (s != null) trySend(s.documents.map { parseOrder(it) }.sortedByDescending { it.createdAtMillis } to s.metadata.isFromCache)
+        }
         awaitClose { l.remove() }
     }
     suspend fun myOrders(uid: String) = db.collection("orders").whereEqualTo("customerUid", uid).get().await().documents.map { parseOrder(it) }.sortedByDescending { it.createdAtMillis }
     suspend fun markArrived(id: String) {
         db.collection("orders").document(id).update(mapOf("arrivedAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp())).await()
     }
-    suspend fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0) {
+    suspend fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0, extra: Map<String, Any> = emptyMap()) {
         val m = mutableMapOf<String, Any>("status" to status, "updatedAt" to FieldValue.serverTimestamp())
         if (etaMinutes > 0) m["etaAt"] = Timestamp(java.util.Date(System.currentTimeMillis() + etaMinutes * 60_000L))
+        if (status == "ready") m["readyAt"] = FieldValue.serverTimestamp()
+        m.putAll(extra)
         db.collection("orders").document(id).update(m).await()
+    }
+    /** 🙋 العميل يطلب الإلغاء (بعد ما يستلمه المحل) */
+    suspend fun requestCancel(id: String, reason: String) {
+        db.collection("orders").document(id).update(mapOf("cancelReq" to reason.take(200), "cancelReqAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp())).await()
+    }
+    /** 🚗 وصف السيارة + وين واقف */
+    suspend fun updateCurb(id: String, car: String, spot: String) {
+        db.collection("orders").document(id).update(mapOf("car" to car.take(60), "spot" to spot.take(60), "updatedAt" to FieldValue.serverTimestamp())).await()
+    }
+    suspend fun custStats(uid: String): com.example.data.model.CustStats? = runCatching {
+        val d = db.collection("custStats").document(uid).get().await()
+        if (!d.exists()) null else com.example.data.model.CustStats((d.getLong("count") ?: 0L).toInt(),
+            d.getTimestamp("windowStart")?.toDate()?.time ?: 0L, d.getTimestamp("blockedAt")?.toDate()?.time ?: 0L)
+    }.getOrNull()
+    /** 🚫 ما انستلم: الطلب + سجل + عدّاد العميل في عملية وحدة. يرجّع العدد الجديد */
+    suspend fun markNoshow(o: com.example.data.model.HayynaOrder, storeUid: String, cfg: com.example.data.model.NoshowCfg): Int {
+        val ref = db.collection("custStats").document(o.customerUid)
+        val cur = ref.get().await()
+        val now = System.currentTimeMillis()
+        val ws = cur.getTimestamp("windowStart")
+        val fresh = !cur.exists() || ws == null || ws.toDate().time <= now - cfg.days * 86_400_000L + 60_000L
+        val count = if (fresh) 1 else ((cur.getLong("count") ?: 0L) + 1).toInt()
+        val stats = hashMapOf<String, Any>("count" to count.toLong(), "windowStart" to (if (fresh) FieldValue.serverTimestamp() else ws!!), "lastOrder" to o.id, "updatedAt" to FieldValue.serverTimestamp())
+        if (count >= cfg.max) stats["blockedAt"] = FieldValue.serverTimestamp() else cur.getTimestamp("blockedAt")?.let { stats["blockedAt"] = it }
+        val b = db.batch()
+        b.update(db.collection("orders").document(o.id), mapOf("status" to "noshow", "updatedAt" to FieldValue.serverTimestamp()))
+        b.set(db.collection("noshows").document(o.id), hashMapOf("orderId" to o.id, "customerUid" to o.customerUid, "storeId" to storeUid, "at" to FieldValue.serverTimestamp()))
+        b.set(ref, stats)
+        b.commit().await()
+        return count
     }
     suspend fun saveOrder(o: com.example.data.model.HayynaOrder, customerUid: String, branchId: String) {
         val ref = db.collection("orders").document()

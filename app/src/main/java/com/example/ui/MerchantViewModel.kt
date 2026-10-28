@@ -687,9 +687,20 @@ class MerchantViewModel(
         .flatMapLatest { u -> if (u == null) flowOf(emptyList()) else repository.myPasses(u.uid) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val storeOrders: StateFlow<List<com.example.data.model.HayynaOrder>> = currentUser
-        .flatMapLatest { u -> if (u == null) flowOf(emptyList()) else repository.storeOrders(u.uid) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val storeOrdersRaw: StateFlow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>?> = currentUser
+        .flatMapLatest { u -> if (u == null) flowOf(null) else repository.storeOrders(u.uid) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val storeOrders: StateFlow<List<com.example.data.model.HayynaOrder>> = storeOrdersRaw.map { it?.first.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    /** عدّاد «ما انستلم» للعملاء (يظهر للمحل جنب الطلب) */
+    val custStats = MutableStateFlow<Map<String, com.example.data.model.CustStats?>>(emptyMap())
+    private fun loadCustStats(uids: List<String>) {
+        if (!catalogConfig.value.feat("noshow")) return
+        uids.filter { it.isNotBlank() && it !in custStats.value }.distinct().forEach { u ->
+            custStats.value = custStats.value + (u to null)
+            viewModelScope.launch { val st = repository.custStats(u); if (st != null) custStats.value = custStats.value + (u to st) }
+        }
+    }
 
     /** منتجاتي تنزل مباشرة؟ (الموثّق ✔ / الموثوق / الأدمن / المراجعة مطفية) */
     val catalogDirect: Boolean
@@ -739,7 +750,29 @@ class MerchantViewModel(
             toast("تم ✅ خصمنا $cost نقطة")
         }
     }
-    fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0) = launchSafely("تعذّر التحديث — يمكن المحل استلمه") { repository.setOrderStatus(id, status, etaMinutes) }
+    fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0, extra: Map<String, Any> = emptyMap()) = launchSafely("تعذّر التحديث — يمكن المحل استلمه") { repository.setOrderStatus(id, status, etaMinutes, extra) }
+    /** إلغاء من المحل بسبب */
+    fun storeCancel(o: com.example.data.model.HayynaOrder, reason: String) = setOrderStatus(o.id, "cancelled", extra = mapOf("cancelBy" to "store", "cancelReason" to reason.take(120)))
+    /** رد المحل على طلب الإلغاء */
+    fun answerCancel(o: com.example.data.model.HayynaOrder, approve: Boolean) =
+        if (approve) setOrderStatus(o.id, "cancelled", extra = mapOf("cancelReqAns" to "approved", "cancelBy" to "customer", "cancelReason" to o.cancelReq.take(120)))
+        else setOrderStatus(o.id, o.status, extra = mapOf("cancelReqAns" to "rejected"))
+    /** 🚫 ما انستلم */
+    fun markNoshow(o: com.example.data.model.HayynaOrder) {
+        val uid = currentUser.value?.uid ?: return
+        val cfg = catalogConfig.value.noshow
+        launchSafely("تعذّر التسجيل — جرّب مرة ثانية") {
+            val n = repository.markNoshow(o, uid, cfg)
+            custStats.value = custStats.value - o.customerUid
+            toast(if (n >= cfg.max) "🚫 سجّلناه — العميل وصل $n طلبات ما استلمها وتوقف عن الطلب ${cfg.blockDays} أيام" else "🚫 سجّلنا إن الطلب ما انستلم")
+        }
+    }
+    /** 🙋 العميل يطلب الإلغاء */
+    fun requestCancel(o: com.example.data.model.HayynaOrder, reason: String) = launchSafely("تعذّر الإرسال — يمكن الطلب انتهى") { repository.requestCancel(o.id, reason); toast("انرسل طلب الإلغاء للمحل ⏳") }
+    fun updateCurb(o: com.example.data.model.HayynaOrder, car: String, spot: String) = launchSafely("تعذّر الحفظ") { repository.updateCurb(o.id, car, spot); toast("انحفظ 👍") }
+    /** حالة العميل نفسه (موقوف عن الطلب؟) */
+    val myStats = MutableStateFlow<com.example.data.model.CustStats?>(null)
+    fun loadMyStats() { val u = currentUser.value?.uid ?: return; if (!catalogConfig.value.feat("noshow")) return; viewModelScope.launch { myStats.value = repository.custStats(u) } }
 
     /** طلباتي (الزبون) لحظياً + تنبيه لما تتغيّر حالة طلب */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -778,16 +811,29 @@ class MerchantViewModel(
         }
     }
     init {
-        // تنبيهات المحل: طلب جديد / العميل وصل بسيارته
-        var prevStore: Map<String, Boolean>? = null
+        // تنبيهات المحل: أول ما يفتح = تنبيه واحد بعدد الطلبات اللي تنتظره، وبعدها لكل طلب جديد / العميل وصل / طلب إلغاء (مع صوت)
+        var prevStore: Map<String, com.example.data.model.HayynaOrder>? = null
         viewModelScope.launch {
-            storeOrders.collect { list ->
+            storeOrdersRaw.collect { raw ->
+                if (raw == null) { prevStore = null; return@collect }
+                val (list, fromCache) = raw
+                loadCustStats(list.filter { it.isLive }.map { it.customerUid })
+                val snd = catalogConfig.value.feat("sounds")
                 val p = prevStore
-                if (p != null) list.forEach { o ->
-                    if (o.id !in p) toast("🧾 طلب جديد #${o.code} من ${o.customerName.ifBlank { "عميل" }}")
-                    else if (o.arrived && p[o.id] == false) toast("🚗 العميل وصل — طلب #${o.code} ${o.car}")
+                if (p == null) {
+                    if (fromCache) return@collect // ننتظر أول دفعة من السيرفر
+                    val waiting = list.count { it.status == "sent" }
+                    if (waiting > 0) { toast(if (waiting == 1) "🛎️ عندك طلب جديد" else "🛎️ عندك $waiting طلبات جديدة"); if (snd) com.example.data.OrderSounds.play(getApplication(), "new") }
+                } else list.forEach { o ->
+                    val old = p[o.id]
+                    when {
+                        old == null -> if (o.status == "sent") { toast("🛎️ طلب جديد #${o.code} من ${o.customerName.ifBlank { "عميل" }}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "new") }
+                        o.arrived && !old.arrived -> { toast("🚗 العميل وصل — طلب #${o.code} ${o.car}${if (o.spot.isNotBlank()) " • " + o.spot else ""}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "arrive") }
+                        o.cancelReq.isNotBlank() && old.cancelReq.isBlank() -> { toast("🙋 العميل يطلب إلغاء #${o.code}: ${o.cancelReq}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "cancel") }
+                        o.status == "cancelled" && old.status != "cancelled" && o.cancelBy != "store" -> { toast("✕ العميل ألغى طلب #${o.code}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "cancel") }
+                    }
                 }
-                prevStore = list.associate { it.id to it.arrived }
+                prevStore = list.associateBy { it.id }
             }
         }
     }

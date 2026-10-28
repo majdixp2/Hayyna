@@ -46,7 +46,8 @@ data class CatalogConfig(
     val vatRate: Double = 15.0,
     val categoryTypes: Map<String, String> = emptyMap(),
     // مزايا الطلب (مفاتيح من الأدمن، كلها شغّالة افتراضياً)
-    val features: Map<String, Boolean> = emptyMap()
+    val features: Map<String, Boolean> = emptyMap(),
+    val noshow: NoshowCfg = NoshowCfg()
 ) {
     fun feat(k: String) = features[k] != false
     fun limitOf(kind: String) = limits[kind] ?: 0
@@ -101,8 +102,13 @@ data class HayynaOrder(
     val mode: String = "pickup", val lat: Double? = null, val lng: Double? = null, val note: String = "", val status: String = "sent",
     val createdAtMillis: Long = 0L, val etaAtMillis: Long = 0L,
     val pay: String = "", val car: String = "", val arrived: Boolean = false,
-    val discount: Double = 0.0
+    val discount: Double = 0.0,
+    // متابعة الطلب: وين واقف (السيارة)، طلب الإلغاء، سبب إلغاء المحل، متى صار جاهز
+    val customerUid: String = "", val spot: String = "", val readyAtMillis: Long = 0L,
+    val cancelReq: String = "", val cancelReqAns: String = "", val cancelBy: String = "", val cancelReason: String = ""
 ) {
+    val isLive get() = status in listOf("sent", "received", "ready", "delivering")
+    val pendingCancelReq get() = cancelReq.isNotBlank() && cancelReqAns.isBlank() && isLive
     val isDelivery get() = mode == "delivery"
     val isCurbside get() = mode == "curbside"
     val modeText get() = when (mode) { "delivery" -> "🚚 توصيل"; "curbside" -> "🚗 من السيارة"; else -> "🏃 استلام" }
@@ -111,10 +117,18 @@ data class HayynaOrder(
     fun statusText(): String = when (status) {
         "sent" -> "📨 أُرسل — بانتظار المحل"; "received" -> "👍 المحل استلم طلبك ويجهّزه"
         "ready" -> if (isCurbside) (if (arrived) "🚗 جاهز — المحل جاي لسيارتك" else "🚗 جاهز — تعال واضغط «وصلت»") else "🛍️ جاهز للاستلام"
-        "delivering" -> "🚚 جاري التوصيل"; "done" -> if (isDelivery) "✅ تم التوصيل" else if (isCurbside) "✅ تم التسليم" else "✅ تم الاستلام"; "cancelled" -> "✕ ملغي"; else -> status
+        "delivering" -> "🚚 جاري التوصيل"; "done" -> if (isDelivery) "✅ تم التوصيل" else if (isCurbside) "✅ تم التسليم" else "✅ تم الاستلام"
+        "cancelled" -> if (cancelBy == "store") "✕ ألغاه المحل" else "✕ ملغي"; "noshow" -> "🚫 ما انستلم"; else -> status
     }
     val steps: List<Pair<String, String>> get() = if (isDelivery) listOf("sent" to "أُرسل", "received" to "يجهّزه", "delivering" to "بالطريق", "done" to "وصل")
-        else listOf("sent" to "أُرسل", "received" to "يجهّزه", "ready" to "جاهز", "done" to if (isCurbside) "تسلّمته" else "استلمته")
+        else if (isCurbside) listOf("sent" to "أُرسل", "received" to "يجهّزه", "ready" to "جاهز", "arrived" to "وصلت 🚗", "done" to "تسلّمته")
+        else listOf("sent" to "أُرسل", "received" to "يجهّزه", "ready" to "جاهز", "done" to "استلمته")
+    /** موقع الخطوة الحالية في شريط المراحل */
+    val stepIndex: Int get() {
+        if (status == "done") return steps.size - 1
+        if (isCurbside && status == "ready" && arrived) return 3
+        return steps.indexOfFirst { it.first == status }.coerceAtLeast(0)
+    }
     fun etaText(now: Long): String? {
         if (status != "received" || etaAtMillis <= 0) return null
         val m = ((etaAtMillis - now) / 60000).toInt()
@@ -123,7 +137,9 @@ data class HayynaOrder(
     companion object {
         fun code(): String = "H-" + java.lang.Long.toString(System.currentTimeMillis(), 36).takeLast(4).uppercase() +
             java.lang.Long.toString((0..35).random().toLong(), 36).uppercase()
-        val STATUS = mapOf("sent" to "📨 أُرسل", "received" to "👍 استلمه المحل", "ready" to "🛍️ جاهز للاستلام", "delivering" to "🚚 جاري التوصيل", "done" to "✅ تم", "cancelled" to "✕ ملغي")
+        val STATUS = mapOf("sent" to "📨 أُرسل", "received" to "👍 استلمه المحل", "ready" to "🛍️ جاهز للاستلام", "delivering" to "🚚 جاري التوصيل", "done" to "✅ تم", "cancelled" to "✕ ملغي", "noshow" to "🚫 ما انستلم")
+        val STORE_CANCEL_REASONS = listOf("العميل ما جاء", "العميل رفض الطلب", "نفدت الكمية", "ما قدرنا نتواصل مع العميل", "المحل مسكّر الحين")
+        val CUST_CANCEL_REASONS = listOf("تأخر الطلب", "طلبت بالغلط", "غيّرت رأيي", "ما أقدر أجي")
     }
     private fun f(n: Double) = String.format(java.util.Locale.US, "%.2f", n)
     fun text(): String = buildString {
@@ -258,4 +274,12 @@ data class StoreDeals(
             return StoreDeals(rules, bogo, packs, banners)
         }
     }
+}
+
+
+/** عدّاد «ما انستلم» للعميل (custStats/{uid}) */
+data class CustStats(val count: Int = 0, val windowStart: Long = 0L, val blockedAt: Long = 0L)
+data class NoshowCfg(val max: Int = 3, val days: Int = 60, val blockDays: Int = 7) {
+    fun recentCount(s: CustStats?, now: Long) = if (s != null && s.windowStart > now - days * 86_400_000L) s.count else 0
+    fun blockedUntil(s: CustStats?, now: Long): Long { if (s == null || s.blockedAt <= 0) return 0L; val e = s.blockedAt + blockDays * 86_400_000L; return if (e > now) e else 0L }
 }
