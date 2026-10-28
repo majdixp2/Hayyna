@@ -468,24 +468,90 @@ service cloud.firestore {
         && request.resource.data.mode in ['pickup', 'delivery', 'curbside']
         && (request.resource.data.mode != 'curbside' || featureOn('curbside'))
         && request.resource.data.status == 'sent'
-        && request.resource.data.createdAt == request.time;
+        && request.resource.data.createdAt == request.time
+        && !noshowBlocked(request.auth.uid);
       allow read: if can('merchants')
         || (isAuthenticated() && (resource.data.customerUid == request.auth.uid || resource.data.storeId == request.auth.uid));
-      // المحل يحدّث الحالة، والزبون يلغي طلبه لو ما استلمه المحل للحين
+      // المحل يحدّث الحالة (ما يرجع طلب انتهى)، ويلغي بسبب، ويرد على طلب الإلغاء
       allow update: if can('merchants')
         || (isAuthenticated() && resource.data.storeId == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'etaAt'])
-          && request.resource.data.status in ['received', 'ready', 'delivering', 'done', 'cancelled']
-          && (!('etaAt' in request.resource.data) || request.resource.data.etaAt is timestamp))
+          && resource.data.status in ['sent', 'received', 'ready', 'delivering']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'etaAt', 'readyAt', 'cancelReason', 'cancelReqAns', 'cancelBy'])
+          && request.resource.data.status in ['sent', 'received', 'ready', 'delivering', 'done', 'cancelled', 'noshow']
+          && (request.resource.data.status != 'noshow' || resource.data.status in ['received', 'ready', 'delivering'])
+          && request.resource.data.get('cancelReason', '').size() <= 120
+          && request.resource.data.get('cancelReqAns', '') in ['', 'approved', 'rejected']
+          && request.resource.data.get('cancelBy', '') in ['', 'store', 'customer']
+          && (!('etaAt' in request.resource.data) || request.resource.data.etaAt is timestamp)
+          && (!('readyAt' in request.resource.data) || request.resource.data.readyAt is timestamp))
+        // الزبون يلغي بنفسه قبل ما يستلمه المحل
         || (isAuthenticated() && resource.data.customerUid == request.auth.uid
           && resource.data.status == 'sent'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
-          && request.resource.data.status == 'cancelled')
-        // 🚗 الزبون يبلّغ إنه وصل (استلام من السيارة)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'cancelBy'])
+          && request.resource.data.status == 'cancelled' && request.resource.data.get('cancelBy', 'customer') == 'customer')
+        // بعد ما يستلمه المحل: «طلب إلغاء» مرة وحدة، والمحل يوافق أو يرفض
         || (isAuthenticated() && resource.data.customerUid == request.auth.uid
-          && resource.data.mode == 'curbside' && resource.data.status in ['received', 'ready']
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['arrivedAt', 'updatedAt'])
-          && request.resource.data.arrivedAt == request.time);
+          && resource.data.status in ['received', 'ready', 'delivering']
+          && !('cancelReq' in resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cancelReq', 'cancelReqAt', 'updatedAt'])
+          && request.resource.data.cancelReq is string && request.resource.data.cancelReq.size() > 0 && request.resource.data.cancelReq.size() <= 200
+          && request.resource.data.cancelReqAt == request.time)
+        // 🚗 الزبون: «وصلت» + وين واقف + يعدّل وصف سيارته
+        || (isAuthenticated() && resource.data.customerUid == request.auth.uid
+          && resource.data.mode == 'curbside' && resource.data.status in ['sent', 'received', 'ready']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['arrivedAt', 'spot', 'car', 'updatedAt'])
+          && (!('arrivedAt' in request.resource.data.diff(resource.data).affectedKeys())
+              || (request.resource.data.arrivedAt == request.time && resource.data.status in ['received', 'ready']))
+          && request.resource.data.get('spot', '').size() <= 60
+          && request.resource.data.get('car', '').size() <= 60);
+      allow delete: if can('merchants');
+    }
+
+    // 🚫 الطلبات اللي ما انستلمت: سجل لكل طلب + عدّاد لكل عميل (يكتبه المحل بنفس عملية «ما انستلم»)
+    function noshowCfg() { return catalogCfg().get('noshow', {}); }
+    function custStatsPath(uid) { return /databases/$(database)/documents/custStats/$(uid); }
+    function noshowBlocked(uid) {
+      return featureOn('noshow') && exists(custStatsPath(uid))
+        && get(custStatsPath(uid)).data.get('blockedAt', null) != null
+        && get(custStatsPath(uid)).data.blockedAt > request.time - duration.value(noshowCfg().get('blockDays', 7), 'd');
+    }
+    match /noshows/{orderId} {
+      allow read: if can('merchants') || (isAuthenticated() && resource.data.customerUid == request.auth.uid);
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasOnly(['orderId', 'customerUid', 'storeId', 'at'])
+        && request.resource.data.orderId == orderId
+        && request.resource.data.storeId == request.auth.uid
+        && request.resource.data.at == request.time
+        && get(orderPath(orderId)).data.storeId == request.auth.uid
+        && get(orderPath(orderId)).data.customerUid == request.resource.data.customerUid
+        && getAfter(orderPath(orderId)).data.status == 'noshow'
+        && getAfter(custStatsPath(request.resource.data.customerUid)).data.lastOrder == orderId;
+      allow delete: if can('merchants');
+    }
+    function nsBlockOk(n, oldBlocked) {
+      return (n.count >= noshowCfg().get('max', 3) && n.blockedAt == request.time)
+        || (n.count < noshowCfg().get('max', 3) && n.get('blockedAt', null) == oldBlocked);
+    }
+    function nsNew(uid) {
+      return request.resource.data.keys().hasOnly(['count', 'windowStart', 'blockedAt', 'lastOrder', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && !exists(/databases/$(database)/documents/noshows/$(request.resource.data.lastOrder))
+        && getAfter(/databases/$(database)/documents/noshows/$(request.resource.data.lastOrder)).data.customerUid == uid
+        && getAfter(/databases/$(database)/documents/noshows/$(request.resource.data.lastOrder)).data.storeId == request.auth.uid;
+    }
+    match /custStats/{uid} {
+      // العدد بس (بدون تفاصيل) — المحل يشوفه جنب الطلب الجديد
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && nsNew(uid)
+        && request.resource.data.count == 1 && request.resource.data.windowStart == request.time
+        && nsBlockOk(request.resource.data, null);
+      allow update: if can('merchants')
+        || (isAuthenticated() && nsNew(uid)
+          && ((request.resource.data.count == resource.data.count + 1 && request.resource.data.windowStart == resource.data.windowStart
+                && resource.data.windowStart > request.time - duration.value(noshowCfg().get('days', 60), 'd'))
+              || (request.resource.data.count == 1 && request.resource.data.windowStart == request.time
+                && resource.data.windowStart <= request.time - duration.value(noshowCfg().get('days', 60), 'd')))
+          && nsBlockOk(request.resource.data, resource.data.get('blockedAt', null)));
       allow delete: if can('merchants');
     }
 
