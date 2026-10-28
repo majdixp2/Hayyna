@@ -57,7 +57,7 @@ await t("المحل يحط «ما انستلم» + أول عدّاد", () => ass
 await t("نفس الطلب مرة ثانية ما ينحسب", () => assertFails(markNoshow("o3", { count: 2, windowStart: Timestamp.now() })));
 await t("العميل يقرأ عدّاده؟ أي مسجّل يقرأ العدد", () => assertSucceeds(getDoc(doc(as("s9"), "custStats/c1"))));
 await t("الثاني يوصل للحد (2) ويتوقف", async () => {
-  const st = (await env.withSecurityRulesDisabled((c) => getDoc(doc(c.firestore(), "custStats/c1")))).data();
+  let st; await env.withSecurityRulesDisabled(async (c) => { st = (await getDoc(doc(c.firestore(), "custStats/c1"))).data(); });
   await assertSucceeds(markNoshow("o2", { count: 2, windowStart: st.windowStart, blockedAt: serverTimestamp() }));
 });
 await t("العميل الموقوف ما يقدر يطلب", () => assertFails(setDoc(doc(as("c1"), "orders/n1"), order("n1", { createdAt: serverTimestamp(), updatedAt: serverTimestamp() }))));
