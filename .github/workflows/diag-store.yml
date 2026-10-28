@@ -1,0 +1,18 @@
+name: Diagnose store (read-only)
+on:
+  push:
+    branches: [diag2]
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    env:
+      SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - run: |
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" >/dev/null 2>&1
+          TOKEN=$(gcloud auth print-access-token)
+          B="https://firestore.googleapis.com/v1/projects/gen-lang-client-0536850806/databases/ai-studio-android-307cc811-cd30-4d36-b6c1-76e9fb2ac335/documents"
+          for C in stores merchants; do
+            curl -s -H "Authorization: Bearer $TOKEN" "$B/$C/vfclB6zIhthwq86YxGoMQOMLP0O2" | python3 -c 'import sys,json; f=json.load(sys.stdin).get("fields",{}); print("::notice title='$C'::"+" | ".join(k+"="+str(list(v.values())[0]) for k,v in sorted(f.items()) if k in ("curbside","payCash","payCard","delivery","deliveryFee","deliveryMinOrder","deliveryFreeOver","approved","updatedAt")))'
+          done
