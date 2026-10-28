@@ -979,7 +979,12 @@ class RestaurantOfferRepository(
     suspend fun updateOffer(offer: RestaurantOffer) {
         require(offer.id.isNotBlank()) { "Offer ID must not be blank" }
         val docRef = offersCollection.document(offer.id)
-        docRef.set(offer.toFirestoreMap(docRef.id, offer.createdAt ?: FieldValue.serverTimestamp())).await()
+        // التعديل ما يلمس العدّادات والتمييز والإنشاء: نسختها المحلية ممكن تكون قديمة (أو «مميز» محسوب من الخدمات المدفوعة)
+        // والقواعد ترفض أي تغيير فيها → «رفض Firestore حفظ العرض (صلاحيات)»
+        val m = offer.toFirestoreMap(docRef.id, null).apply {
+            listOf("merchantId", "isFeatured", "viewsCount", "directionsCount", "whatsappCount", "reportsCount", "createdAt", "rating").forEach { remove(it) }
+        }
+        docRef.set(m, com.google.firebase.firestore.SetOptions.merge()).await()
     }
 
     suspend fun deleteOfferById(id: String) {

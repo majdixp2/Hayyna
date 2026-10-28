@@ -45,6 +45,12 @@ await t("حقل زايد في deal يُرفض", () => assertFails(put("x4", { ty
 await t("نطاق غريب يُرفض", () => assertFails(put("x5", { type: "discount", scope: "store" })));
 await t("التاجر يغيّر نوع عرضه", () => assertSucceeds(updateDoc(doc(as("m1"), "offers/a"), { deal: { type: "bundle", itemIds: [] } })));
 
+console.log("تعديل العرض من التطبيق");
+await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), "offers/a"), { viewsCount: 22, isFeatured: false }));
+const full = (extra = {}) => { const o = offer("a", { deal: { type: "promo", orderable: false }, ...extra }); delete o.createdAt; return o; };
+await t("حفظ كامل بعدّادات قديمة يُرفض (السبب القديم)", () => assertFails(setDoc(doc(as("m1"), "offers/a"), { ...full(), viewsCount: 21, createdAt: Timestamp.now() })));
+await t("حفظ بدمج بدون العدّادات ينجح ✓", () => { const o = full(); ["merchantId", "isFeatured", "viewsCount", "directionsCount", "whatsappCount", "reportsCount"].forEach((k) => delete o[k]); return assertSucceeds(setDoc(doc(as("m1"), "offers/a"), o, { merge: true })); });
+
 console.log("⚡ الخصم السريع");
 await seed();
 await t("التاجر يشغّل خصم 20% يوم", () => assertSucceeds(setDoc(doc(as("m1"), "quickDeals/m1"), quick())));
