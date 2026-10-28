@@ -1,6 +1,7 @@
 // واجهة المنتجات/الخدمات/المنيو: إدارة التاجر + عرضها في صفحة المتجر + السلة والطلب على واتساب + سجل الطلبات.
 import {
-  collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getDocsFromServer, serverTimestamp, Timestamp, writeBatch
+  collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getDocsFromServer, serverTimestamp, Timestamp, writeBatch,
+  disableNetwork, enableNetwork
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openStore } from "./app.js";
 import * as X from "./logic.js";
@@ -8,8 +9,10 @@ import { cropImage } from "./cropper.js";
 import {
   KINDS, catalogOf, vatOf, baseKindOf, kindOrder, limitOf, slotId, passCost, riyal, itemVisible, itemPaidUntil, itemGrace,
   vatSplit, fmt, orderCode, orderText, ORDER_STATUS, validVatNumber, statusText, orderSteps, PAY, MODES, deliveryInfo, payMethods, feat,
-  DEAL_TYPES, DEAL_SCOPES, storeDeals, dealPrice, cartTotals
+  DEAL_TYPES, DEAL_SCOPES, storeDeals, dealPrice, cartTotals,
+  STORE_CANCEL_REASONS, CUST_CANCEL_REASONS, noshowOf, blockedUntil, noshowCount
 } from "./catalog.js";
+import { play, soundOn, setSound, unlock } from "./sounds.js";
 const F = (k) => feat(state.config, k); // مزايا الطلب من الأدمن
 
 const { esc, cld } = X;
@@ -31,15 +34,31 @@ export function watchMerchantCatalog(uid, onChange) {
   M.unsubs.push(onSnapshot(query(collection(db, "orders"), where("storeId", "==", uid)), (s) => {
     const prev = new Map(M.orders.map((o) => [o.id, o]));
     M.orders = s.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt)); fire();
-    // تنبيهات المحل: طلب جديد / العميل وصل بسيارته
-    if (M.ordersLoaded) for (const o of M.orders) {
+    loadCustStats(M.orders.filter((o) => ["sent", "received", "ready", "delivering"].includes(o.status)).map((o) => o.customerUid));
+    const S = F("sounds");
+    if (!M.ordersLoaded) {
+      // أول تحميل: تنبيه واحد بعدد الطلبات اللي فعلاً تنتظرك (القديمة ما نعيد تنبيهها)
+      const waiting = M.orders.filter((o) => o.status === "sent").length;
+      if (waiting) { toast(waiting === 1 ? "🛎️ عندك طلب جديد" : `🛎️ عندك ${waiting} طلبات جديدة`, true); if (S) play("new"); }
+    } else for (const o of M.orders) {
       const p = prev.get(o.id);
-      if (!p) toast(`🧾 طلب جديد #${o.code} من ${o.customerName || "عميل"}`, true);
-      else if (o.arrivedAt && !p.arrivedAt) toast(`🚗 العميل وصل — طلب #${o.code}${o.car ? " • " + o.car : ""}`, true);
+      if (!p) { if (o.status === "sent") { toast(`🛎️ طلب جديد #${o.code} من ${o.customerName || "عميل"}`, true); if (S) play("new"); } }
+      else if (o.arrivedAt && !p.arrivedAt) { toast(`🚗 العميل وصل — طلب #${o.code}${o.car ? " • " + o.car : ""}${o.spot ? " • " + o.spot : ""}`, true); if (S) play("arrive"); }
+      else if (o.cancelReq && !p.cancelReq) { toast(`🙋 العميل يطلب إلغاء #${o.code}: ${o.cancelReq}`, true); if (S) play("cancel"); }
+      else if (o.status === "cancelled" && p.status !== "cancelled" && o.cancelBy !== "store") { toast(`✕ العميل ألغى طلب #${o.code}`, true); if (S) play("cancel"); }
     }
     M.ordersLoaded = true;
     if (ordersOpen && !$("sheet").classList.contains("hidden")) M.onOrders?.();
   }, () => {}));
+}
+// عدّاد «ما انستلم» لكل عميل (يظهر للمحل جنب الطلب)
+const custStats = new Map();
+function loadCustStats(uids) {
+  if (!F("noshow")) return;
+  [...new Set(uids.filter(Boolean))].filter((u) => !custStats.has(u)).forEach((u) => {
+    custStats.set(u, null);
+    getDoc(doc(db, "custStats", u)).then((d) => { custStats.set(u, d.exists() ? d.data() : null); if (d.exists() && ordersOpen) M.onOrders?.(); }).catch(() => {});
+  });
 }
 
 /** بطاقة «منتجاتي» في لوحة التاجر */
@@ -56,6 +75,7 @@ export function catalogPanelHtml(category) {
       return `<span style="background:${KINDS[k].bg};color:${KINDS[k].color}">${KINDS[k].icon} ${KINDS[k].label}: <b>${n}</b>${lim ? `/${lim}` : ""}</span>`; }).join("")}</div>
     <div class="row2"><button class="btn dir" id="ccManage">🛍️ إدارة منتجاتي</button>${c.orderEnabled ? `<button class="btn call" id="ccOrders">🧾 الطلبات${newOrders ? ` <span class="nb">${newOrders}</span>` : ""}</button>` : ""}</div>
     ${M.items.length && F("quickDeal") && F("dealDiscount") ? `<button class="btn ghost" id="ccQuick">⚡ خصم سريع على المنيو</button>` : ""}
+    ${c.orderEnabled && F("sounds") ? `<button class="btn ghost" id="ccSound">${soundOn() ? "🔔 صوت الطلبات: شغّال" : "🔕 صوت الطلبات: مكتوم"}</button>` : ""}
   </div>`;
 }
 export function bindCatalogPanel(ctx) {
@@ -63,6 +83,11 @@ export function bindCatalogPanel(ctx) {
   $("ccManage")?.addEventListener("click", () => openManager());
   $("ccOrders")?.addEventListener("click", openStoreOrders);
   $("ccQuick")?.addEventListener("click", openQuickDeal);
+  $("ccSound")?.addEventListener("click", (e) => {
+    const on = !soundOn(); setSound(on); if (on) { unlock(); play("new"); }
+    e.currentTarget.textContent = on ? "🔔 صوت الطلبات: شغّال" : "🔕 صوت الطلبات: مكتوم";
+    toast(on ? "🔔 بتسمع صوت لما يوصلك طلب (خلّ الصفحة مفتوحة)" : "🔕 كتمنا صوت الطلبات", true);
+  });
 }
 /** أصناف التاجر (لربط العروض بالمنيو) */
 export async function loadMyItems(uid) {
@@ -289,9 +314,10 @@ const ORDER_GROUPS = [
   { k: "prep", t: "👨‍🍳 جاري التجهيز", st: ["received"], open: true },
   { k: "ready", t: "🛍️ جاهز / 🚚 بالطريق", st: ["ready", "delivering"], open: true },
   { k: "done", t: "✅ المنتهية", st: ["done"], open: false },
-  { k: "cancelled", t: "✕ الملغية", st: ["cancelled"], open: false },
+  { k: "cancelled", t: "✕ الملغية / ما انستلمت", st: ["cancelled", "noshow"], open: false },
 ];
 const groupOpen = new Map();
+const REMIND_MIN = 30; // تذكير المحل لو الطلب جاهز وما انستلم
 function openStoreOrders() {
   ordersOpen = true;
   const draw = () => {
@@ -306,17 +332,24 @@ function openStoreOrders() {
         return `<details class="ogrp g-${g.k}" data-g="${g.k}"${open ? " open" : ""}><summary>${g.t} <span class="cnt">${os.length}</span></summary>${os.map((o) => orderCard(o, true)).join("")}</details>`;
       }).join("") : `<div class="empty-inline">ما وصلتك طلبات للحين</div>`}</div>`);
     $("sheetBody").scrollTop = scroll;
-    $("sheetBody").querySelectorAll("details[data-g]").forEach((d) => d.addEventListener("toggle", () => groupOpen.set(d.dataset.g, d.open)));
-    $("sheetBody").querySelectorAll("[data-os]").forEach((b) => b.onclick = () => {
-      const o = M.orders.find((x) => x.id === b.dataset.oid), st = b.dataset.os;
+    const b = $("sheetBody");
+    b.querySelectorAll("details[data-g]").forEach((d) => d.addEventListener("toggle", () => groupOpen.set(d.dataset.g, d.open)));
+    b.querySelectorAll("[data-os]").forEach((x) => x.onclick = () => {
+      const o = M.orders.find((y) => y.id === x.dataset.oid), st = x.dataset.os;
       if (st === "received") return F("eta") ? pickEta(o) : setStatus(o, "received");
-      if (st === "cancelled" && !confirm("إلغاء الطلب؟ بلّغ العميل على واتساب بعد.")) return;
-      setStatus(o, st);
+      if (st === "cancelled") return storeCancel(o);
+      if (st === "noshow") return markNoshow(o);
+      setStatus(o, st, st === "ready" ? { readyAt: serverTimestamp() } : {});
+    });
+    b.querySelectorAll("[data-creq]").forEach((x) => x.onclick = () => {
+      const o = M.orders.find((y) => y.id === x.dataset.oid);
+      if (x.dataset.creq === "ok") setStatus(o, "cancelled", { cancelReqAns: "approved", cancelBy: "customer", cancelReason: o.cancelReq || "" });
+      else setStatus(o, o.status, { cancelReqAns: "rejected" });
     });
   };
   const setStatus = async (o, st, extra = {}) => {
     try { await updateDoc(doc(db, "orders", o.id), { status: st, updatedAt: serverTimestamp(), ...extra }); Object.assign(o, { status: st }, extra); ordersOpen = true; draw(); }
-    catch (e) { console.error(e); toast("تعذّر التحديث"); }
+    catch (e) { console.error(e); toast("تعذّر التحديث"); ordersOpen = true; draw(); }
   };
   // استلام الطلب: المحل يختار وقت تقريبي للتجهيز
   const pickEta = (o) => {
@@ -328,95 +361,194 @@ function openStoreOrders() {
     $("sheetBody").querySelectorAll("[data-eta]").forEach((x) => x.onclick = () => setStatus(o, "received", { etaAt: Timestamp.fromMillis(Date.now() + +x.dataset.eta * 60000) }));
     $("etaSkip").onclick = () => setStatus(o, "received");
   };
+  // إلغاء من المحل: سبب من القائمة (يوصل للعميل)
+  const storeCancel = (o) => {
+    ordersOpen = false; let reason = "";
+    const d = () => {
+      showSheet(`<div class="pad form"><div class="section-title">✕ إلغاء الطلب #${esc(o.code)}</div>
+        <p class="desc tr">اختر السبب — يوصل للعميل في «طلباتي».</p>
+        <div class="chips wrap">${STORE_CANCEL_REASONS.map((r) => `<button class="chip${reason === r ? " on" : ""}" data-r="${esc(r)}">${esc(r)}</button>`).join("")}</div>
+        <input id="crTxt" class="input" maxlength="120" placeholder="أو اكتب سبب ثاني" value="${STORE_CANCEL_REASONS.includes(reason) ? "" : esc(reason)}">
+        <button class="btn danger big" id="crGo">✕ ألغِ الطلب</button><button class="btn ghost" id="crBack">‹ رجوع</button></div>`);
+      $("sheetBody").querySelectorAll("[data-r]").forEach((x) => x.onclick = () => { reason = x.dataset.r; d(); });
+      $("crTxt").oninput = (e) => { reason = e.target.value; };
+      $("crBack").onclick = () => { ordersOpen = true; draw(); };
+      $("crGo").onclick = () => { if (!reason.trim()) return toast("اختر سبب الإلغاء"); setStatus(o, "cancelled", { cancelBy: "store", cancelReason: reason.trim().slice(0, 120) }); };
+    };
+    d();
+  };
+  // 🚫 ما انستلم: الطلب + سجل + عدّاد العميل في عملية وحدة
+  const markNoshow = async (o) => {
+    if (!confirm(`العميل ما استلم طلب #${o.code}؟ بينحسب عليه، ولو تكرر يتوقف عن الطلب مؤقتاً.`)) return;
+    try {
+      const ns = noshowOf(state.config), now = Date.now();
+      const cur = (await getDoc(doc(db, "custStats", o.customerUid)).catch(() => null))?.data?.() || null;
+      const fresh = !cur || X.ms(cur.windowStart) <= now - ns.days * 864e5 + 60000;
+      const count = fresh ? 1 : (cur.count || 0) + 1;
+      const stats = { count, windowStart: fresh ? serverTimestamp() : cur.windowStart, lastOrder: o.id, updatedAt: serverTimestamp() };
+      if (count >= ns.max) stats.blockedAt = serverTimestamp(); else if (cur?.blockedAt) stats.blockedAt = cur.blockedAt;
+      const wb = writeBatch(db);
+      wb.update(doc(db, "orders", o.id), { status: "noshow", updatedAt: serverTimestamp() });
+      wb.set(doc(db, "noshows", o.id), { orderId: o.id, customerUid: o.customerUid, storeId: M.uid, at: serverTimestamp() });
+      wb.set(doc(db, "custStats", o.customerUid), stats);
+      await wb.commit();
+      custStats.delete(o.customerUid);
+      toast(count >= ns.max ? `🚫 سجّلناه — العميل وصل ${count} طلبات ما استلمها وتوقف عن الطلب ${ns.blockDays} أيام` : "🚫 سجّلنا إن الطلب ما انستلم", true);
+    } catch (e) { console.error(e); toast("تعذّر التسجيل — حدّث الصفحة وجرّب"); }
+  };
   M.onOrders = draw; // تتحدّث لحظياً لو وصل طلب جديد
   draw();
+  // تذكير «جاهز من X دقيقة» يتحدّث كل دقيقة والشاشة مفتوحة
+  clearInterval(M.tick); M.tick = setInterval(() => { if (!ordersOpen || $("sheet").classList.contains("hidden")) { clearInterval(M.tick); return; } if (M.orders.some((o) => o.status === "ready")) draw(); }, 60000);
 }
 const etaText = (o) => { const t = X.ms(o.etaAt); if (!t || !["received"].includes(o.status)) return ""; const m = Math.round((t - Date.now()) / 60000);
   return m > 0 ? `⏱️ ${o.mode === "delivery" ? "يطلع للتوصيل" : "جاهز"} خلال ~${m} دقيقة` : `⏱️ ${o.mode === "delivery" ? "بيطلع" : "بيكون جاهز"} قريب`; };
 function stepper(o) {
-  if (o.status === "cancelled") return "";
-  const steps = orderSteps(o), at = Math.max(0, steps.findIndex(([k]) => k === o.status));
+  if (["cancelled", "noshow"].includes(o.status)) return "";
+  const steps = orderSteps(o);
+  let at = Math.max(0, steps.findIndex(([k]) => k === o.status));
+  if (o.mode === "curbside" && o.status === "ready" && o.arrivedAt) at = steps.findIndex(([k]) => k === "arrived");
+  if (o.status === "done") at = steps.length - 1;
   return `<div class="ostep">${steps.map(([k, l], i) => `<div class="${i <= at ? "on" : ""}${i === at ? " cur" : ""}"><i></i><small>${l}</small></div>`).join("")}</div>`;
 }
+const minsSince = (t) => Math.floor((Date.now() - (X.ms(t) || 0)) / 60000);
 function orderCard(o, asStore) {
-  const st = ORDER_STATUS[o.status] || ORDER_STATUS.sent, when = X.ms(o.createdAt), del = o.mode === "delivery";
+  const st = ORDER_STATUS[o.status] || ORDER_STATUS.sent, when = X.ms(o.createdAt), del = o.mode === "delivery", curb = o.mode === "curbside";
+  const live = ["sent", "received", "ready", "delivering"].includes(o.status);
+  const ns = F("noshow");
   const next = asStore ? ({
     sent: [["received", "👍 استلمته"], ["cancelled", "✕ إلغاء"]],
-    received: [[del ? "delivering" : "ready", del ? "🚚 طلع للتوصيل" : "🛍️ جاهز للاستلام"], ["cancelled", "✕ إلغاء"]],
-    ready: [["done", o.mode === "curbside" ? "✅ تم التسليم" : "✅ تم الاستلام"]], delivering: [["done", "✅ تم التوصيل"]],
+    received: [[del ? "delivering" : "ready", del ? "🚚 طلع للتوصيل" : "🛍️ جاهز للاستلام"], ["cancelled", "✕ إلغاء"], ...(ns ? [["noshow", "🚫 ما انستلم"]] : [])],
+    ready: [["done", curb ? "✅ سلّمته" : "✅ تم الاستلام"], ["cancelled", "✕ إلغاء"], ...(ns ? [["noshow", "🚫 ما انستلم"]] : [])],
+    delivering: [["done", "✅ تم التوصيل"], ["cancelled", "✕ إلغاء"], ...(ns ? [["noshow", "🚫 ما انستلم"]] : [])],
   }[o.status] || []) : (o.status === "sent" ? [["cancelled", "✕ إلغاء الطلب"]] : []);
   const store = !asStore ? state.stores.find((x) => x.uid === o.storeId) : null;
   const wa = store ? X.waDigits(store.phone || store.branches?.[0]?.phone || "") : "";
   const rated = !asStore && myRatings.has(o.id);
+  const nsc = asStore && ns && live ? noshowCount(custStats.get(o.customerUid), state.config) : 0;
+  const readyMin = o.status === "ready" ? minsSince(o.readyAt || o.updatedAt) : 0;
+  const custWa = asStore ? X.waDigits(o.customerPhone || "") : "";
+  const pendingReq = o.cancelReq && !o.cancelReqAns && live;
   return `<div class="ocard s-${esc(o.status || "sent")}${["sent"].includes(o.status) && asStore ? " new" : ""}"><div class="oc-top"><b>#${esc(o.code)}</b><span class="pill ${st.cls}">${asStore ? st.t : statusText(o)}</span></div>
     <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</div>
+    ${nsc ? `<div class="oc-warn">⚠️ هذا العميل عنده ${nsc === 1 ? "طلب" : nsc + " طلبات"} ما استلمها</div>` : ""}
     ${stepper(o)}${F("eta") && etaText(o) ? `<div class="oc-eta">${etaText(o)}</div>` : ""}
     <div class="oc-items">${(o.items || []).map((i) => `${i.qty} × ${esc(i.name)}`).join("، ")}</div>
     <div class="oc-tot">${MODES[o.mode] || "🏃 استلام"} • <b>${fmt(o.total)} ر.س</b>${o.pay ? ` • ${PAY[o.pay]?.icon} ${PAY[o.pay]?.label}` : ""}${o.note ? ` • 📝 ${esc(o.note)}` : ""}</div>
-    ${o.mode === "curbside" && o.car ? `<div class="oc-tot">🚗 ${esc(o.car)}</div>` : ""}
-    ${asStore && o.mode === "curbside" && o.arrivedAt && !["done", "cancelled"].includes(o.status) ? `<div class="oc-arrived">🚗 العميل وصل عند المحل!</div>` : ""}
-    ${!asStore && o.mode === "curbside" && ["received", "ready"].includes(o.status) ? (o.arrivedAt ? `<div class="oc-eta">🚗 بلّغنا المحل إنك وصلت</div>` : `<button class="btn dir" data-arrive="${esc(o.id)}">🚗 وصلت</button>`) : ""}
-    ${!asStore && ["received", "ready", "delivering"].includes(o.status) ? `<div class="oc-note">المحل استلم طلبك وما يمكن إلغاؤه${wa ? ` — <a href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 تواصل مع المحل</a>` : ""}</div>` : ""}
+    ${asStore && curb && (o.car || o.spot) ? `<div class="oc-tot">🚗 ${esc(o.car || "")}${o.spot ? ` • 📍 ${esc(o.spot)}` : ""}</div>` : ""}
+    ${asStore && curb && o.arrivedAt && live ? `<div class="oc-arrived">🚗 العميل وصل عند المحل!${o.spot ? ` — ${esc(o.spot)}` : ""}</div>` : ""}
+    ${!asStore && curb && live ? curbBox(o) : ""}
+    ${pendingReq ? (asStore ? `<div class="oc-req">🙋 العميل يطلب الإلغاء: <b>${esc(o.cancelReq)}</b>
+        <div class="oc-act"><button class="chip" data-creq="ok" data-oid="${esc(o.id)}">✅ وافق وألغِ</button><button class="chip" data-creq="no" data-oid="${esc(o.id)}">✕ ارفض (الطلب جاهز)</button></div></div>`
+      : `<div class="oc-req">⏳ أرسلت طلب إلغاء (${esc(o.cancelReq)}) — بانتظار رد المحل</div>`) : ""}
+    ${!asStore && o.cancelReqAns === "rejected" && live ? `<div class="oc-note">✕ المحل ما قدر يلغيه — الطلب جاهز أو تجهّز${wa ? ` • <a href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 كلّم المحل</a>` : ""}</div>` : ""}
+    ${o.status === "cancelled" && o.cancelReason ? `<div class="oc-note">${o.cancelBy === "store" ? "سبب إلغاء المحل" : "سبب الإلغاء"}: ${esc(o.cancelReason)}</div>` : ""}
+    ${!asStore && o.status === "noshow" ? `<div class="oc-note">المحل سجّل إن الطلب ما انستلم. لو فيه خطأ تواصل مع المحل${wa ? ` — <a href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 واتساب</a>` : ""}</div>` : ""}
+    ${asStore && readyMin >= REMIND_MIN ? `<div class="oc-remind">⏰ جاهز من ${readyMin} دقيقة وما انستلم${custWa ? ` — <a href="https://wa.me/${custWa}?text=${encodeURIComponent(`هلا ${o.customerName || ""} 👋 طلبك #${o.code} من ${o.storeName} جاهز وينتظرك 🛍️`)}" target="_blank" rel="noopener">💬 ذكّره على واتساب</a>` : ""}</div>` : ""}
+    ${!asStore && ["received", "ready", "delivering"].includes(o.status) && !o.cancelReq ? `<div class="oc-note">المحل استلم طلبك${wa ? ` — <a href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 تواصل مع المحل</a>` : ""}</div>` : ""}
     ${asStore && o.mode === "delivery" && o.location ? `<a class="oc-map" href="https://maps.google.com/?q=${o.location.lat},${o.location.lng}" target="_blank" rel="noopener">📍 موقع العميل</a>` : ""}
-    ${next.length || !asStore ? `<div class="oc-act">${next.map(([s, l]) => `<button class="chip" data-oid="${esc(o.id)}" data-os="${s}">${l}</button>`).join("")}
+    ${next.length || !asStore ? `<div class="oc-act">${next.map(([s, l]) => `<button class="chip${s === "noshow" ? " warn" : ""}" data-oid="${esc(o.id)}" data-os="${s}">${l}</button>`).join("")}
+      ${!asStore && ["received", "ready", "delivering"].includes(o.status) && !o.cancelReq ? `<button class="chip" data-creqask="${esc(o.id)}">🙋 طلب إلغاء</button>` : ""}
       ${!asStore && o.status === "done" && F("ratings") ? (rated ? `<span class="pill">⭐ شكراً على تقييمك</span>` : `<button class="chip" data-rate="${esc(o.id)}">⭐ قيّم طلبك</button>`) : ""}
       ${!asStore ? `<button class="chip" data-again="${esc(o.id)}">↻ اطلب نفسه</button>` : ""}</div>` : ""}
   </div>`;
 }
+/** 🚗 خانة الاستلام من السيارة داخل بطاقة المتابعة (العميل) */
+function curbBox(o) {
+  const canArrive = ["received", "ready"].includes(o.status);
+  if (o.arrivedAt) return `<div class="curb-box done"><b>🚗 بلّغنا المحل إنك وصلت — جايك 👍</b><small>${esc(o.car || "")}${o.spot ? ` • 📍 ${esc(o.spot)}` : ""}</small></div>`;
+  return `<div class="curb-box${o.status === "ready" ? " hot" : ""}">
+    <b>${o.status === "ready" ? "🚗 طلبك جاهز! أول ما توقف عند المحل اضغط «وصلت»" : o.status === "received" ? "🚗 المحل يجهّز طلبك — لو وصلت بدري اضغط «وصلت»" : "🚗 استلام من السيارة"}</b>
+    <small>سيارتك: ${esc(o.car || "—")}${o.spot ? ` • 📍 ${esc(o.spot)}` : ""} <button class="link" data-curbedit="${esc(o.id)}">✎ عدّل</button></small>
+    ${canArrive ? `<button class="btn dir" data-arrive="${esc(o.id)}">🚗 وصلت</button>` : ""}</div>`;
+}
 
 // ----- طلباتي (تتحدّث لحظياً + تنبيه لما تتغيّر الحالة) -----
-const MY = { uid: null, unsub: null, list: [], loaded: false, open: false, err: "" };
+const MY = { uid: null, unsub: null, list: [], loaded: false, open: false, err: "", at: 0, stats: null };
 const myRatings = new Set();
 export function watchMyOrders() {
   // المفتاح يشمل حالة الخدمة: لو الإعدادات وصلت متأخرة نبدأ المتابعة بعدها
   const uid = state.user?.uid && cat().enabled && cat().orderEnabled ? state.user.uid : null;
   if (MY.uid === uid) return;
+  subscribeMy(uid);
+}
+function subscribeMy(uid) {
   MY.unsub?.(); MY.unsub = null; MY.uid = uid; MY.list = []; MY.loaded = false; myRatings.clear();
   if (!uid) return;
   getDocs(query(collection(db, "ratings"), where("uid", "==", uid))).then((r) => r.docs.forEach((d) => myRatings.add(d.id))).catch(() => {});
-  MY.unsub = onSnapshot(myOrdersQuery(uid), (snap) => applyMyOrders(snap.docs), (e) => { console.warn(e); MY.err = e.code || e.message || "خطأ"; if (MY.open) drawMyOrders(); });
+  MY.unsub = onSnapshot(myOrdersQuery(uid), (snap) => applyMyOrders(snap.docs), (e) => {
+    console.warn(e); MY.err = e.code || e.message || "خطأ"; if (MY.open) drawMyOrders();
+    // الاتصال المباشر انقطع: نعيد الاشتراك بعد شوي
+    setTimeout(() => { if (MY.uid === uid) { const keep = MY.list; subscribeMy(uid); MY.list = keep; } }, 4000);
+  });
 }
 const myOrdersQuery = (uid) => query(collection(db, "orders"), where("customerUid", "==", uid));
+const sig = (o) => [o.status, X.ms(o.etaAt) || "", X.ms(o.arrivedAt) || "", o.cancelReq || "", o.cancelReqAns || "", o.car || "", o.spot || ""].join("|");
 function applyMyOrders(docs) {
-  const prev = new Map(MY.list.map((o) => [o.id, o.status + (o.etaAt ? X.ms(o.etaAt) : "")]));
+  const prev = new Map(MY.list.map((o) => [o.id, sig(o)]));
   const prevStatus = new Map(MY.list.map((o) => [o.id, o.status]));
   MY.list = docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt));
-  const changed = !MY.loaded || MY.list.length !== prev.size || MY.list.some((o) => prev.get(o.id) !== o.status + (o.etaAt ? X.ms(o.etaAt) : ""));
+  MY.at = Date.now();
+  const changed = !MY.loaded || MY.list.length !== prev.size || MY.list.some((o) => prev.get(o.id) !== sig(o));
   if (MY.loaded) for (const o of MY.list) {
     const was = prevStatus.get(o.id);
     if (was && was !== o.status && o.status !== "sent") toast(`🧾 طلبك #${o.code}: ${statusText(o)}`, true);
   }
   MY.loaded = true; MY.err = "";
-  if (MY.open && changed) drawMyOrders();
+  if (MY.open && changed) drawMyOrders(); else if (MY.open) stampMy();
 }
-// المتصفح بالجوال يوقف الاتصال المباشر لما يروح للخلفية: نسحب آخر حالة من السيرفر عند الرجوع وكل شوي والشاشة مفتوحة
-function refreshMyOrders() {
+// الجوال يوقف الاتصال المباشر لما الصفحة تروح للخلفية (مثلاً فتح واتساب)، والمكتبة أحياناً ما ترجع تتصل لحالها:
+// عند الرجوع نعيد الاتصال بالقوة ونسحب آخر حالة من السيرفر، وكل 10 ثواني والشاشة مفتوحة.
+let hiddenAt = 0, reconnecting = false;
+async function reconnect() {
+  if (reconnecting) return; reconnecting = true;
+  try { await disableNetwork(db); await enableNetwork(db); } catch {} finally { reconnecting = false; }
+}
+async function refreshMyOrders(force) {
   if (!MY.uid) return;
-  getDocsFromServer(myOrdersQuery(MY.uid)).then((s) => applyMyOrders(s.docs)).catch(() => {});
+  if (force) await reconnect();
+  try { const s = await getDocsFromServer(myOrdersQuery(MY.uid)); applyMyOrders(s.docs); }
+  catch { if (!force) { await reconnect(); getDocsFromServer(myOrdersQuery(MY.uid)).then((s) => applyMyOrders(s.docs)).catch(() => {}); } }
 }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refreshMyOrders(); });
-window.addEventListener("online", refreshMyOrders);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+  if (hiddenAt && Date.now() - hiddenAt > 5000) reconnect().then(() => refreshMyOrders());
+  else refreshMyOrders();
+});
+window.addEventListener("online", () => reconnect().then(() => refreshMyOrders()));
 let myPoll = null;
 export function openMyOrders() {
   if (!state.user) return;
   watchMyOrders(); MY.open = true;
+  loadMyStats();
   drawMyOrders(); refreshMyOrders();
   clearInterval(myPoll);
-  myPoll = setInterval(() => { if (!MY.open) { clearInterval(myPoll); myPoll = null; return; } if (document.visibilityState === "visible") refreshMyOrders(); }, 20000);
+  myPoll = setInterval(() => { if (!MY.open) { clearInterval(myPoll); myPoll = null; return; } if (document.visibilityState === "visible") refreshMyOrders(); }, 10000);
 }
+function loadMyStats() {
+  if (!state.user || !F("noshow")) return;
+  getDoc(doc(db, "custStats", state.user.uid)).then((d) => { MY.stats = d.exists() ? d.data() : null; }).catch(() => {});
+}
+function stampMy() { const el = $("myStamp"); if (el) el.textContent = MY.at ? `آخر تحديث ${new Date(MY.at).toLocaleTimeString("ar-SA-u-ca-gregory", { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : ""; }
 function drawMyOrders() {
   const who = state.user?.email || X.toLocalPhone(state.profile?.phone || "") || "";
   const list = MY.list;
-  if ($("sheet").classList.contains("hidden") && MY.open && MY.loaded) { /* انقفلت */ }
+  const scroll = $("sheet").classList.contains("hidden") ? 0 : $("sheetBody").scrollTop;
   showSheet(`<div class="pad my-orders"><div class="section-title">🧾 طلباتي</div>
+    <div class="my-live"><span>● مباشر</span><small id="myStamp"></small><button class="link" id="myRefresh">↻ تحديث</button></div>
     ${MY.err ? `<div class="err">تعذّر تحميل طلباتك (${esc(MY.err)}). حدّث الصفحة وجرّب مرة ثانية.</div>` : ""}
     ${!MY.loaded && !MY.err ? `<div class="spinner"></div>` : list.length ? list.slice(0, 50).map((o) => orderCard(o, false)).join("") : MY.err ? "" : `<div class="empty-inline">ما طلبت شي للحين<br><small>ادخل صفحة أي متجر واطلب منه 🛍️</small></div>`}
     ${who ? `<small class="hint">الطلبات المحفوظة لحسابك: ${esc(who)} — الطلبات من حساب ثاني ما تطلع هنا.</small>` : ""}</div>`);
+  $("sheetBody").scrollTop = scroll;
+  stampMy();
   const b = $("sheetBody");
+  $("myRefresh").onclick = () => { $("myRefresh").textContent = "…"; refreshMyOrders(true).finally(() => { const r = $("myRefresh"); if (r) r.textContent = "↻ تحديث"; }); };
   b.querySelectorAll("[data-os]").forEach((x) => x.onclick = async () => {
-    if (!confirm("إلغاء الطلب؟ بلّغ المحل على واتساب بعد.")) return;
-    try { await updateDoc(doc(db, "orders", x.dataset.oid), { status: "cancelled", updatedAt: serverTimestamp() }); } catch { toast("ما تقدر تلغيه — المحل استلم طلبك 👍"); refreshMyOrders(); }
+    if (!confirm("إلغاء الطلب؟")) return;
+    try { await updateDoc(doc(db, "orders", x.dataset.oid), { status: "cancelled", cancelBy: "customer", updatedAt: serverTimestamp() }); } catch { toast("ما تقدر تلغيه — المحل استلم طلبك 👍 تقدر ترسل «طلب إلغاء»"); refreshMyOrders(true); }
   });
+  b.querySelectorAll("[data-creqask]").forEach((x) => x.onclick = () => askCancel(list.find((y) => y.id === x.dataset.creqask)));
+  b.querySelectorAll("[data-curbedit]").forEach((x) => x.onclick = () => editCurb(list.find((y) => y.id === x.dataset.curbedit)));
   b.querySelectorAll("[data-again]").forEach((x) => x.onclick = () => {
     const o = list.find((y) => y.id === x.dataset.again), cart = cartOf(o.storeId);
     (o.items || []).forEach((i) => { cart[i.id] = { ...i }; }); saveCarts();
@@ -429,9 +561,45 @@ function drawMyOrders() {
     const wa = store ? X.waDigits(store.phone || store.branches?.[0]?.phone || "") : "";
     const w = wa ? window.open("", "_blank") : null;
     try { await updateDoc(doc(db, "orders", o.id), { arrivedAt: serverTimestamp(), updatedAt: serverTimestamp() }); } catch (e) { console.warn(e); }
-    if (w) w.location = `https://wa.me/${wa}?text=${encodeURIComponent(`وصلت عند المحل 🚗 ${o.car || ""}\nطلب #${o.code}`)}`;
+    if (w) w.location = `https://wa.me/${wa}?text=${encodeURIComponent(`وصلت عند المحل 🚗 ${o.car || ""}${o.spot ? " — " + o.spot : ""}\nطلب #${o.code}`)}`;
     toast("بلّغنا المحل إنك وصلت 🚗", true);
   });
+}
+/** 🙋 طلب إلغاء (بعد ما يستلمه المحل) */
+function askCancel(o) {
+  MY.open = false; let reason = "";
+  const d = () => {
+    showSheet(`<div class="pad form"><div class="section-title">🙋 طلب إلغاء #${esc(o.code)}</div>
+      <p class="desc tr">المحل استلم طلبك ويمكن بدأ يجهّزه، فالإلغاء يحتاج موافقته. وش السبب؟</p>
+      <div class="chips wrap">${CUST_CANCEL_REASONS.map((r) => `<button class="chip${reason === r ? " on" : ""}" data-r="${esc(r)}">${esc(r)}</button>`).join("")}</div>
+      <input id="caTxt" class="input" maxlength="200" placeholder="أو اكتب السبب" value="${CUST_CANCEL_REASONS.includes(reason) ? "" : esc(reason)}">
+      <button class="btn danger big" id="caGo">أرسل طلب الإلغاء</button><button class="btn ghost" id="caBack">‹ رجوع</button></div>`);
+    $("sheetBody").querySelectorAll("[data-r]").forEach((x) => x.onclick = () => { reason = x.dataset.r; d(); });
+    $("caTxt").oninput = (e) => { reason = e.target.value; };
+    $("caBack").onclick = () => { MY.open = true; drawMyOrders(); };
+    $("caGo").onclick = async () => {
+      if (!reason.trim()) return toast("اختر السبب");
+      try { await updateDoc(doc(db, "orders", o.id), { cancelReq: reason.trim().slice(0, 200), cancelReqAt: serverTimestamp(), updatedAt: serverTimestamp() }); toast("انرسل طلب الإلغاء للمحل ⏳", true); }
+      catch (e) { console.warn(e); toast("تعذّر الإرسال — يمكن الطلب انتهى"); }
+      MY.open = true; drawMyOrders(); refreshMyOrders();
+    };
+  };
+  d();
+}
+/** ✎ وصف السيارة + وين واقف */
+function editCurb(o) {
+  MY.open = false;
+  showSheet(`<div class="pad form"><div class="section-title">🚗 سيارتك</div>
+    <label class="label">وصف السيارة</label><input id="cbCar" class="input" maxlength="60" value="${esc(o.car || "")}" placeholder="مثال: كامري بيضاء">
+    <label class="label">وين واقف؟ (اختياري)</label><input id="cbSpot" class="input" maxlength="60" value="${esc(o.spot || "")}" placeholder="مثال: عند الباب الجانبي">
+    <button class="btn dir big" id="cbGo">حفظ</button><button class="btn ghost" id="cbBack">‹ رجوع</button></div>`);
+  $("cbBack").onclick = () => { MY.open = true; drawMyOrders(); };
+  $("cbGo").onclick = async () => {
+    const car = $("cbCar").value.trim().slice(0, 60), spot = $("cbSpot").value.trim().slice(0, 60);
+    try { await updateDoc(doc(db, "orders", o.id), { car, spot, updatedAt: serverTimestamp() }); try { localStorage.setItem("hayyna_car", car); } catch {} toast("انحفظ 👍", true); }
+    catch (e) { console.warn(e); toast("تعذّر الحفظ"); }
+    MY.open = true; drawMyOrders(); refreshMyOrders();
+  };
 }
 export const myOrdersClosed = () => { MY.open = false; ordersOpen = false; };
 
@@ -594,6 +762,8 @@ function openCheckout(sid) {
   const branches = s.branches || [];
   const pays = payMethods(s), curb = s.curbside && F("curbside");
   let savedCar = ""; try { savedCar = localStorage.getItem("hayyna_car") || ""; } catch {}
+  let myStats = null;
+  if (state.user && F("noshow")) getDoc(doc(db, "custStats", state.user.uid)).then((d) => { myStats = d.exists() ? d.data() : null; if (myStats && blockedUntil(myStats, state.config) && $("coSend")) draw(); }).catch(() => {});
   const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: branches[0]?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null };
   const draw = () => {
     if (!Object.values(cart).length) { openStore(sid, false); return; }
@@ -610,7 +780,7 @@ function openCheckout(sid) {
       ${s.delivery || curb ? `<div class="modes">
         <button class="mode${f.mode === "pickup" ? " on" : ""}" data-mode="pickup"><b>🏃 استلام من المحل</b></button>
         ${curb ? `<button class="mode${f.mode === "curbside" ? " on" : ""}" data-mode="curbside"><b>🚗 استلام من السيارة</b><small>المحل يطلّع طلبك لسيارتك</small></button>` : ""}
-        ${di ? `<button class="mode${f.mode === "delivery" ? " on" : ""}" data-mode="delivery"><b>${esc(di.label)}</b>${s.deliveryMinOrder > 0 ? `<small>أقل طلب ${fmt(s.deliveryMinOrder)} ر.س</small>` : ""}</button>` : ""}
+        ${di ? `<button class="mode${f.mode === "delivery" ? " on" : ""}" data-mode="delivery"><b>${esc(di.label)}</b>${s.deliveryMinOrder > 0 ? `<small>أقل طلب ${fmt(s.deliveryMinOrder)} ر.س${sub < s.deliveryMinOrder ? ` — باقي ${fmt(s.deliveryMinOrder - sub)} ر.س عشان يصير متاح` : ""}</small>` : ""}</button>` : ""}
       </div>` : `<div class="hint-box">🏃 الطلب استلام من المحل — المحل ما يوفر توصيل</div>`}
       ${f.mode === "delivery" && di?.left > 0 && F("freeHint") ? `<div class="free-hint">💡 أضف <b>${fmt(di.left)} ر.س</b> وصار التوصيل مجاني 🎉
         <div class="fh-bar"><i style="width:${Math.min(100, (sub / di.freeOver) * 100).toFixed(0)}%"></i></div><small>${fmt(sub)} من ${fmt(di.freeOver)}</small>
@@ -628,10 +798,11 @@ function openCheckout(sid) {
         ${fee ? `<div><span>المجموع</span><b>${fmt(sub)}</b></div><div><span>🚚 التوصيل</span><b>${fmt(fee)}</b></div>` : f.mode === "delivery" ? `<div><span>🚚 التوصيل</span><b>مجاني 🎉</b></div>` : ""}
         ${vatNo ? `<div><span>المبلغ قبل الضريبة</span><b>${fmt(net)}</b></div><div><span>ضريبة القيمة المضافة ${vat.rate}%</span><b>${fmt(vatAmt)}</b></div>` : ""}
         <div class="tot"><span>💰 الإجمالي${vatNo ? " (شامل الضريبة)" : ""}</span><b>${fmt(total)} ر.س</b></div></div>
-      ${!minOk ? `<div class="err">أقل طلب للتوصيل ${fmt(s.deliveryMinOrder)} ر.س</div>` : ""}
+      ${!minOk ? `<div class="err">أقل طلب للتوصيل ${fmt(s.deliveryMinOrder)} ر.س — أضف ${fmt(s.deliveryMinOrder - sub)} ر.س أو اختر الاستلام</div>` : ""}
+      ${blockedUntil(myStats, state.config) ? `<div class="err">🚫 الطلب موقف عن حسابك مؤقتاً لين ${new Date(blockedUntil(myStats, state.config)).toLocaleDateString("ar-SA-u-ca-gregory")} بسبب طلبات سابقة ما انستلمت. لو فيه خطأ تواصل معنا.</div>` : ""}
       ${!state.user ? `<small class="hint">💡 سجّل دخولك عشان تنحفظ طلباتك وتقدر تعيدها بضغطة.</small>` : ""}
       <div id="coErr" class="err"></div>
-      <button class="btn wa big" id="coSend" ${minOk ? "" : "disabled"}>📨 أرسل الطلب على واتساب</button>
+      <button class="btn wa big" id="coSend" ${minOk && !blockedUntil(myStats, state.config) ? "" : "disabled"}>📨 أرسل الطلب على واتساب</button>
       <button class="btn ghost" id="coBack">‹ رجوع للمتجر</button></div>`);
     const keep = () => { f.name = $("coName").value; f.phone = $("coPhone").value; f.note = $("coNote").value; if ($("coBr")) f.branch = $("coBr").value; if ($("coCar")) f.car = $("coCar").value; };
     const b = $("sheetBody");

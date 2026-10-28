@@ -8,7 +8,7 @@ import {
   updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { EFFECTS, creditsOf, itemList, exclusiveOf, DEFAULT_ITEMS, rewardOf } from "/js/credits.js";
-import { KINDS, KIND_IDS, catalogOf, vatOf, baseKindOf, limitOf, itemVisible, itemPaidUp, riyal, ORDER_STATUS, FEATURES, feat, MODES, PAY } from "/js/catalog.js";
+import { KINDS, KIND_IDS, catalogOf, vatOf, baseKindOf, limitOf, itemVisible, itemPaidUp, riyal, ORDER_STATUS, FEATURES, feat, MODES, PAY, noshowOf, blockedUntil, noshowCount } from "/js/catalog.js";
 import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS } from "../config.js";
 
 const app = initializeApp(firebaseConfig);
@@ -21,7 +21,7 @@ const state = {
   offers: [], reports: [], statuses: [], pendingStores: [], feedback: [], config: {}, poi: [], verifs: [], referrals: [], names: {}, wallets: [], codes: null, itemsDraft: null, packsDraft: null,
   me: null, staff: [], log: [], logArea: "الكل", logQuery: "", logActor: "الكل", verifHist: [],
   inboxType: "الكل", showDone: false, offerQuery: "", offerFilter: "الكل", drafts: {},
-  items: [], passes: [], orders: [], ratings: [], rateFilter: "الكل", rateQuery: "", ordFilter: "الكل", ordStore: "", itemQuery: "", itemFilter: "الكل", storesAll: [], storeQuery: "", storeFilter: "الكل",
+  items: [], passes: [], orders: [], ratings: [], custStats: [], rateFilter: "الكل", rateQuery: "", ordFilter: "الكل", ordStore: "", itemQuery: "", itemFilter: "الكل", storesAll: [], storeQuery: "", storeFilter: "الكل",
 };
 const unsubs = [];
 const $ = (id) => document.getElementById(id);
@@ -119,6 +119,7 @@ function listen() {
   if (can("merchants")) {
     sub(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(500)), (sn) => { state.orders = parse(sn); });
     sub(collection(db, "ratings"), (sn) => { state.ratings = parse(sn).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0)); });
+    sub(collection(db, "custStats"), (sn) => { state.custStats = parse(sn); });
   }
   sub(doc(db, "config", "app"), (sn) => { state.config = sn.data() || {}; });
   // السجل: المالك يشوف الكل، والموظف عملياته (الترتيب على الجهاز)
@@ -724,7 +725,7 @@ function catalogPage() {
   const priceRow = (key, label, unit) => `<tr><td>${label}</td>
       <td><input type="number" id="ctp_${key}" min="0.05" step="0.05" value="${riyal(pr[key].priceH)}" style="width:90px"> ر.س ${unit}</td>
       <td><label class="switch"><input type="checkbox" id="ctpa_${key}" ${pr[key].active ? "checked" : ""}> مفعّل</label></td></tr>`;
-  const nav = owner ? [["ct-status", "الخدمة"], ["ct-feat", "مزايا الطلب"], ["ct-price", "التسعير"], ["ct-vat", "الضريبة"], ["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الطلبات"], ["ct-rates", "التقييمات"]]
+  const nav = owner ? [["ct-status", "الخدمة"], ["ct-feat", "مزايا الطلب"], ["ct-noshow", "ما انستلم"], ["ct-price", "التسعير"], ["ct-vat", "الضريبة"], ["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الطلبات"], ["ct-rates", "التقييمات"]]
     : [["ct-review", "المراجعة"], ["ct-all", "كل المنتجات"], ["ct-stats", "الطلبات"], ["ct-rates", "التقييمات"]];
   // جدول الطلبات: فلترة + توزيع حسب الاستلام والدفع
   const ordF = ord.filter((o) => (state.ordFilter === "الكل" || o.status === state.ordFilter) && (!state.ordStore || o.storeId === state.ordStore));
@@ -751,6 +752,23 @@ function catalogPage() {
     <div class="card">
       <p class="muted">كل ميزة تقدر توقفها لكل المنصة. لو وقفتها تختفي عند التاجر والزبون، والبيانات تبقى محفوظة.</p>
       ${Object.entries(FEATURES).map(([k, l]) => `<label class="switch"><input type="checkbox" data-feat="${k}" ${feat(cfg, k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}
+    </div>
+
+    <h2 id="ct-noshow">🚫 الطلبات اللي ما انستلمت</h2>
+    <div class="card">
+      <p class="muted">لما المحل يحط «ما انستلم» تنحسب على العميل. لو وصل للحد خلال الفترة، يتوقف عن الطلب مؤقتاً. المحل يشوف جنب الطلب الجديد «⚠️ عنده X طلبات ما استلمها».</p>
+      <div class="row" style="flex-wrap:wrap;gap:12px;align-items:center">
+        <label>الحد <input type="number" id="nsMax" min="1" max="20" value="${noshowOf(cfg).max}" style="width:70px"> طلبات</label>
+        <label>خلال <input type="number" id="nsDays" min="1" max="365" value="${noshowOf(cfg).days}" style="width:80px"> يوم</label>
+        <label>الإيقاف <input type="number" id="nsBlock" min="1" max="90" value="${noshowOf(cfg).blockDays}" style="width:70px"> أيام</label>
+        <button class="btn" id="nsSave">حفظ</button>
+      </div>
+      ${(() => { const list = (state.custStats || []).filter((x) => (x.count || 0) > 0).sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+        const nameOf = (uid) => { const o = state.orders.find((y) => y.customerUid === uid); return o ? `${o.customerName || ""} ${o.customerPhone || ""}`.trim() : uid; };
+        return list.length ? `<table class="tbl" style="margin-top:10px"><thead><tr><th>العميل</th><th>ما استلم</th><th>الحالة</th><th></th></tr></thead><tbody>
+          ${list.slice(0, 100).map((x) => { const until = blockedUntil(x, cfg); return `<tr><td>${esc(nameOf(x.id))}</td><td>${noshowCount(x, cfg)} <small class="muted">(من ${x.count})</small></td>
+            <td>${until ? `🚫 موقوف لين ${new Date(until).toLocaleDateString("ar-SA-u-ca-gregory")}` : "—"}</td><td><button class="btn" data-nsforgive="${esc(x.id)}">سامحه وصفّر</button></td></tr>`; }).join("")}</tbody></table>`
+          : `<p class="muted" style="margin-top:10px">ما فيه عملاء عليهم طلبات ما انستلمت 👍</p>`; })()}
     </div>
 
     <h2 id="ct-price">💰 تسعير ظهور المنتجات (بالنقاط من رصيد العروض)</h2>
@@ -835,6 +853,16 @@ function bindCatalog(c) {
     await updateDoc(doc(db, "config", "app"), { ["catalog.features." + x.dataset.feat]: x.checked });
     await audit(`${x.checked ? "تشغيل" : "إيقاف"}: ${FEATURES[x.dataset.feat]}`, "catalog");
   }, x.checked ? "شغّالة ✅" : "موقفة")));
+  c.querySelectorAll("[data-nsforgive]").forEach((b) => (b.onclick = () => {
+    if (!confirm("تصفير العدّاد وفك الإيقاف عن هذا العميل؟")) return;
+    run(async () => { await deleteDoc(doc(db, "custStats", b.dataset.nsforgive)); await audit("تصفير «ما انستلم» لعميل", "catalog", { type: "customer", id: b.dataset.nsforgive }); }, "تم ✅", "تصفير العدّاد");
+  }));
+  $("nsSave")?.addEventListener("click", () => run(async () => {
+    const v = (id, lo, hi, d) => Math.min(hi, Math.max(lo, parseInt($(id).value, 10) || d));
+    const ns = { max: v("nsMax", 1, 20, 3), days: v("nsDays", 1, 365, 60), blockDays: v("nsBlock", 1, 90, 7) };
+    await updateDoc(doc(db, "config", "app"), { "catalog.noshow": ns });
+    await audit("إعدادات «ما انستلم»", "catalog", {}, `${ns.max} طلبات خلال ${ns.days} يوم → إيقاف ${ns.blockDays} أيام`);
+  }, "انحفظ ✅"));
   c.querySelectorAll("[data-rdel]").forEach((b) => (b.onclick = () => {
     const r = state.ratings.find((x) => x.id === b.dataset.rdel);
     if (!confirm("حذف التقييم نهائياً؟")) return;

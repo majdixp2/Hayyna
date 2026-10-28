@@ -33,6 +33,7 @@ export function catalogOf(config) {
 export const FEATURES = {
   ratings: "⭐ التقييمات بعد الطلب", curbside: "🚗 الاستلام من السيارة", payChoice: "💳 اختيار طريقة الدفع عند الاستلام",
   freeHint: "💡 تلميح التوصيل المجاني", eta: "⏱️ الوقت التقريبي للتجهيز", superGlow: "🚀 لمعة صفحة عرض سوبر", crop: "✂️ قص الصور بيد التاجر",
+  noshow: "🚫 «ما انستلم» + إيقاف العميل المتكرر", sounds: "🔔 أصوات الطلبات عند المحل",
   dealDiscount: "🔥 عرض: خصم على المنيو", dealBundle: "🎁 عرض: باقة", dealBogo: "➕ عرض: اشترِ واحصل", dealPromo: "📣 عرض: إعلان قابل للطلب", quickDeal: "⚡ الخصم السريع من المنيو",
 };
 export const feat = (config, k) => (config?.catalog?.features || {})[k] !== false;
@@ -128,7 +129,25 @@ export function orderText(o) {
 export const ORDER_STATUS = {
   sent: { t: "📨 أُرسل", cls: "" }, received: { t: "👍 استلمه المحل", cls: "open" }, ready: { t: "🛍️ جاهز للاستلام", cls: "open" },
   delivering: { t: "🚚 جاري التوصيل", cls: "open" }, done: { t: "✅ تم", cls: "closed" }, cancelled: { t: "✕ ملغي", cls: "urgent" },
+  noshow: { t: "🚫 ما انستلم", cls: "urgent" },
 };
+/** أسباب إلغاء المحل / طلب الإلغاء من العميل */
+export const STORE_CANCEL_REASONS = ["العميل ما جاء", "العميل رفض الطلب", "نفدت الكمية", "ما قدرنا نتواصل مع العميل", "المحل مسكّر الحين"];
+export const CUST_CANCEL_REASONS = ["تأخر الطلب", "طلبت بالغلط", "غيّرت رأيي", "ما أقدر أجي"];
+/** إعدادات «ما انستلم» من الأدمن */
+export const noshowOf = (config) => ({ max: 3, days: 60, blockDays: 7, ...((config?.catalog || {}).noshow || {}) });
+/** العميل موقوف عن الطلب؟ (يرجّع وقت انتهاء الإيقاف أو 0) */
+export function blockedUntil(stats, config, now = Date.now()) {
+  if (!stats || !feat(config, "noshow")) return 0;
+  const b = ms(stats.blockedAt); if (!b) return 0;
+  const end = b + noshowOf(config).blockDays * 864e5;
+  return end > now ? end : 0;
+}
+/** كم طلب ما استلمه العميل خلال الفترة (للتنبيه عند المحل) */
+export function noshowCount(stats, config, now = Date.now()) {
+  if (!stats) return 0;
+  return ms(stats.windowStart) > now - noshowOf(config).days * 864e5 ? (stats.count || 0) : 0;
+}
 export const PAY = { cash: { icon: "💵", label: "كاش" }, card: { icon: "💳", label: "بطاقة / شبكة" } };
 export const MODES = { pickup: "🏃 استلام من المحل", delivery: "🚚 توصيل", curbside: "🚗 استلام من السيارة" };
 /** وصف الحالة للزبون حسب نوع الطلب (استلام / توصيل / من السيارة) */
@@ -136,7 +155,8 @@ export function statusText(o) {
   const del = o.mode === "delivery", car = o.mode === "curbside";
   return ({ sent: "📨 أُرسل — بانتظار المحل", received: "👍 المحل استلم طلبك ويجهّزه",
     ready: car ? (o.arrivedAt ? "🚗 جاهز — المحل جاي لسيارتك" : "🚗 جاهز — تعال واضغط «وصلت»") : "🛍️ جاهز للاستلام", delivering: "🚚 جاري التوصيل",
-    done: del ? "✅ تم التوصيل" : car ? "✅ تم التسليم" : "✅ تم الاستلام", cancelled: "✕ ملغي" })[o.status] || o.status;
+    done: del ? "✅ تم التوصيل" : car ? "✅ تم التسليم" : "✅ تم الاستلام",
+    cancelled: o.cancelBy === "store" ? "✕ ألغاه المحل" : "✕ ملغي", noshow: "🚫 ما انستلم" })[o.status] || o.status;
 }
 /** التوصيل: الرسوم + كم باقي للمجاني */
 export function deliveryInfo(s, sub) {
@@ -149,7 +169,7 @@ export function deliveryInfo(s, sub) {
 export const payMethods = (s) => { const m = []; if (s?.payCash !== false) m.push("cash"); if (s?.payCard !== false) m.push("card"); return m.length ? m : ["cash"]; };
 /** المراحل الأربع لشريط التقدّم */
 export const orderSteps = (o) => o.mode === "curbside"
-  ? [["sent", "أُرسل"], ["received", "يجهّزه"], ["ready", "جاهز"], ["done", "تسلّمته"]]
+  ? [["sent", "أُرسل"], ["received", "يجهّزه"], ["ready", "جاهز"], ["arrived", "وصلت 🚗"], ["done", "تسلّمته"]]
   : o.mode === "delivery"
   ? [["sent", "أُرسل"], ["received", "يجهّزه"], ["delivering", "بالطريق"], ["done", "وصل"]]
   : [["sent", "أُرسل"], ["received", "يجهّزه"], ["ready", "جاهز"], ["done", "استلمته"]];

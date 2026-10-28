@@ -5,7 +5,7 @@ import {
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, deleteUser
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
-  getFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, getDocs, addDoc, deleteDoc, increment, serverTimestamp, Timestamp
+  getFirestore, initializeFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, getDocs, addDoc, deleteDoc, increment, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
 import * as X from "./logic.js";
@@ -21,7 +21,8 @@ const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf
 export const fbApp = initializeApp(firebaseConfig);
 export const auth = getAuth(fbApp);
 auth.languageCode = "ar"; // رسائل الدخول بالإيميل تطلع بالعربي
-export const db = getFirestore(fbApp, FIRESTORE_DB_ID);
+// يكتشف لحاله لو شبكة الجوال تقطع الاتصال المباشر ويحوّل لطريقة تشتغل (عشان تحديثات الطلبات توصل بدون تحديث الصفحة)
+export const db = (() => { try { return initializeFirestore(fbApp, { experimentalAutoDetectLongPolling: true }, FIRESTORE_DB_ID); } catch { return getFirestore(fbApp, FIRESTORE_DB_ID); } })();
 export const $ = (id) => document.getElementById(id);
 
 export const state = {
