@@ -1,6 +1,8 @@
 name: Diagnose offer (read-only)
 
 on:
+  push:
+    branches: [diag]
   workflow_dispatch:
     inputs:
       title:
@@ -13,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-      TITLE: ${{ github.event.inputs.title }}
+      TITLE: ${{ github.event.inputs.title || 'قهوة' }}
     steps:
       - name: Read offer + merchant status + config (types only, no phone numbers)
         run: |
