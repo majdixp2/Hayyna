@@ -984,7 +984,8 @@ class RestaurantOfferRepository(
         val m = offer.toFirestoreMap(docRef.id, null).apply {
             listOf("merchantId", "isFeatured", "viewsCount", "directionsCount", "whatsappCount", "reportsCount", "createdAt", "rating").forEach { remove(it) }
         }
-        docRef.set(m, com.google.firebase.firestore.SetOptions.merge()).await()
+        @Suppress("UNCHECKED_CAST")
+        docRef.update(m as Map<String, Any>).await() // update يستبدل الحقول كاملة (deal ما يندمج مع القديم)
     }
 
     suspend fun deleteOfferById(id: String) {

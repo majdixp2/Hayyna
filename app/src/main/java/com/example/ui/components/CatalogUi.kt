@@ -633,7 +633,7 @@ private fun ItemEditDialog(vm: MerchantViewModel, e: CatalogItem?, kind: ItemKin
             OutlinedTextField(section, { section = it.take(40) }, label = { Text("القسم (اختياري)") }, placeholder = { Text(if (kind == ItemKind.MENU) "مثال: مشروبات، وجبات" else "مثال: رجالي، نسائي") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             if (sections.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { sections.take(5).forEach { s -> FilterChip(selected = section == s, onClick = { section = s }, label = { Text(s, fontSize = 12.sp) }) } }
             OutlinedTextField(desc, { desc = it.take(300) }, label = { Text("وصف قصير") }, modifier = Modifier.fillMaxWidth())
-            Row(verticalAlignment = Alignment.CenterVertically) { Text("متوفر الحين", modifier = Modifier.weight(1f)); Switch(checked = available, onCheckedChange = { available = it }) }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("متوفر الحين", modifier = Modifier.weight(1f)); HSwitch(checked = available, onCheckedChange = { available = it }) }
             if (!vm.catalogDirect) Text("⏳ بيظهر بعد مراجعة فريق حيّنا. وثّق متجرك عشان تنزل منتجاتك مباشرة.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (err.isNotBlank()) Text(err, color = MaterialTheme.colorScheme.error)
             Button(onClick = {

@@ -1469,7 +1469,7 @@ class MerchantViewModel(
                     e is MediaUploader.UploadException -> e.message
                     e is com.google.firebase.firestore.FirebaseFirestoreException &&
                         e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED ->
-                        "رفض Firestore حفظ العرض (صلاحيات). تأكد من نشر قواعد Firestore الجديدة."
+                        "ما انحفظ العرض: رفض الصلاحيات. تأكد إن حسابك مو موقوف وإن التطبيق آخر نسخة، أو تواصل معنا."
                     else -> "تعذّر نشر العرض: ${e.message ?: "خطأ غير معروف"}"
                 }
                 toast(msg ?: "تعذّر نشر العرض.")

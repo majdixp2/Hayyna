@@ -604,7 +604,7 @@ private fun AdminOfferRow(
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Switch(checked = offer.isApproved, onCheckedChange = onToggleApproved)
+                    HSwitch(checked = offer.isApproved, onCheckedChange = onToggleApproved)
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.testTag("admin_delete_offer_${offer.id}")) {
                     Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
@@ -943,7 +943,7 @@ private fun AiSettingsCard(enabled: Boolean, model: String, onSave: (Boolean, St
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(checked = enabled, onCheckedChange = { onSave(it, modelText) })
+                HSwitch(checked = enabled, onCheckedChange = { onSave(it, modelText) })
             }
             androidx.compose.material3.TextButton(onClick = { showModel = !showModel }) {
                 Text(if (showModel) "إخفاء الإعدادات المتقدمة" else "إعدادات متقدمة (اسم النموذج)", fontSize = 12.sp)
@@ -1006,11 +1006,11 @@ private fun PoiSettingsCard(
             Text("📍 محلات Google على الخريطة", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("إظهار نقاط المحلات (باهتة)", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Switch(checked = config.showGooglePoi, onCheckedChange = { onSave(config.copy(showGooglePoi = it)) })
+                HSwitch(checked = config.showGooglePoi, onCheckedChange = { onSave(config.copy(showGooglePoi = it)) })
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("بطاقة \"ادعه لحيّنا\" عند الضغط", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Switch(checked = config.inviteEnabled, onCheckedChange = { onSave(config.copy(inviteEnabled = it)) })
+                HSwitch(checked = config.inviteEnabled, onCheckedChange = { onSave(config.copy(inviteEnabled = it)) })
             }
             androidx.compose.material3.OutlinedTextField(
                 value = message,
@@ -1120,7 +1120,7 @@ private fun VerifySettingsCard(
             fun toggle(label: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(label, fontSize = 13.sp, modifier = Modifier.weight(1f), color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                    Switch(checked = checked, enabled = enabled, onCheckedChange = onChange)
+                    HSwitch(checked = checked, enabled = enabled, onCheckedChange = onChange)
                 }
             }
             toggle("تفعيل التوثيق (زر \"وثّق متجرك\" للتجار)", config.enabled) { onSave(config.copy(enabled = it)) }

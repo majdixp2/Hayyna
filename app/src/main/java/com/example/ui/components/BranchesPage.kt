@@ -299,7 +299,7 @@ fun BranchesPage(
                             Text("🚗 أوفّر الاستلام من السيارة", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Text("العميل يكتب وصف سيارته ويضغط «وصلت»", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        androidx.compose.material3.Switch(checked = curbside, onCheckedChange = { curbside = it })
+                        HSwitch(checked = curbside, onCheckedChange = { curbside = it })
                     }
                     Text("💳 طرق الدفع اللي أقبلها عند الاستلام", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {

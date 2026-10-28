@@ -685,3 +685,12 @@ textarea.input { resize: vertical; line-height: 1.6; }
 :root[data-theme="dark"] .icard.deal { background: linear-gradient(135deg, #2E2614, var(--card)); border-color: #5C4E1E; }
 :root[data-theme="dark"] .saved-line, :root[data-theme="dark"] .deal-pct { background: #3A1C1C; color: #F8A5A5; }
 :root[data-theme="dark"] .deal-pct.bogo { background: #2A1F45; color: #C4B5FD; }
+
+/* مفاتيح تشغيل واضحة (مقفل رمادي غامق / مفتوح أخضر) */
+.switch-row input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 46px; height: 26px; border-radius: 999px; background: #D1D5DB; border: 2px solid #6B7280; position: relative; cursor: pointer; transition: background .15s, border-color .15s; flex: none; margin: 0; }
+.switch-row input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 18px; height: 18px; border-radius: 50%; background: #4B5563; transition: inset-inline-start .15s, background .15s; }
+.switch-row input[type="checkbox"]:checked { background: var(--green); border-color: var(--green); }
+.switch-row input[type="checkbox"]:checked::after { inset-inline-start: 22px; background: #fff; }
+.switch-row input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
+:root[data-theme="dark"] .switch-row input[type="checkbox"] { background: #374151; border-color: #9CA3AF; }
+:root[data-theme="dark"] .switch-row input[type="checkbox"]::after { background: #D1D5DB; }

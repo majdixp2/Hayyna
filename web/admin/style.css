@@ -72,3 +72,9 @@ select,input[type=number]{font:inherit;border:1px solid var(--border);border-rad
 .modal-card { background: var(--card, #fff); border-radius: 16px; padding: 16px; max-width: 520px; width: 100%; max-height: 90vh; overflow: auto; }
 .modal-card h3 { margin: 0 0 6px; } .modal-card textarea { width: 100%; margin: 10px 0; box-sizing: border-box; }
 a.btn{text-decoration:none;display:inline-flex;align-items:center}
+/* مفاتيح تشغيل واضحة وهي مقفلة */
+.switch input[type="checkbox"]{appearance:none;-webkit-appearance:none;width:42px;height:24px;border-radius:999px;background:#D1D5DB;border:2px solid #6B7280;position:relative;cursor:pointer;flex:none;margin:0;transition:background .15s,border-color .15s}
+.switch input[type="checkbox"]::after{content:"";position:absolute;top:2px;inset-inline-start:2px;width:16px;height:16px;border-radius:50%;background:#4B5563;transition:inset-inline-start .15s,background .15s}
+.switch input[type="checkbox"]:checked{background:#2D6A4F;border-color:#2D6A4F}
+.switch input[type="checkbox"]:checked::after{inset-inline-start:20px;background:#fff}
+.switch input[type="checkbox"]:disabled{opacity:.5;cursor:not-allowed}

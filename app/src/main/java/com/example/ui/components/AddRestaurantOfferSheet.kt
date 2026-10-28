@@ -709,7 +709,7 @@ fun AddRestaurantOfferSheet(
                     }
                     if (dt == "promo" && dealsCfg?.orderEnabled == true) Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("🛒 الزبون يقدر يطلبه من حيّنا (لازم سعر)", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        Switch(checked = orderable, onCheckedChange = { orderable = it })
+                        HSwitch(checked = orderable, onCheckedChange = { orderable = it })
                     }
 
                     OutlinedTextField(
