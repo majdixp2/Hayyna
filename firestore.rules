@@ -35,62 +35,59 @@ service cloud.firestore {
     }
 
     // العروض مع المنيو: خصم / باقة / 1+1 / إعلان
-    // (مختصرة عمداً: الحدّ الأقصى لعدد العمليات في كل طلب، والعرض فيه حقول كثيرة)
     function validDeal(d) {
       return d.keys().hasOnly(['type', 'scope', 'kind', 'section', 'itemIds', 'itemId', 'getPct', 'orderable'])
         && d.type in ['discount', 'bundle', 'bogo', 'promo']
         && d.get('scope', 'all') in ['all', 'kind', 'section', 'items']
-        && d.get('getPct', 100) in [50, 100]
+        && d.get('kind', '').size() <= 20 && d.get('section', '').size() <= 40
         && d.get('itemIds', []).size() <= 50
-        && (d.type != 'bogo' || d.get('itemId', '') != '');
+        && d.get('getPct', 100) in [50, 100]
+        && (d.type != 'bogo' || d.get('itemId', '').size() > 0);
     }
 
+    // ⚠️ مكتوبة مختصرة عمداً: Firestore يوقف التقييم بعد 1000 عملية في الطلب، والعرض فيه حقول كثيرة.
+    // ‎.size() على نوع غلط يعطي خطأ = رفض، فهي تتحقق من النوع بنفس الوقت.
     function isValidOffer(data) {
-      return data.id is string && data.id.size() > 0 && data.id.size() <= 100
+      return data.id.size() > 0 && data.id.size() <= 100
         && data.merchantId is string
-        && data.restaurantName is string && data.restaurantName.size() > 0 && data.restaurantName.size() <= 100
-        && data.offerTitle is string && data.offerTitle.size() > 0 && data.offerTitle.size() <= 150
-        && data.description is string && data.description.size() <= 2000
-        && data.cuisineType is string && data.cuisineType.size() <= 60
+        && data.restaurantName.size() > 0 && data.restaurantName.size() <= 100
+        && data.offerTitle.size() > 0 && data.offerTitle.size() <= 150
+        && data.description.size() <= 2000
+        && data.cuisineType.size() <= 60
         && data.price is number && data.price >= 0
-        && (!('originalPrice' in data) || data.originalPrice == null || (data.originalPrice is number && data.originalPrice >= 0))
-        && data.currency is string && data.currency.size() <= 10
-        && (!('discountBadge' in data) || (data.discountBadge is string && data.discountBadge.size() <= 60))
+        && (data.get('originalPrice', null) == null || data.originalPrice >= 0)
+        && data.currency.size() <= 10
+        && data.get('discountBadge', '').size() <= 60
         && data.mediaType in ['IMAGE', 'VIDEO']
-        && data.mediaUri is string && data.mediaUri.size() > 0 && data.mediaUri.size() <= 2000
-        && (!('isPromotionalVideo' in data) || data.isPromotionalVideo is bool)
-        && data.district is string && data.district.size() <= 100
-        && data.region is string && data.region.size() <= 100
-        && data.latitude is number && data.latitude >= -90 && data.latitude <= 90
-        && data.longitude is number && data.longitude >= -180 && data.longitude <= 180
-        && data.phone is string && data.phone.size() <= 30
-        && (!('workingHours' in data) || (data.workingHours is string && data.workingHours.size() <= 120))
-        && validMinute(data, 'openMinute') && validMinute(data, 'closeMinute')
-        && (!('expiresAt' in data) || data.expiresAt == null || data.expiresAt is timestamp)
-        && (!('startsAt' in data) || data.startsAt == null || data.startsAt is timestamp)
-        && (!('discountPercent' in data) || (data.discountPercent is int && data.discountPercent >= 0 && data.discountPercent <= 100))
-        && (!('dailyPercents' in data) || (data.dailyPercents is list && data.dailyPercents.size() <= 14))
-        && (!('itemsScope' in data) || (data.itemsScope is string && data.itemsScope.size() <= 60))
-        && (!('grandOpening' in data) || data.grandOpening is bool)
-        && (!('postType' in data) || data.postType in ['offer', 'new'])
-        && (!('exclusive' in data) || data.exclusive is bool)
-        && (!('draft' in data) || data.draft is bool)
-        && (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 300))
-        && (!('deal' in data) || data.deal == null || validDeal(data.deal))
-        && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12))
-        && (!('delivery' in data) || data.delivery is bool)
-        && (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5))
-        && (!('isApproved' in data) || data.isApproved is bool)
-        && (!('isFeatured' in data) || data.isFeatured is bool)
-        && optInt(data, 'viewsCount') && optInt(data, 'directionsCount') && optInt(data, 'whatsappCount')
-        && optInt(data, 'reportsCount')
-        && (!('mediaUris' in data) || (data.mediaUris is list && data.mediaUris.size() <= 3))
-        && (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 2000))
-        && (!('branches' in data) || (data.branches is list && data.branches.size() <= 50))
+        && data.mediaUri.size() > 0 && data.mediaUri.size() <= 2000
+        && data.district.size() <= 100 && data.region.size() <= 100
+        && data.latitude >= -90 && data.latitude <= 90
+        && data.longitude >= -180 && data.longitude <= 180
+        && data.phone.size() <= 30
+        && data.get('workingHours', '').size() <= 120
+        && data.get('openMinute', -1) >= -1 && data.get('openMinute', -1) <= 1439
+        && data.get('closeMinute', -1) >= -1 && data.get('closeMinute', -1) <= 1439
+        && (data.get('expiresAt', null) == null || data.expiresAt is timestamp)
+        && (data.get('startsAt', null) == null || data.startsAt is timestamp)
+        && data.get('discountPercent', 0) >= 0 && data.get('discountPercent', 0) <= 100
+        && data.get('dailyPercents', []).size() <= 14
+        && data.get('itemsScope', '').size() <= 60
+        && data.get('postType', 'offer') in ['offer', 'new']
+        && data.get('exclusive', false) is bool
+        && data.get('draft', false) is bool
+        && data.get('adminNote', '').size() <= 300
+        && (data.get('deal', null) == null || validDeal(data.deal))
+        && data.get('tags', []).size() <= 12
+        && data.get('isApproved', false) is bool
+        && data.get('isFeatured', false) is bool
+        && data.get('viewsCount', 0) >= 0 && data.get('directionsCount', 0) >= 0
+        && data.get('whatsappCount', 0) >= 0 && data.get('reportsCount', 0) >= 0
+        && data.get('mediaUris', []).size() <= 3
+        && data.get('logoUrl', '').size() <= 2000
+        && data.get('branches', []).size() <= 50
         && data.createdAt is timestamp;
     }
 
-    // زيادة عدّاد واحد فقط بمقدار 1
     function incrementsOnly(field) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field])
         && request.resource.data[field] == resource.data.get(field, 0) + 1;
