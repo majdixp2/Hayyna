@@ -101,7 +101,7 @@ export const orderCode = () => "H-" + Date.now().toString(36).slice(-4).toUpperC
 /** نص ملخص الطلب لواتساب */
 export function orderText(o) {
   const L = [];
-  L.push(`🧾 ملخص طلب من حيّنا — رقم #${o.code}`);
+  L.push(`🧾 ملخص طلب من لكوفر — رقم #${o.code}`);
   L.push(`🏪 ${o.storeName}${o.branchName ? " — " + o.branchName : ""}`);
   L.push("━━━━━━━━━━━━");
   for (const it of o.items) {

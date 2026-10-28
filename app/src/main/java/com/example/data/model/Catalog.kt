@@ -143,7 +143,7 @@ data class HayynaOrder(
     }
     private fun f(n: Double) = String.format(java.util.Locale.US, "%.2f", n)
     fun text(): String = buildString {
-        appendLine("🧾 ملخص طلب من حيّنا — رقم #$code")
+        appendLine("🧾 ملخص طلب من لكوفر — رقم #$code")
         appendLine("🏪 $storeName" + if (branchName.isNotBlank()) " — $branchName" else "")
         appendLine("━━━━━━━━━━━━")
         items.forEach {

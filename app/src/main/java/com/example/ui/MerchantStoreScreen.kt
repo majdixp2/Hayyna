@@ -190,7 +190,7 @@ fun MerchantStoreScreen(
     if (showExitDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showExitDialog = false },
-            title = { Text("تبي تطلع من حيّنا؟") },
+            title = { Text("تبي تطلع من لكوفر؟") },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     showExitDialog = false

@@ -1,7 +1,7 @@
 // رصيد العروض: الإعدادات الافتراضية + حساب الخدمات النشطة لكل عرض.
 // الأسعار والخدمات كلها تنعدّل من لوحة الأدمن (config/app.credits) بدون تحديث للتطبيق.
 
-// أنواع التأثير اللي يفهمها حيّنا (أي خدمة جديدة يضيفها الأدمن تختار واحد منها)
+// أنواع التأثير اللي يفهمها لكوفر (أي خدمة جديدة يضيفها الأدمن تختار واحد منها)
 export const EFFECTS = {
   publish: { label: "نشر العرض", hint: "العرض يظهر على الخريطة وفي القائمة طوال المدة" },
   feature: { label: "تمييز على الخريطة", hint: "حلقة صفراء مع وميض، ويطلع أول في الترتيب" },
@@ -27,7 +27,7 @@ export const creditsOf = (config) => {
 export const itemList = (items) => Object.entries(items || {}).map(([id, it]) => ({ id, ...it })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 export const costOf = (it, days) => it.unit === "day" ? it.price * days : it.price;
 
-export const EXCLUSIVE_DEFAULT = { enabled: true, label: "حصري لحيّنا", icon: "💎", color: "#7C3AED" };
+export const EXCLUSIVE_DEFAULT = { enabled: true, label: "حصري في لكوفر", icon: "💎", color: "#7C3AED" };
 export const exclusiveOf = (config) => ({ ...EXCLUSIVE_DEFAULT, ...(config?.exclusive || {}) });
 
 /** مكافأة الحصري: خصم على «النشر» بس للعروض الحصرية (100% = مجاني). يتحكم فيه الأدمن. */

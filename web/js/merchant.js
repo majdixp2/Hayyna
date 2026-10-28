@@ -46,7 +46,7 @@ function draw() {
   const hasStore = (p.branches || []).length > 0;
   const active = m.offers.filter((o) => o.isApproved && !o.draft && !X.isExpired(o, now));
   const sum = (k) => m.offers.reduce((a, o) => a + (o[k] || 0), 0);
-  const banner = st.suspended ? `<div class="banner red">⛔ حسابك موقوف حالياً. تواصل مع إدارة حيّنا.</div>`
+  const banner = st.suspended ? `<div class="banner red">⛔ حسابك موقوف حالياً. تواصل مع إدارة لكوفر.</div>`
     : canPublishDirectly() ? `<div class="banner green">⚡ حسابك ينشر مباشرة — عروضك تظهر بدون مراجعة</div>`
     : `<div class="banner amber">⏳ حساب جديد: عروضك تنراجع قبل ما تظهر (عادة خلال ساعات). بعد عرضين معتمدين تنشر مباشرة.</div>`;
   const warn = st.suspended || !canPublishDirectly();
@@ -62,7 +62,7 @@ function draw() {
     <button class="btn dir big" id="newOffer" ${st.suspended ? "disabled" : ""}>＋ عرض جديد</button>
     ${hasStore ? `<button class="btn call" id="viewStore">👀 شوف صفحة متجري مثل ما يشوفها الزبون</button>` : ""}
     ${hasStore ? catalogPanelHtml(p.cuisineType) : ""}
-    ${m.offers.some((o) => o.adminNote) ? `<div class="banner red">↩️ عندك ${m.offers.filter((o) => o.adminNote).length === 1 ? "عرض يحتاج تعديل" : m.offers.filter((o) => o.adminNote).length + " عروض تحتاج تعديل"} من فريق حيّنا — شوف الملاحظة تحت العرض واضغط ✎</div>` : ""}
+    ${m.offers.some((o) => o.adminNote) ? `<div class="banner red">↩️ عندك ${m.offers.filter((o) => o.adminNote).length === 1 ? "عرض يحتاج تعديل" : m.offers.filter((o) => o.adminNote).length + " عروض تحتاج تعديل"} من فريق لكوفر — شوف الملاحظة تحت العرض واضغط ✎</div>` : ""}
     <div class="section-title">عروضي (${m.offers.length})</div>
     <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
     ${walletCard()}
@@ -116,7 +116,7 @@ async function ensureWallet() {
   try {
     const w = cr().welcome || 0, wb = writeBatch(db);
     wb.set(doc(db, "wallets", m.uid), { balance: w, lastOp: { kind: "welcome", ref: "" }, updatedAt: serverTimestamp() });
-    if (w > 0) wb.set(doc(collection(db, "wallets", m.uid, "tx")), { kind: "welcome", points: w, note: "🎁 هدية الترحيب من حيّنا", ref: "", at: serverTimestamp() });
+    if (w > 0) wb.set(doc(collection(db, "wallets", m.uid, "tx")), { kind: "welcome", points: w, note: "🎁 هدية الترحيب من لكوفر", ref: "", at: serverTimestamp() });
     await wb.commit();
     if (w > 0) toast(`🎁 أهلاً بك! أضفنا لك ${w} نقطة هدية`, true);
   } catch (e) { console.warn("wallet", e); }
@@ -241,7 +241,7 @@ function draftSaved(excl) {
   const r = rw(), exl = exclusiveOf(state.config), store = state.config.credits?.storeUrl;
   showSheet(`<div class="pad"><div class="section-title">انحفظ عرضك ✅</div>
     <p class="desc tr">يتنشر بضغطة وحدة أول ما يصير عندك رصيد. تلقاه في «حسابي» تحت «عروضي» وعليه زر <b>📢 انشر الحين</b>.</p>
-    ${r.on && !excl ? `<div class="excl-offer"><b>💡 ترى ${esc(exl.icon)} ${esc(exl.label)} ${r.free ? "نشره مجاني" : `نشره بخصم ${r.percent}%`}</b><p>لو عرضك لعملاء حيّنا بس، اضغط «انشر الحين» واختر «خلّه حصري».</p></div>` : ""}
+    ${r.on && !excl ? `<div class="excl-offer"><b>💡 ترى ${esc(exl.icon)} ${esc(exl.label)} ${r.free ? "نشره مجاني" : `نشره بخصم ${r.percent}%`}</b><p>لو عرضك لعملاء لكوفر بس، اضغط «انشر الحين» واختر «خلّه حصري».</p></div>` : ""}
     <div class="row2"><button class="btn call" id="dsRedeem">🔑 شحن بكود</button>${store ? `<a class="btn call" href="${esc(store)}" target="_blank" rel="noopener">🛒 اشترِ رصيد</a>` : `<button class="btn dir" id="dsOk">تمام</button>`}</div></div>`);
   $("dsRedeem").onclick = openRedeem;
   $("dsOk")?.addEventListener("click", hideSheet);
@@ -262,7 +262,7 @@ function publishDraft(o) {
     <p class="desc tr">المدة: <b>${days} ${days === 1 ? "يوم" : "أيام"}</b> تبدأ ${start > now ? `من ${fmtDate(start)}` : "الحين"} • رصيدك <b>${bal()}</b> نقطة</p>
     ${canPay ? `<button class="btn dir big" id="pdGo">📢 انشره ${admin ? "" : label(mine)}</button>` : `<div class="hint-box">رصيدك ما يكفي: النشر يحتاج <b>${mine.cost}</b> نقطة.</div>`}
     ${exclOk ? `<div class="excl-offer"><b>${canPay ? "أو وفّر 👇" : "بس عندنا لك حل 👇"}</b><p>خلّه <b>${esc(exl.icon)} ${esc(exl.label)}</b> وانشره ${ex.cost ? `بـ <b>${ex.cost}</b> نقطة بدل ${full.cost}` : "<b>مجاناً</b>"}.</p>
-      <small>الحصري يعني العرض لعملاء حيّنا بس، يوري التطبيق عند الكاشير.</small>
+      <small>الحصري يعني العرض لعملاء لكوفر بس، يوري التطبيق عند الكاشير.</small>
       <button class="btn dir big" id="pdExcl">${esc(exl.icon)} خلّه حصري وانشره ${label(ex)}</button></div>` : ""}
     ${!canPay ? `<div class="row2"><button class="btn call" id="pdRedeem">🔑 شحن بكود</button>${store ? `<a class="btn call" href="${esc(store)}" target="_blank" rel="noopener">🛒 اشترِ رصيد</a>` : ""}</div>` : ""}
     <div id="pdErr" class="err"></div></div>`);
@@ -580,7 +580,7 @@ export async function openOfferForm(editing) {
         <label class="label">على وش الخصم؟</label>${dt === "discount" && myItems.length ? scopePickerHtml(f.dScope, myItems) : `<input id="oScope" class="input" value="${esc(f.scope)}" maxlength="40" placeholder="على جميع الأصناف">`}`}
       ${dt === "bundle" && myItems.length ? `<label class="label">🎁 وش فيها الباقة؟ (اختياري — من منيوك)</label><div class="pick-list">${myItems.map((it) => `<label class="switch-row sub"><span>${KINDS[it.kind]?.icon || ""} ${esc(it.name)} <small>${fmt(it.price)} ر.س</small></span><input type="checkbox" data-pack="${esc(it.id)}" ${f.packIds.includes(it.id) ? "checked" : ""}></label>`).join("")}</div>
         ${packSum ? `<div class="hint-box" id="packHint">مجموع الأصناف <b>${fmt(packSum)} ر.س</b>${+f.price > 0 && +f.price < packSum ? ` — الزبون يوفّر <b>${fmt(packSum - +f.price)} ر.س</b> 🎉` : ""}</div>` : `<small class="hint">لو الباقة شي جديد ما هو في المنيو، اكتب محتواها في التفاصيل.</small>`}` : ""}
-      ${dt === "promo" && dealsOn && catalogOf(state.config).orderEnabled ? `<label class="switch-row"><span>🛒 الزبون يقدر يطلبه من حيّنا <small class="hint">(لازم سعر)</small></span><input type="checkbox" id="oOrderable" ${f.orderable ? "checked" : ""}></label>` : ""}
+      ${dt === "promo" && dealsOn && catalogOf(state.config).orderEnabled ? `<label class="switch-row"><span>🛒 الزبون يقدر يطلبه من لكوفر <small class="hint">(لازم سعر)</small></span><input type="checkbox" id="oOrderable" ${f.orderable ? "checked" : ""}></label>` : ""}
       <label class="label">${isNew ? "وصف المنتج" : "تفاصيل العرض"}</label><textarea id="oDesc" class="input" rows="3" maxlength="2000">${esc(f.desc)}</textarea>
       <label class="label">الأصناف (للبحث)</label><input id="oTags" class="input" value="${esc(f.tags)}" placeholder="شاورما، برجر، بروست">
       ${deliveryFields(f)}
@@ -592,7 +592,7 @@ export async function openOfferForm(editing) {
       <div class="section-title">🔜 متى يبدأ؟</div>
       <div class="row2"><button class="chip${!f.start ? " on" : ""}" id="oNow">الحين</button><input type="date" id="oStart" class="input" value="${startStr()}"></div>
       ${isNew ? "" : `<label class="switch-row"><span>🎉 عرض افتتاح (محل جديد)</span><input type="checkbox" id="oOpen" ${f.opening ? "checked" : ""}></label>`}
-      ${exclusiveOf(state.config).enabled ? `<label class="switch-row"><span>${esc(exclusiveOf(state.config).icon)} ${esc(exclusiveOf(state.config).label)} <small class="hint">(العرض لعملاء حيّنا بس، يوري التطبيق عند الكاشير)</small>${r.on && cr().enabled ? `<small class="excl-reward">🎁 ${r.free ? "نشر العرض الحصري مجاني" : `خصم ${r.percent}% على نشر العرض الحصري`}</small>` : ""}</span><input type="checkbox" id="oExcl" ${f.exclusive ? "checked" : ""} ${exclLocked ? "disabled" : ""}></label>
+      ${exclusiveOf(state.config).enabled ? `<label class="switch-row"><span>${esc(exclusiveOf(state.config).icon)} ${esc(exclusiveOf(state.config).label)} <small class="hint">(العرض لعملاء لكوفر بس، يوري التطبيق عند الكاشير)</small>${r.on && cr().enabled ? `<small class="excl-reward">🎁 ${r.free ? "نشر العرض الحصري مجاني" : `خصم ${r.percent}% على نشر العرض الحصري`}</small>` : ""}</span><input type="checkbox" id="oExcl" ${f.exclusive ? "checked" : ""} ${exclLocked ? "disabled" : ""}></label>
         ${exclLocked ? `<small class="hint">💎 العرض انتشر كحصري، فما تقدر تشيل الحصري. لو تبيه لكل الناس احذفه وانشره من جديد.</small>` : ""}` : ""}
       ${cr().enabled && e ? `<div class="hint-box">⏰ لتمديد مدة العرض أو تمييزه استخدم زر 🚀 في قائمة عروضك.</div>` : f.percentMode && f.tiered ? "" : `<div class="section-title">⏰ ${isNew ? "كم يظهر كـ «جديد»؟" : "مدة العرض"}</div><div class="chips wrap">
         ${e ? `<button class="chip${f.keepExpiry ? " on" : ""}" data-dur="keep">بدون تغيير (${esc(X.remainingText(e)?.t || "بدون انتهاء")})</button>` : ""}
@@ -654,7 +654,7 @@ export async function openOfferForm(editing) {
     showSheet(`<div class="pad"><div class="section-title">رصيدك ما يكفي 🙁</div>
       <p class="desc tr">نشر العرض يحتاج <b>${(f.exclusive ? ex : full).cost}</b> نقطة، ورصيدك <b>${bal()}</b>.</p>
       ${exclOk ? `<div class="excl-offer"><b>بس عندنا لك حل 👇</b><p>خلّ عرضك <b>${esc(exl.icon)} ${esc(exl.label)}</b> وانشره ${ex.cost ? `بـ <b>${ex.cost}</b> نقطة بدل ${full.cost}` : "<b>مجاناً</b>"} الحين.</p>
-        <small>الحصري يعني العرض لعملاء حيّنا بس، يوري التطبيق عند الكاشير.</small>
+        <small>الحصري يعني العرض لعملاء لكوفر بس، يوري التطبيق عند الكاشير.</small>
         <button class="btn dir big" id="sfExcl">${esc(exl.icon)} خلّه حصري وانشره ${ex.cost ? `بـ ${ex.cost} نقطة` : "مجاناً"}</button></div>` : ""}
       <button class="btn ${exclOk ? "call" : "dir big"}" id="sfDraft">📝 احفظه مسودة لين أشحن</button>
       <small class="hint">المسودة ما تظهر للناس، وتنشرها بضغطة وحدة من «حسابي» أول ما يصير عندك رصيد.</small></div>`);

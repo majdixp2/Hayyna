@@ -99,7 +99,7 @@ fun PublishCostLine(p: PublishInfo, days: Int, exclusive: Boolean) {
 /** بطاقة الرصيد في حساب التاجر */
 @Composable
 fun WalletCard(balance: Long, items: List<CreditItem>) {
-    Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF2D6A4F), modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF10318F), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("💰 رصيد العروض", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
@@ -126,7 +126,7 @@ fun CreditPromptDialog(
     onPublish: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val exl = ExclusiveBadge.label.ifBlank { "💎 حصري لحيّنا" }
+    val exl = ExclusiveBadge.label.ifBlank { "💎 حصري في لكوفر" }
     val exclPrice = if (prompt.exclCost == 0L) "مجاناً" else "بـ ${prompt.exclCost} نقطة"
     val title: String
     val body: @Composable () -> Unit
@@ -138,7 +138,7 @@ fun CreditPromptDialog(
                     Text("يتنشر بضغطة وحدة أول ما يصير عندك رصيد. تلقاه في «حسابي» تحت «عروضك» وعليه زر «📢 انشر الحين».", fontSize = 14.sp)
                     if (rewardOn && prompt.offer?.exclusive != true) ExclusiveHint(
                         "💡 ترى $exl " + if (rewardPercent >= 100) "نشره مجاني" else "نشره بخصم $rewardPercent%",
-                        "لو عرضك لعملاء حيّنا بس، اضغط «انشر الحين» واختر «خلّه حصري»."
+                        "لو عرضك لعملاء لكوفر بس، اضغط «انشر الحين» واختر «خلّه حصري»."
                     )
                 }
             }
@@ -149,7 +149,7 @@ fun CreditPromptDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("المدة: ${prompt.days} ${if (prompt.days == 1) "يوم" else "أيام"} • رصيدك ${prompt.balance} نقطة", fontSize = 14.sp)
                     if (prompt.canPay) Button(
-                        onClick = onPublish, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D6A4F)),
+                        onClick = onPublish, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10318F)),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     ) { Text("📢 انشره " + if (prompt.myCost == 0L) "مجاناً" else "بـ ${prompt.myCost} نقطة", fontWeight = FontWeight.Bold) }
                     else Text("رصيدك ما يكفي: النشر يحتاج ${prompt.myCost} نقطة.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
@@ -204,7 +204,7 @@ private fun ExclusiveOffer(head: String, text: String, button: String, onClick: 
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(head, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
             Text(text, fontSize = 14.sp)
-            Text("الحصري يعني العرض لعملاء حيّنا بس، يوري التطبيق عند الكاشير.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("الحصري يعني العرض لعملاء لكوفر بس، يوري التطبيق عند الكاشير.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             Button(onClick = onClick, colors = ButtonDefaults.buttonColors(containerColor = Purple), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text("💎 $button", fontWeight = FontWeight.Bold)
@@ -265,7 +265,7 @@ fun BoostDialog(
                                 )
                                 Button(
                                     onClick = { confirm = item to d }, enabled = !full,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D6A4F))
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10318F))
                                 ) { Text(if (item.effect == "publish") "تمديد" else "اشترِ", fontSize = 13.sp) }
                             }
                         }

@@ -40,23 +40,25 @@ import com.example.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-val HayynaGreen = Color(0xFF356E55)
-private val PinGold = Color(0xFFFFD166)
+/** كحلي لكوفر (لون الهوية الأساسي). الاسم القديم HayynaGreen باقي عشان ما ينكسر أي استخدام له. */
+val LacoverNavy = Color(0xFF10318F)
+val HayynaGreen = LacoverNavy
+private val PinGold = Color(0xFFF4B400)
 
-// مكان الدبوس داخل صورة الكلمة (نِسَب من عرض/ارتفاع الصورة hayyna_word.png)
-private const val WORD_ASPECT = 974f / 688f
-private const val PIN_LEFT = 0.2197f
-private const val PIN_TOP = 0f
-private const val PIN_WIDTH = 0.1427f
-private const val PIN_HEIGHT = 0.3372f
+// مكان الرمز (حرف O) داخل صورة الكلمة (نِسَب من عرض/ارتفاع الصورة lacover_word.png)
+private const val WORD_ASPECT = 1611f / 308f
+private const val PIN_LEFT = 0.4254f
+private const val PIN_TOP = 0.0660f
+private const val PIN_WIDTH = 0.1382f
+private const val PIN_HEIGHT = 0.8673f
 
 /** مدة الحركة كاملة (الشاشة الافتتاحية تنتظرها قبل ما تختفي). */
 const val SPLASH_DURATION_MS = 2100L
 
 /**
  * الشاشة الافتتاحية المتحركة:
- * 1) كلمة "حيّنا" تظهر وتكبر بنعومة
- * 2) الدبوس الأصفر يسقط من فوق ويرتد مكان نقطة النون
+ * 1) كلمة "LACOVER" تظهر وتكبر بنعومة (بدون حرف O)
+ * 2) رمز الدبوس يسقط من فوق ويرتد مكان حرف O
  * 3) موجة دائرية تنتشر من مكان الدبوس، ثم يظهر الشعار النصي
  */
 @Composable
@@ -90,7 +92,7 @@ fun SplashLogo(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(HayynaGreen),
+            .background(LacoverNavy),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -101,7 +103,7 @@ fun SplashLogo(modifier: Modifier = Modifier) {
             BoxWithConstraints(
                 contentAlignment = androidx.compose.ui.AbsoluteAlignment.TopLeft,
                 modifier = Modifier
-                    .fillMaxWidth(0.58f)
+                    .fillMaxWidth(0.8f)
                     .aspectRatio(WORD_ASPECT)
                     .graphicsLayer {
                         alpha = wordAlpha.value
@@ -112,8 +114,8 @@ fun SplashLogo(modifier: Modifier = Modifier) {
                 val w = maxWidth
                 val h = maxHeight
                 Image(
-                    painter = painterResource(id = R.drawable.hayyna_word),
-                    contentDescription = "حيّنا",
+                    painter = painterResource(id = R.drawable.lacover_word),
+                    contentDescription = "LACOVER لكوفر",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -139,7 +141,7 @@ fun SplashLogo(modifier: Modifier = Modifier) {
 
                 // الدبوس
                 Image(
-                    painter = painterResource(id = R.drawable.hayyna_pin),
+                    painter = painterResource(id = R.drawable.lacover_pin),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
@@ -156,7 +158,7 @@ fun SplashLogo(modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.height(22.dp))
             Text(
-                text = "عروض حيّك على الخريطة",
+                text = "عروض حولك",
                 color = Color.White.copy(alpha = 0.85f),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,

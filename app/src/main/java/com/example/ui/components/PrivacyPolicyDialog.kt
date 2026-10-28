@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.sp
 const val SUPPORT_EMAIL = "hayyna.sa@gmail.com"
 
 val PRIVACY_POLICY_TEXT = """
-سياسة الخصوصية لتطبيق حيّنا
+سياسة الخصوصية لتطبيق لكوفر
 
 1. الموقع الجغرافي
 نستخدم موقعك على جهازك فقط لحساب المسافة إلى العروض وترتيبها حسب الأقرب. لا نحفظ موقعك ولا نرسله لأي جهة.

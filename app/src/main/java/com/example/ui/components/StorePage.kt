@@ -199,7 +199,7 @@ fun StorePage(
                         if (store.phone.isNotBlank()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
-                                    onClick = { openWhatsApp(context, store.phone, "مرحباً ${store.name}، شفت متجركم في تطبيق حيّنا") },
+                                    onClick = { openWhatsApp(context, store.phone, "مرحباً ${store.name}، شفت متجركم في تطبيق لكوفر") },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)

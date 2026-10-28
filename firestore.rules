@@ -228,7 +228,7 @@ service cloud.firestore {
       allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
     }
 
-    // ===== رصيد العروض (يُشحن بأكواد من متجر سلة، ويُصرف على خدمات حيّنا) =====
+    // ===== رصيد العروض (يُشحن بأكواد من متجر سلة، ويُصرف على خدمات لكوفر) =====
     function creditsCfg() {
       return get(/databases/$(database)/documents/config/app).data.get('credits', {});
     }

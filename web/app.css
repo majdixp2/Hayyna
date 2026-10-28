@@ -1,7 +1,7 @@
 :root {
-  --green: #2D6A4F;
-  --green-dark: #1F4D39;
-  --green-soft: #E7F6EC;
+  --green: #10318F;
+  --green-dark: #0B2266;
+  --green-soft: #E6EBF7;
   --cream: #FBF9F5;
   --ink: #1F2937;
   --muted: #6B7280;
@@ -112,7 +112,7 @@ h1.title { margin: 0; font-size: 21px; line-height: 1.4; font-weight: 800; }
 .section-title { font-weight: 800; font-size: 16px; margin: 6px 0 0; }
 .branches { display: flex; flex-direction: column; gap: 8px; }
 .branch { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; text-align: right; font: inherit; color: inherit; width: 100%; }
-.branch.on { border-color: var(--green); background: #F2FAF5; }
+.branch.on { border-color: var(--green); background: #EEF2FB; }
 .branch .b-main { flex: 1; min-width: 0; }
 .branch .b-name { font-weight: 700; }
 .branch .b-sub { font-size: 12px; color: var(--muted); }
@@ -226,7 +226,7 @@ textarea.input { resize: vertical; line-height: 1.6; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .place-row { display: flex; justify-content: space-between; align-items: center; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 8px; font: inherit; font-weight: 700; color: var(--ink); }
 .place-row small { color: var(--muted); font-weight: 500; }
-.place-row.on { border-color: var(--green); background: #F2FAF5; color: var(--green); }
+.place-row.on { border-color: var(--green); background: #EEF2FB; color: var(--green); }
 
 /* حسابي */
 .acc-hero { text-align: center; padding: 40px 20px 10px; }
@@ -294,7 +294,7 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .au-main { flex: 1; min-width: 0; }
 .pill.role { background: var(--green-soft); color: var(--green); margin-inline-start: 4px; }
 .role-mini { border: 1.5px solid var(--line); background: var(--card); border-radius: 14px; padding: 14px 8px; font: inherit; font-weight: 700; font-size: 15px; color: var(--ink); }
-.role-mini.on { border-color: var(--green); background: #F2FAF5; color: var(--green); }
+.role-mini.on { border-color: var(--green); background: #EEF2FB; color: var(--green); }
 .btn.login { border: 1px solid #D9D4CA; background: var(--card); color: var(--ink); font-weight: 700; gap: 10px; }
 .btn.login img { width: 20px; height: 20px; }
 .btn.login.apple { background: #000; color: #fff; border-color: #000; font-size: 16px; }
@@ -317,7 +317,7 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .poi-card { text-align: center; }
 .poi-ico { font-size: 44px; width: 76px; height: 76px; border-radius: 22px; background: var(--green-soft); display: flex; align-items: center; justify-content: center; margin: 4px auto 6px; }
 
-/* ثبّت حيّنا */
+/* ثبّت لكوفر */
 .install small { color: var(--muted, #6b7280); }
 .install-go { border: 0; background: var(--green); color: #fff; font: inherit; font-weight: 800; font-size: 14px; border-radius: 12px; padding: 9px 14px; white-space: nowrap; }
 .btn.install-row { background: var(--green-soft); color: var(--green); margin-bottom: 10px; }
@@ -431,17 +431,17 @@ textarea.input { resize: vertical; line-height: 1.6; }
 /* ===== الوضع الداكن ===== */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --green: #3E8E68; --green-dark: #2D6A4F; --green-soft: #1A3328;
-  --cream: #0F1512; --ink: #E6ECE9; --muted: #9AA7A1; --line: #2A3430;
-  --card: #18201C; --glass: rgba(24,32,28,.95);
+  --green: #7D9BF0; --green-dark: #10318F; --green-soft: #17213F;
+  --cream: #0B1020; --ink: #E7EAF3; --muted: #9AA3BA; --line: #26304A;
+  --card: #141B2E; --glass: rgba(20,27,46,.95);
   --amber-bg: #3A2E14; --amber: #F3C677; --blue: #5B8DEF;
 }
 :root[data-theme="dark"] .poi-locked { background: #222B27; color: #A9B5AF; border-color: #36413C; }
 :root[data-theme="dark"] .poi-locked.mine { background: var(--green-soft); color: #8FD3B0; border-color: #2E5A45; }
 :root[data-theme="dark"] .kind-btn.on.new { background: #2A1F45; }
-:root[data-theme="dark"] .cust-hero { background: linear-gradient(160deg, #1F4D39 0%, #142E23 100%); }
+:root[data-theme="dark"] .cust-hero { background: linear-gradient(160deg, #0B2266 0%, #081847 100%); }
 :root[data-theme="dark"] .mk .ring { border-color: #4B5651; }
-:root[data-theme="dark"] .mk.on .ring { border-color: #52B788; }
+:root[data-theme="dark"] .mk.on .ring { border-color: #7D9BF0; }
 :root[data-theme="dark"] .mk.feat .ring { border-color: #FFD166; }
 :root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
 :root[data-theme="dark"] input, :root[data-theme="dark"] textarea, :root[data-theme="dark"] select { color: var(--ink); }
@@ -457,7 +457,7 @@ textarea.input { resize: vertical; line-height: 1.6; }
 :root[data-theme="dark"] .pill.open { background: #1A3328; color: #8FD3B0; }
 [dir="ltr"] .title, [dir="ltr"] .desc, [dir="ltr"] .store-row span, [dir="ltr"] .mname, [dir="ltr"] .nm { unicode-bidi: plaintext; }
 /* رصيد العروض */
-.wallet-card { background: linear-gradient(135deg, #1F4D39, #2D6A4F); color: #fff; border-radius: 18px; padding: 14px; margin: 12px 0; }
+.wallet-card { background: linear-gradient(135deg, #0B2266, #10318F); color: #fff; border-radius: 18px; padding: 14px; margin: 12px 0; }
 .wc-top { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 .wc-top > div:first-child { display: flex; flex-direction: column; }
 .wc-top > div:first-child b { font-size: 30px; line-height: 1.1; }
@@ -634,7 +634,7 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .mode b { display: block; font-size: 14px; } .mode small { color: var(--muted); font-size: 12px; }
 .mode.on { border-color: var(--green); background: var(--green-soft); box-shadow: 0 0 0 2px rgba(45,106,79,.15); }
 .free-hint { background: #FFF8E6; border: 1px dashed #F2C27A; color: #7A4F00; border-radius: 12px; padding: 10px 12px; margin: 8px 0; font-size: 14px; }
-.fh-bar { height: 8px; background: rgba(0,0,0,.08); border-radius: 99px; overflow: hidden; margin: 7px 0 3px; } .fh-bar i { display: block; height: 100%; background: linear-gradient(90deg, #F59E0B, #2D6A4F); border-radius: 99px; }
+.fh-bar { height: 8px; background: rgba(0,0,0,.08); border-radius: 99px; overflow: hidden; margin: 7px 0 3px; } .fh-bar i { display: block; height: 100%; background: linear-gradient(90deg, #F59E0B, #10318F); border-radius: 99px; }
 .free-hint small { opacity: .8; } .free-hint .link { display: block; margin-top: 6px; background: none; border: 0; color: var(--green); font-weight: 800; font-family: inherit; padding: 0; }
 .cart-bar small { display: block; font-size: 11px; opacity: .9; margin-top: 2px; }
 .oc-arrived { background: #111827; color: #FFD166; border-radius: 10px; padding: 7px 10px; font-weight: 800; margin-top: 6px; animation: superGlow 1.6s ease-in-out infinite; }

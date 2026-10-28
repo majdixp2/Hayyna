@@ -28,7 +28,7 @@ import androidx.compose.runtime.setValue
 import com.example.ui.theme.CalmSagePrimary
 import com.google.android.gms.maps.model.PointOfInterest
 
-/** بطاقة محل من نقاط Google مو مسجّل في حيّنا: ادعه، أو "أنا صاحب المحل". */
+/** بطاقة محل من نقاط Google مو مسجّل في لكوفر: ادعه، أو "أنا صاحب المحل". */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PoiInviteSheet(
@@ -67,7 +67,7 @@ fun PoiInviteSheet(
         ) {
             Text((name ?: poi.name).replace("\n", " "), fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
             Text(
-                "هذا المحل مو مسجّل في حيّنا للحين. ادعه ينضم وينشر عروضه لأهل الحي 👇",
+                "هذا المحل مو مسجّل في لكوفر للحين. ادعه ينضم وينشر عروضه لأهل الحي 👇",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -105,7 +105,7 @@ fun PoiInviteSheet(
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT, text)
                         }
-                        context.startActivity(Intent.createChooser(send, "ادعُ المحل لحيّنا"))
+                        context.startActivity(Intent.createChooser(send, "ادعُ المحل إلى لكوفر"))
                     }
                 },
                 enabled = !loading,
@@ -117,7 +117,7 @@ fun PoiInviteSheet(
                     when {
                         loading -> "…"
                         mobile != null -> if (mine) "💬 ذكّره على واتساب المحل" else "💬 ادعه على واتساب المحل"
-                        else -> if (mine) "📣 ذكّره مرة ثانية" else "📣 ادعه لحيّنا"
+                        else -> if (mine) "📣 ذكّره مرة ثانية" else "📣 ادعه إلى لكوفر"
                     },
                     fontWeight = FontWeight.Bold, fontSize = 15.sp
                 )

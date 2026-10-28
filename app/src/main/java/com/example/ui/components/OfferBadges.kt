@@ -81,8 +81,8 @@ val RestaurantOffer.displayBadge: String
         return parts.joinToString(" • ")
     }
 
-/** نص شارة "حصري لحيّنا" (من إعدادات الأدمن؛ فاضي = موقفة). */
-object ExclusiveBadge { @Volatile var label: String = "💎 حصري لحيّنا" }
+/** نص شارة "حصري في لكوفر" (من إعدادات الأدمن؛ فاضي = موقفة). */
+object ExclusiveBadge { @Volatile var label: String = "💎 حصري في لكوفر" }
 
 /** شعار المتجر صغير ودائري (لا يظهر شي إذا ما عنده شعار). */
 @Composable

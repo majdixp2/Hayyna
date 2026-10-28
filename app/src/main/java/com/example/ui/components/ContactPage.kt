@@ -126,7 +126,7 @@ fun ContactPage(
                                 openWhatsApp(
                                     context,
                                     phone,
-                                    "مرحباً فريق حيّنا 👋\nنوع الرسالة: $type\n\n(إصدار التطبيق $appVersion)"
+                                    "مرحباً فريق لكوفر 👋\nنوع الرسالة: $type\n\n(إصدار التطبيق $appVersion)"
                                 )
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
@@ -261,7 +261,7 @@ private fun MyMessageCard(f: Feedback) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(10.dp)) {
-                        Text("رد إدارة حيّنا:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CalmSagePrimary)
+                        Text("رد إدارة لكوفر:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CalmSagePrimary)
                         Text(f.reply, fontSize = 13.sp)
                     }
                 }

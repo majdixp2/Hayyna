@@ -226,7 +226,7 @@ function itemForm(it, kind) {
       <datalist id="ifSecs">${sections.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
       <label class="label">وصف قصير</label><textarea id="ifDesc" class="input" rows="2" maxlength="300">${esc(f.desc)}</textarea>
       <label class="switch-row"><span>متوفر الحين</span><input type="checkbox" id="ifAv" ${f.available ? "checked" : ""}></label>
-      ${!direct() ? `<small class="hint">⏳ بيظهر بعد مراجعة فريق حيّنا (عادة خلال ساعات). وثّق متجرك عشان تنزل منتجاتك مباشرة.</small>` : ""}
+      ${!direct() ? `<small class="hint">⏳ بيظهر بعد مراجعة فريق لكوفر (عادة خلال ساعات). وثّق متجرك عشان تنزل منتجاتك مباشرة.</small>` : ""}
       <div id="ifErr" class="err"></div><button class="btn big" id="ifSave" style="background:${K.color};color:#fff">حفظ</button></div>`);
     const keep = () => { f.name = $("ifName").value; f.price = $("ifPrice").value; f.section = $("ifSec").value; f.desc = $("ifDesc").value; f.available = $("ifAv").checked; };
     $("ifImg").onchange = async (ev) => { const fl = ev.target.files[0]; if (!fl) return; keep(); const c = await cropImage(fl, { aspect: 1, title: "قص الصورة", outW: 1000 }); if (c) { f.file = c; draw(); } else draw(); };
@@ -555,7 +555,7 @@ function drawMyOrders() {
     MY.open = false; hideSheet(); setTimeout(() => openStore(o.storeId, true), 60);
   });
   b.querySelectorAll("[data-rate]").forEach((x) => x.onclick = () => rateOrder(list.find((y) => y.id === x.dataset.rate)));
-  // 🚗 وصلت: ننبّه المحل في حيّنا + رسالة واتساب جاهزة
+  // 🚗 وصلت: ننبّه المحل في لكوفر + رسالة واتساب جاهزة
   b.querySelectorAll("[data-arrive]").forEach((x) => x.onclick = async () => {
     const o = list.find((y) => y.id === x.dataset.arrive), store = state.stores.find((y) => y.uid === o.storeId);
     const wa = store ? X.waDigits(store.phone || store.branches?.[0]?.phone || "") : "";

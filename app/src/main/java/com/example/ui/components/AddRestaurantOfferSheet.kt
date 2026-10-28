@@ -150,7 +150,7 @@ fun AddRestaurantOfferSheet(
     var grandOpening by remember { mutableStateOf(editingOffer?.grandOpening ?: false) }
     // ✨ جديدنا: صنف/منتج جديد (السعر والخصم اختياري)
     var isNewProduct by remember { mutableStateOf(editingOffer?.postType == "new") }
-    // 💎 حصري لعملاء حيّنا
+    // 💎 حصري لعملاء لكوفر
     var exclusive by remember { mutableStateOf(editingOffer?.exclusive ?: false) }
     var startMillis by remember { mutableStateOf(editingOffer?.startsAt?.toDate()?.time) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -708,7 +708,7 @@ fun AddRestaurantOfferSheet(
                         else Text("لو الباقة شي جديد ما هو في المنيو، اكتب محتواها في التفاصيل.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (dt == "promo" && dealsCfg?.orderEnabled == true) Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🛒 الزبون يقدر يطلبه من حيّنا (لازم سعر)", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Text("🛒 الزبون يقدر يطلبه من لكوفر (لازم سعر)", fontSize = 13.sp, modifier = Modifier.weight(1f))
                         HSwitch(checked = orderable, onCheckedChange = { orderable = it })
                     }
 
@@ -866,7 +866,7 @@ fun AddRestaurantOfferSheet(
                     if (ExclusiveBadge.label.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = exclusive, onCheckedChange = { exclusive = it }, enabled = !exclLocked)
                         Column {
-                            Text("${ExclusiveBadge.label} (لعملاء حيّنا بس، يوري التطبيق عند الكاشير)", fontSize = 13.sp)
+                            Text("${ExclusiveBadge.label} (لعملاء لكوفر بس، يوري التطبيق عند الكاشير)", fontSize = 13.sp)
                             if (publish?.rewardOn == true) Text(
                                 "🎁 " + if (publish.rewardPercent >= 100) "نشر العرض الحصري مجاني" else "خصم ${publish.rewardPercent}% على نشر العرض الحصري",
                                 fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF7C3AED)
