@@ -35,18 +35,14 @@ service cloud.firestore {
     }
 
     // العروض مع المنيو: خصم / باقة / 1+1 / إعلان
+    // (مختصرة عمداً: الحدّ الأقصى لعدد العمليات في كل طلب، والعرض فيه حقول كثيرة)
     function validDeal(d) {
-      return d is map
-        && d.keys().hasOnly(['type', 'scope', 'kind', 'section', 'itemIds', 'itemId', 'getPct', 'orderable'])
+      return d.keys().hasOnly(['type', 'scope', 'kind', 'section', 'itemIds', 'itemId', 'getPct', 'orderable'])
         && d.type in ['discount', 'bundle', 'bogo', 'promo']
-        && (!('scope' in d) || d.scope in ['all', 'kind', 'section', 'items'])
-        && (!('kind' in d) || (d.kind is string && d.kind.size() <= 20))
-        && (!('section' in d) || (d.section is string && d.section.size() <= 40))
-        && (!('itemIds' in d) || (d.itemIds is list && d.itemIds.size() <= 50))
-        && (!('itemId' in d) || (d.itemId is string && d.itemId.size() <= 120))
-        && (!('getPct' in d) || d.getPct in [50, 100])
-        && (!('orderable' in d) || d.orderable is bool)
-        && (d.type != 'bogo' || ('itemId' in d && d.itemId.size() > 0));
+        && d.get('scope', 'all') in ['all', 'kind', 'section', 'items']
+        && d.get('getPct', 100) in [50, 100]
+        && d.get('itemIds', []).size() <= 50
+        && (d.type != 'bogo' || d.get('itemId', '') != '');
     }
 
     function isValidOffer(data) {
