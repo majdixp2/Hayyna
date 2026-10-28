@@ -14,12 +14,18 @@ const reset = (cfg) => env.withSecurityRulesDisabled(async (c) => { const db = c
 const android = { ...stored, deal: { type: "promo", orderable: false } };
 ["merchantId", "isFeatured", "viewsCount", "directionsCount", "whatsappCount", "reportsCount", "createdAt", "rating"].forEach((k) => delete android[k]);
 const db = env.authenticatedContext(U).firestore();
+const pick = (keys) => Object.fromEntries(Object.entries(android).filter(([k]) => keys.includes(k) || k === "deal"));
+const ks = Object.keys(android).filter((k) => k !== "deal");
 const tries = [
+  ["deal only", () => updateDoc(doc(db, "offers", ID), { deal: { type: "promo", orderable: false } })],
+  ["deal bundle only", () => updateDoc(doc(db, "offers", ID), { deal: { type: "bundle", itemIds: [] } })],
+  ["deal + first half", () => updateDoc(doc(db, "offers", ID), pick(ks.slice(0, ks.length / 2)))],
+  ["deal + second half", () => updateDoc(doc(db, "offers", ID), pick(ks.slice(ks.length / 2)))],
   ["android update", () => updateDoc(doc(db, "offers", ID), android)],
   ["no deal", () => { const a = { ...android }; delete a.deal; return updateDoc(doc(db, "offers", ID), a); }],
   ["title only", () => updateDoc(doc(db, "offers", ID), { offerTitle: "قهوة اليوم ✓" })],
 ];
-for (const cfg of [null, { exclusive: { enabled: true, reward: { enabled: true, percent: 100 } }, catalog: { enabled: true, orderEnabled: true } }]) {
+for (const cfg of [{ exclusive: { enabled: true, reward: { enabled: true, percent: 100 } }, catalog: { enabled: true, orderEnabled: true } }]) {
   for (const [n, f] of tries) { await reset(cfg); try { await assertSucceeds(f()); console.log(`::notice title=repro ok::${n} cfg=${!!cfg}`); } catch (e) { console.log(`::error title=repro FAIL ${n} cfg=${!!cfg}::${String(e.message).split("\n")[0].slice(0, 400)}`); } }
 }
 await env.cleanup();
