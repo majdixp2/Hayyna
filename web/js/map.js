@@ -95,6 +95,15 @@ export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 1
       const g = await loadGoogle(key);
       impl = googleMap(g, el, opts);
       googleFailHandlers.add(toOsm);
+      // بعض أخطاء قوقل (مفتاح/دومين/فوترة) ما تنادي gm_authFailure وتكتفي برسالة "حدث خطأ" داخل الخريطة.
+      // نراقب العنصر: أول ما تظهر رسالة الخطأ نحوّل لـ OpenStreetMap بدل ما تبقى الخريطة ميتة.
+      const hasErr = () => el.querySelector(".gm-err-container, .gm-err-message, .gm-err-title") || el.classList.contains("gm-err");
+      if (hasErr()) toOsm();
+      else if (window.MutationObserver) {
+        const mo = new MutationObserver(() => { if (hasErr()) { mo.disconnect(); toOsm(); } });
+        mo.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+        setTimeout(() => mo.disconnect(), 20000);
+      }
     } catch (e) { console.warn("Google Maps unavailable, using OpenStreetMap", e); el.innerHTML = ""; }
   }
   if (!impl) { const L = await loadLeaflet(); impl = leafletMap(L, el, opts); }
