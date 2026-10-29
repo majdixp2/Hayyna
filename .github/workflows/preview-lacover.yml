@@ -1,0 +1,29 @@
+name: Preview LACOVER web (temporary channel)
+
+# ينشر نسخة الويب من فرع rebrand/lacover على رابط تجريبي مؤقت في Firebase Hosting.
+# ما يلمس الموقع الحي ولا قواعد Firestore. احذف هذا الملف بعد الدمج.
+on:
+  push:
+    branches: [rebrand/lacover]
+    paths:
+      - "web/**"
+      - "firebase.json"
+      - ".github/workflows/preview-lacover.yml"
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    env:
+      SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Deploy preview channel
+        run: |
+          if [ -z "$SA" ]; then echo "::error::FIREBASE_SERVICE_ACCOUNT secret is missing"; exit 1; fi
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx -y firebase-tools@14 hosting:channel:deploy lacover --expires 30d --project gen-lang-client-0536850806 --non-interactive 2>&1 | tee out.txt
+          grep -oE "https://[a-z0-9.-]+--lacover-[a-z0-9]+\.web\.app" out.txt | head -1 | sed 's/^/::notice title=Preview URL::/' || true
