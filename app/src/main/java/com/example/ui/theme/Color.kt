@@ -8,10 +8,13 @@ val PureWhiteSurface = Color(0xFFFFFFFF)
 val SoftLinenVariant = Color(0xFFF3EFE9)
 val SoftBorderColor = Color(0xFFE6E0D6)
 
-// Calm Sage Green (Primary - reassuring, fresh & serene)
-val CalmSagePrimary = Color(0xFF2D6A4F)
-val CalmSageContainer = Color(0xFFE8F5E9)
-val OnCalmSageContainer = Color(0xFF1B4332)
+// LACOVER Navy (Primary — brand colour). Names kept from the Hayyna palette so nothing else has to change.
+val CalmSagePrimary = Color(0xFF10318F)
+val CalmSageContainer = Color(0xFFE6EBF7)
+val OnCalmSageContainer = Color(0xFF0B2266)
+
+// LACOVER Gold (brand accent)
+val LacoverGold = Color(0xFFF4B400)
 
 // Warm Soft Caramel & Terracotta (Secondary - warm food accent)
 val SoftTerracotta = Color(0xFFD48B54)

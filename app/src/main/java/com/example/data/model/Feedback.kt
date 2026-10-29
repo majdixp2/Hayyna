@@ -1,6 +1,6 @@
 package com.example.data.model
 
-/** رسالة من مستخدم لإدارة حيّنا (مشكلة / اقتراح / فكرة / شكوى). */
+/** رسالة من مستخدم لإدارة لكوفر (مشكلة / اقتراح / فكرة / شكوى). */
 data class Feedback(
     val id: String = "",
     val uid: String? = null,

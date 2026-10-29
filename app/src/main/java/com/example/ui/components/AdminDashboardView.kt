@@ -1009,7 +1009,7 @@ private fun PoiSettingsCard(
                 HSwitch(checked = config.showGooglePoi, onCheckedChange = { onSave(config.copy(showGooglePoi = it)) })
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("بطاقة \"ادعه لحيّنا\" عند الضغط", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("بطاقة \"ادعه إلى لكوفر\" عند الضغط", fontSize = 13.sp, modifier = Modifier.weight(1f))
                 HSwitch(checked = config.inviteEnabled, onCheckedChange = { onSave(config.copy(inviteEnabled = it)) })
             }
             androidx.compose.material3.OutlinedTextField(

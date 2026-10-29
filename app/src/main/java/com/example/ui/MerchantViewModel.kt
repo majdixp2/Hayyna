@@ -239,7 +239,7 @@ class MerchantViewModel(
         .flatMapLatest { admin -> if (admin) repository.topPoi else flowOf(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** المحل اللي ضغطه العميل من نقاط Google (مو مسجّل في حيّنا). */
+    /** المحل اللي ضغطه العميل من نقاط Google (مو مسجّل في لكوفر). */
     val selectedPoi = MutableStateFlow<com.google.android.gms.maps.model.PointOfInterest?>(null)
     /** محل يبي صاحبه يسجّله — نعبّي اسمه وموقعه تلقائياً. */
     val pendingClaim = MutableStateFlow<com.google.android.gms.maps.model.PointOfInterest?>(null)
@@ -1265,7 +1265,7 @@ class MerchantViewModel(
         launchSafely("تعذّر تحويل الحساب.") {
             repository.setUserRole(user.uid, ROLE_MERCHANT)
             userRole.value = ROLE_MERCHANT
-            toast("أهلاً بك كتاجر في حيّنا 🏪")
+            toast("أهلاً بك كتاجر في لكوفر 🏪")
         }
     }
 
@@ -1412,7 +1412,7 @@ class MerchantViewModel(
             return
         }
         if (myStatus.value?.suspended == true) {
-            toast("حسابك موقوف حالياً. تواصل مع إدارة حيّنا.")
+            toast("حسابك موقوف حالياً. تواصل مع إدارة لكوفر.")
             return
         }
         // نشر جديد بالرصيد: لو ما يكفي ما نرفض — نعرض الحصري (لو يغطيه) أو نحفظه مسودة

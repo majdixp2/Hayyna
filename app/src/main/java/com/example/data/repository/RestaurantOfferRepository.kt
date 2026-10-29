@@ -425,7 +425,7 @@ class RestaurantOfferRepository(
                     enabledAtMillis = (cr["enabledAt"] as? Timestamp)?.toDate()?.time ?: 0L,
                     graceUntilMillis = (cr["graceUntil"] as? Timestamp)?.toDate()?.time ?: Long.MAX_VALUE,
                     exclusiveEnabled = ex["enabled"] as? Boolean ?: true,
-                    exclusiveLabel = (ex["label"] as? String)?.takeIf { it.isNotBlank() } ?: "حصري لحيّنا",
+                    exclusiveLabel = (ex["label"] as? String)?.takeIf { it.isNotBlank() } ?: "حصري في لكوفر",
                     exclusiveIcon = (ex["icon"] as? String)?.takeIf { it.isNotBlank() } ?: "💎"
                 )
             )
@@ -766,7 +766,7 @@ class RestaurantOfferRepository(
         val b = db.batch()
         b.set(db.collection("wallets").document(uid), hashMapOf("balance" to welcome, "lastOp" to hashMapOf("kind" to "welcome", "ref" to ""), "updatedAt" to FieldValue.serverTimestamp()))
         if (welcome > 0) b.set(db.collection("wallets").document(uid).collection("tx").document(),
-            hashMapOf("kind" to "welcome", "points" to welcome, "note" to "🎁 هدية الترحيب من حيّنا", "ref" to "", "at" to FieldValue.serverTimestamp()))
+            hashMapOf("kind" to "welcome", "points" to welcome, "note" to "🎁 هدية الترحيب من لكوفر", "ref" to "", "at" to FieldValue.serverTimestamp()))
         b.commit().await()
     }
 
@@ -828,7 +828,8 @@ class RestaurantOfferRepository(
                 categoryTypes = types.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap(),
                 features = (c["features"] as? Map<*, *>)?.mapNotNull { (k, v) -> (k as? String)?.let { kk -> (v as? Boolean)?.let { kk to it } } }?.toMap() ?: emptyMap(),
                 noshow = (c["noshow"] as? Map<*, *>).let { n -> com.example.data.model.NoshowCfg(
-                    (n?.get("max") as? Number)?.toInt() ?: 3, (n?.get("days") as? Number)?.toInt() ?: 60, (n?.get("blockDays") as? Number)?.toInt() ?: 7) }
+                    (n?.get("max") as? Number)?.toInt() ?: 3, (n?.get("days") as? Number)?.toInt() ?: 60, (n?.get("blockDays") as? Number)?.toInt() ?: 7) },
+                tracker = (c["tracker"] as? String)?.takeIf { it in listOf("bar", "bubble", "off") } ?: "bar"
             ))
         }
         awaitClose { l.remove() }
@@ -1228,7 +1229,7 @@ data class CreditsConfig(
     // العروض المنشورة قبل التشغيل مجانية لين هالوقت
     val graceUntilMillis: Long = Long.MAX_VALUE,
     val exclusiveEnabled: Boolean = true,
-    val exclusiveLabel: String = "حصري لحيّنا",
+    val exclusiveLabel: String = "حصري في لكوفر",
     val exclusiveIcon: String = "💎"
 )
 
@@ -1259,7 +1260,7 @@ data class PoiConfig(
 ) {
     companion object {
         const val DEFAULT_MESSAGE =
-            "السلام عليكم 👋 شفت محلكم \"{name}\" على خريطة حيّنا. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍"
+            "السلام عليكم 👋 شفت محلكم \"{name}\" على خريطة لكوفر. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍"
     }
 }
 

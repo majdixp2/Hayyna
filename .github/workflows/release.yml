@@ -64,10 +64,10 @@ jobs:
       - name: Collect
         run: |
           mkdir -p out
-          cp app/build/outputs/bundle/release/app-release.aab "out/hayyna-${VERSION_NAME}-${VERSION_CODE}.aab"
+          cp app/build/outputs/bundle/release/app-release.aab "out/lacover-${VERSION_NAME}-${VERSION_CODE}.aab"
           echo "::notice::AAB جاهز: الإصدار $VERSION_NAME (رقم $VERSION_CODE)"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: hayyna-play-aab
+          name: lacover-play-aab
           path: out/*.aab

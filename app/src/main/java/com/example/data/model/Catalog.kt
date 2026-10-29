@@ -47,7 +47,9 @@ data class CatalogConfig(
     val categoryTypes: Map<String, String> = emptyMap(),
     // مزايا الطلب (مفاتيح من الأدمن، كلها شغّالة افتراضياً)
     val features: Map<String, Boolean> = emptyMap(),
-    val noshow: NoshowCfg = NoshowCfg()
+    val noshow: NoshowCfg = NoshowCfg(),
+    // متابعة الطلب الحي للعميل: "bar" شريط أسفل الشاشة، "bubble" دائرة عائمة، "off" مقفل
+    val tracker: String = "bar"
 ) {
     fun feat(k: String) = features[k] != false
     fun limitOf(kind: String) = limits[kind] ?: 0
@@ -143,7 +145,7 @@ data class HayynaOrder(
     }
     private fun f(n: Double) = String.format(java.util.Locale.US, "%.2f", n)
     fun text(): String = buildString {
-        appendLine("🧾 ملخص طلب من حيّنا — رقم #$code")
+        appendLine("🧾 ملخص طلب من لكوفر — رقم #$code")
         appendLine("🏪 $storeName" + if (branchName.isNotBlank()) " — $branchName" else "")
         appendLine("━━━━━━━━━━━━")
         items.forEach {

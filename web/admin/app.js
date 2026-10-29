@@ -1,4 +1,4 @@
-// لوحة إدارة حيّنا على الويب — نفس قواعد Firestore تحميها (الأدمن فقط يقدر يقرأ ويعدّل).
+// لوحة إدارة لكوفر على الويب — نفس قواعد Firestore تحميها (الأدمن فقط يقدر يقرأ ويعدّل).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
@@ -572,7 +572,7 @@ async function adminCredit(uid, delta, note) {
   const bal = (snap.data()?.balance || 0) + delta;
   if (bal < 0) throw new Error("الرصيد ما يصير بالسالب");
   await setDoc(ref, { balance: bal, lastOp: { kind: "admin", ref: "" }, updatedAt: serverTimestamp() });
-  await addDoc(collection(db, "wallets", uid, "tx"), { kind: "admin", points: delta, note: note || (delta > 0 ? "إضافة من إدارة حيّنا" : "خصم من إدارة حيّنا"), ref: "", at: serverTimestamp() });
+  await addDoc(collection(db, "wallets", uid, "tx"), { kind: "admin", points: delta, note: note || (delta > 0 ? "إضافة من إدارة لكوفر" : "خصم من إدارة لكوفر"), ref: "", at: serverTimestamp() });
 }
 async function loadCodes() { state.codes = (await getDocs(collection(db, "creditCodes"))).docs.map((d) => ({ id: d.id, ...d.data() })); render(); }
 const unusedOf = (batch) => (state.codes || []).filter((c) => (c.batch || "—") === batch && !c.redeemedBy);
@@ -689,7 +689,7 @@ function returnToMerchant(type, id) {
       await updateDoc(doc(db, isItem ? "items" : "offers", id), isItem ? { approved: false, adminNote: note } : { isApproved: false, adminNote: note });
       await audit(isItem ? "إرجاع منتج للتاجر" : "إرجاع عرض للتاجر", isItem ? "catalog" : "review", isItem ? { type: "item", id, name: title } : offerT(x), note);
       close();
-      const msg = `السلام عليكم 👋 من فريق حيّنا\nبخصوص ${isItem ? "منتجك" : "عرضك"} «${title}»:\n${note}\n\nعدّله من «حسابي» في حيّنا، وبنراجعه مرة ثانية على طول 🌿`;
+      const msg = `السلام عليكم 👋 من فريق لكوفر\nبخصوص ${isItem ? "منتجك" : "عرضك"} «${title}»:\n${note}\n\nعدّله من «حسابي» في لكوفر، وبنراجعه مرة ثانية على طول 🌿`;
       if (w) w.location = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
     }, "رجّعناه للتاجر ✅", "رجّعه للتاجر");
   };
@@ -752,6 +752,10 @@ function catalogPage() {
     <div class="card">
       <p class="muted">كل ميزة تقدر توقفها لكل المنصة. لو وقفتها تختفي عند التاجر والزبون، والبيانات تبقى محفوظة.</p>
       ${Object.entries(FEATURES).map(([k, l]) => `<label class="switch"><input type="checkbox" data-feat="${k}" ${feat(cfg, k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}
+      <h3 style="margin:14px 0 6px">🧾 متابعة الطلب عند العميل</h3>
+      <p class="muted">لما يكون عند العميل طلب شغّال، يشوف حالته في كل الشاشات بدون ما يفتح «طلباتي». يتلوّن أخضر ويهتز الجوال لما يصير جاهز، وزر «🚗 وصلت» يطلع عليه في الاستلام من السيارة.</p>
+      <div class="row" style="flex-wrap:wrap;gap:8px">${[["bar", "▬ شريط أسفل الشاشة"], ["bubble", "● دائرة عائمة"], ["off", "⛔ مقفل"]].map(([v, l]) =>
+        `<label class="switch"><input type="radio" name="trackerMode" value="${v}" ${(["bar", "bubble", "off"].includes(cat.tracker) ? cat.tracker : "bar") === v ? "checked" : ""}> ${l}</label>`).join("")}</div>
     </div>
 
     <h2 id="ct-noshow">🚫 الطلبات اللي ما انستلمت</h2>
@@ -870,6 +874,10 @@ function bindCatalog(c) {
   }));
   c.querySelectorAll("[data-ifilter]").forEach((b) => (b.onclick = () => { state.itemFilter = b.dataset.ifilter; render(); }));
   const setCat = (path, val) => updateDoc(doc(db, "config", "app"), { [path]: val }).catch(() => setDoc(doc(db, "config", "app"), { catalog: {} }, { merge: true }).then(() => updateDoc(doc(db, "config", "app"), { [path]: val })));
+  document.querySelectorAll('input[name="trackerMode"]').forEach((x) => x.onchange = () => run(async () => {
+    await setCat("catalog.tracker", x.value);
+    await audit(`متابعة الطلب عند العميل: ${({ bar: "شريط", bubble: "دائرة", off: "مقفل" })[x.value]}`, "catalog");
+  }, "انحفظ ✅", "متابعة الطلب"));
   c.querySelectorAll("[data-catcfg]").forEach((x) => (x.onchange = () => run(async () => {
     await setCat("catalog." + x.dataset.catcfg, x.checked);
     await audit(`${x.checked ? "تشغيل" : "إيقاف"}: ${x.parentElement.textContent.trim().slice(0, 40)}`, "catalog");
@@ -921,10 +929,10 @@ function settings() {
   const cfg = state.config;
   const cats = catDraft();
   const ex = exclusiveOf(cfg), rw = { enabled: !!cfg.exclusive?.reward?.enabled, percent: cfg.exclusive?.reward?.percent ?? 100 };
-  const COLORS = ["#7C3AED", "#2D6A4F", "#E05A47", "#2563EB", "#B7791F", "#111827"];
-  return jumpNav([["st-cats", "التصنيفات"], ["st-excl", "شارة الحصري"], ["st-support", "الدعم"], ["st-ai", "التعبئة الذكية"], ["st-verify", "التوثيق"], ["st-poi", "محلات Google"]]) + `<h2 id="st-excl">💎 شارة «حصري لحيّنا»</h2>
+  const COLORS = ["#7C3AED", "#10318F", "#E05A47", "#2563EB", "#B7791F", "#111827"];
+  return jumpNav([["st-cats", "التصنيفات"], ["st-excl", "شارة الحصري"], ["st-support", "الدعم"], ["st-ai", "التعبئة الذكية"], ["st-verify", "التوثيق"], ["st-poi", "محلات Google"]]) + `<h2 id="st-excl">💎 شارة «حصري في لكوفر»</h2>
     <div class="card">
-      <p class="muted">مجانية: التاجر يعلّم على العرض «حصري لعملاء حيّنا»، وتطلع الشارة على الخريطة والبطاقات.</p>
+      <p class="muted">مجانية: التاجر يعلّم على العرض «حصري لعملاء لكوفر»، وتطلع الشارة على الخريطة والبطاقات.</p>
       <label class="switch"><input type="checkbox" id="exOn" ${ex.enabled ? "checked" : ""}> إظهار الخيار والشارة</label>
       <div class="row" style="align-items:center;margin-top:8px;flex-wrap:wrap"><span>النص</span><input type="text" id="exLabel" value="${esc(ex.label)}" maxlength="20" style="width:180px">
         <span>الأيقونة</span><input type="text" id="exIcon" value="${esc(ex.icon)}" maxlength="4" style="width:60px">
@@ -972,9 +980,9 @@ function settings() {
     <h2 id="st-poi">📍 محلات Google على الخريطة</h2>
     <div class="card">
       <label class="switch"><input type="checkbox" id="poiOn" ${cfg.showGooglePoi !== false ? "checked" : ""}> إظهار نقاط المحلات (باهتة)</label>
-      <label class="switch" style="margin-top:8px"><input type="checkbox" id="inviteOn" ${cfg.poiInviteEnabled !== false ? "checked" : ""}> بطاقة "ادعه لحيّنا" عند الضغط</label>
+      <label class="switch" style="margin-top:8px"><input type="checkbox" id="inviteOn" ${cfg.poiInviteEnabled !== false ? "checked" : ""}> بطاقة "ادعه إلى لكوفر" عند الضغط</label>
       <p class="muted">نص الدعوة ({name} = اسم المحل)</p>
-      <textarea id="inviteMsg">${esc(cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة حيّنا. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')}</textarea>
+      <textarea id="inviteMsg">${esc(cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة لكوفر. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')}</textarea>
       <p class="muted">رابط تحميل التطبيق (اختياري)</p>
       <input type="text" id="appLink" value="${esc(cfg.appLink || "")}">
       <div class="actions"><button class="btn primary" data-act="savePoi">حفظ</button></div>
@@ -994,7 +1002,7 @@ function bind() {
   const cfgSwitch = (key, val, label) => run(async () => { await actions.saveConfig({ [key]: val }); await audit(`${val ? "تشغيل" : "إيقاف"}: ${label}`, "settings"); }, "تم ✅");
   c.querySelectorAll("[data-cfg]").forEach((x) => (x.onchange = () => cfgSwitch(x.dataset.cfg, x.checked, x.parentElement.textContent.trim())));
   const poiOn = $("poiOn"); if (poiOn) poiOn.onchange = () => cfgSwitch("showGooglePoi", poiOn.checked, "نقاط محلات Google");
-  const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => cfgSwitch("poiInviteEnabled", invOn.checked, "بطاقة ادعه لحيّنا");
+  const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => cfgSwitch("poiInviteEnabled", invOn.checked, "بطاقة ادعه إلى لكوفر");
   c.querySelectorAll("[data-catname]").forEach((x) => (x.oninput = () => { catDraft()[+x.dataset.catname].name = x.value; }));
   c.querySelectorAll("[data-cattype]").forEach((x) => (x.onchange = () => { catDraft()[+x.dataset.cattype].type = x.value; }));
   const cn = $("catNew"); if (cn) cn.oninput = () => { const g = baseKindOf({}, cn.value); $("catNewType").value = g; }; // نخمّن النوع من الاسم
@@ -1147,7 +1155,7 @@ function bind() {
       saveExcl: () => {
         const pct = Math.round(+$("exPct").value);
         if (!(pct >= 1 && pct <= 100)) { toast("نسبة الخصم من 1 إلى 100"); return false; }
-        return actions.saveConfig({ exclusive: { enabled: $("exOn").checked, label: $("exLabel").value.trim().slice(0, 20) || "حصري لحيّنا", icon: $("exIcon").value.trim().slice(0, 4) || "💎", color: $("content").querySelector("[data-excolor].on")?.dataset.excolor || "#7C3AED",
+        return actions.saveConfig({ exclusive: { enabled: $("exOn").checked, label: $("exLabel").value.trim().slice(0, 20) || "حصري في لكوفر", icon: $("exIcon").value.trim().slice(0, 4) || "💎", color: $("content").querySelector("[data-excolor].on")?.dataset.excolor || "#7C3AED",
           reward: { enabled: $("exRw").checked, percent: pct } } });
       },
       staffAdd: async () => {

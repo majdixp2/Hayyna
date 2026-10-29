@@ -1,4 +1,4 @@
-:root{--green:#356E55;--green-soft:#e8f1ec;--bg:#f6f4ef;--card:#fff;--text:#1f2420;--muted:#6b7280;--red:#E05A47;--amber:#8A5A00;--amber-bg:#FFF4E0;--border:#e7e2d8}
+:root{--green:#10318F;--green-soft:#e6ebf7;--bg:#f6f4ef;--card:#fff;--text:#1f2420;--muted:#6b7280;--red:#E05A47;--amber:#8A5A00;--amber-bg:#FFF4E0;--border:#e7e2d8}
 *{box-sizing:border-box}
 body{margin:0;font-family:Tajawal,system-ui,sans-serif;background:var(--bg);color:var(--text)}
 .hidden{display:none!important}
@@ -75,6 +75,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 /* مفاتيح تشغيل واضحة وهي مقفلة */
 .switch input[type="checkbox"]{appearance:none;-webkit-appearance:none;width:42px;height:24px;border-radius:999px;background:#D1D5DB;border:2px solid #6B7280;position:relative;cursor:pointer;flex:none;margin:0;transition:background .15s,border-color .15s}
 .switch input[type="checkbox"]::after{content:"";position:absolute;top:2px;inset-inline-start:2px;width:16px;height:16px;border-radius:50%;background:#4B5563;transition:inset-inline-start .15s,background .15s}
-.switch input[type="checkbox"]:checked{background:#2D6A4F;border-color:#2D6A4F}
+.switch input[type="checkbox"]:checked{background:#10318F;border-color:#10318F}
 .switch input[type="checkbox"]:checked::after{inset-inline-start:20px;background:#fff}
 .switch input[type="checkbox"]:disabled{opacity:.5;cursor:not-allowed}

@@ -530,7 +530,7 @@ fun RestaurantOfferDetailSheet(
             ) {
                 Button(
                     onClick = {
-                        val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} (${offer.priceLabel()}) المعلن عنه في تطبيق حيّنا."
+                        val message = "مرحباً، أود طلب العرض: ${offer.offerTitle} (${offer.priceLabel()}) المعلن عنه في تطبيق لكوفر."
                         com.example.data.OfferTracker.whatsapp(offer.id)
                             orderScope.launch { com.example.data.OfferSharer.orderViaWhatsApp(context, shown, shown.phone, message) }
                     },

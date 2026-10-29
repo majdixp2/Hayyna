@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.MediaType
 import com.example.data.model.RestaurantOffer
+import com.example.ui.components.OrderTracker
 import com.example.ui.components.AddRestaurantOfferSheet
 import com.example.ui.components.AdminDashboardView
 import com.example.ui.components.BottomOffersCarousel
@@ -190,7 +191,7 @@ fun MerchantStoreScreen(
     if (showExitDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showExitDialog = false },
-            title = { Text("تبي تطلع من حيّنا؟") },
+            title = { Text("تبي تطلع من لكوفر؟") },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     showExitDialog = false
@@ -816,6 +817,15 @@ fun MerchantStoreScreen(
                             )
                         }
                     }
+                }
+
+                // 🧾 متابعة الطلب الحي (شريط أو دائرة حسب إعداد الأدمن) — بس في شاشات العميل
+                if (currentRole == AppRole.CUSTOMER_OFFERS || (currentRole == AppRole.CUSTOMER_MAP && selectedOfferOnMap == null)) {
+                    OrderTracker(
+                        vm = viewModel,
+                        bottomPadding = if (currentRole == AppRole.CUSTOMER_MAP) 64.dp else 12.dp,
+                        onOpen = { showMyOrders = true }
+                    )
                 }
             }
         }

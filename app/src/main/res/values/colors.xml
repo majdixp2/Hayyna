@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="hayyna_green">#FF356E55</color>
+    <color name="hayyna_green">#FF10318F</color>
+    <color name="lacover_navy">#FF10318F</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

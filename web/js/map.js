@@ -73,14 +73,22 @@ function loadLeaflet() {
  */
 export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 12, showShops = false, onMapClick, onPoiClick } = {}) {
   const opts = { center, zoom, showShops, onMapClick, onPoiClick };
+  const origStyle = el.getAttribute("style"), origClass = el.className;
   // واجهة ثابتة تحوّل لـ OpenStreetMap لو رفضت قوقل المفتاح (حتى بعد ما تنرسم الخريطة)
   const last = {};
   let impl = null, switching = false;
   const toOsm = async () => {
     if (switching || impl?.kind === "osm") return; switching = true;
     console.warn("Google Maps failed — switching to OpenStreetMap");
-    const c = impl?.center?.() || { lat: center[0], lng: center[1] };
-    el.innerHTML = ""; el.className = el.className.replace(/\bgm-err\b/, "");
+    let c = { lat: center[0], lng: center[1] };
+    try { c = impl?.center?.() || c; } catch {}
+    // قوقل تبقى تكتب رسالة الخطأ داخل عنصرها القديم، فنبدّله بعنصر جديد نظيف ونرسم OSM فيه
+    const fresh = document.createElement(el.tagName);
+    if (el.id) fresh.id = el.id;
+    fresh.className = (origClass || "").replace(/\bgm-err\b/, "");
+    if (origStyle) fresh.setAttribute("style", origStyle);
+    if (el.parentNode) el.replaceWith(fresh);
+    el = fresh;
     const L = await loadLeaflet();
     impl = leafletMap(L, el, { ...opts, center: [c.lat, c.lng] });
     if (last.markers) impl.setMarkers(last.markers);
@@ -95,6 +103,15 @@ export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 1
       const g = await loadGoogle(key);
       impl = googleMap(g, el, opts);
       googleFailHandlers.add(toOsm);
+      // بعض أخطاء قوقل (مفتاح/دومين/فوترة) ما تنادي gm_authFailure وتكتفي برسالة "حدث خطأ" داخل الخريطة.
+      // نراقب العنصر: أول ما تظهر رسالة الخطأ نحوّل لـ OpenStreetMap بدل ما تبقى الخريطة ميتة.
+      const hasErr = () => el.querySelector(".gm-err-container, .gm-err-message, .gm-err-title") || el.classList.contains("gm-err");
+      if (hasErr()) toOsm();
+      else if (window.MutationObserver) {
+        const mo = new MutationObserver(() => { if (hasErr()) { mo.disconnect(); toOsm(); } });
+        mo.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+        setTimeout(() => mo.disconnect(), 20000);
+      }
     } catch (e) { console.warn("Google Maps unavailable, using OpenStreetMap", e); el.innerHTML = ""; }
   }
   if (!impl) { const L = await loadLeaflet(); impl = leafletMap(L, el, opts); }
@@ -181,7 +198,7 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
     setPin: (lat, lng) => { if (pin) pin.setPos({ lat, lng }); else { pin = new Html({ lat, lng }, node('<div class="pin">📍</div>', "ov-pin"), 10); pin.setMap(map); } },
     setCircle: (c) => {
       if (circle) { circle.setMap(null); circle = null; }
-      if (c) circle = new g.Circle({ map, center: { lat: c.lat, lng: c.lng }, radius: c.radius, fillColor: "#2D6A4F", fillOpacity: 0.06, strokeColor: "#2D6A4F", strokeOpacity: 0.45, strokeWeight: 2, clickable: false });
+      if (c) circle = new g.Circle({ map, center: { lat: c.lat, lng: c.lng }, radius: c.radius, fillColor: "#10318F", fillOpacity: 0.06, strokeColor: "#10318F", strokeOpacity: 0.45, strokeWeight: 2, clickable: false });
     },
     center: () => { const c = map.getCenter(); return { lat: c.lat(), lng: c.lng() }; },
     resize: () => g.event.trigger(map, "resize"),
@@ -217,7 +234,7 @@ function leafletMap(L, el, { center, zoom, onMapClick }) {
     setPin: (lat, lng) => { if (pin) pin.setLatLng([lat, lng]); else pin = L.marker([lat, lng], { icon: L.divIcon({ html: '<div class="pin">📍</div>', className: "ov ov-pin", iconSize: null }), interactive: false }).addTo(map); },
     setCircle: (c) => {
       if (circle) { circle.remove(); circle = null; }
-      if (c) circle = L.circle([c.lat, c.lng], { radius: c.radius, color: "#2D6A4F", weight: 2, opacity: 0.45, fillOpacity: 0.06, interactive: false }).addTo(map);
+      if (c) circle = L.circle([c.lat, c.lng], { radius: c.radius, color: "#10318F", weight: 2, opacity: 0.45, fillOpacity: 0.06, interactive: false }).addTo(map);
     },
     center: () => { const c = map.getCenter(); return { lat: c.lat, lng: c.lng }; },
     resize: () => map.invalidateSize(),

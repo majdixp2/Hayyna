@@ -1,4 +1,4 @@
-// حيّنا على الويب — نفس تجربة التطبيق: خريطة، عروض، مفضلة، حسابي (زبون / تاجر).
+// لكوفر على الويب — نفس تجربة التطبيق: خريطة، عروض، مفضلة، حسابي (زبون / تاجر).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut,
@@ -383,7 +383,7 @@ export function openOffer(id, push) {
   if (!o) { if (state.loaded) { toast("العرض انتهى أو غير متاح"); go("/", true); } return; }
   state.view = { type: "o", id }; state.selected = id;
   if (push) history.pushState({ v: "o", id }, "", `/o/${encodeURIComponent(id)}`);
-  document.title = `${o.offerTitle} — ${o.restaurantName} | حيّنا`;
+  document.title = `${o.offerTitle} — ${o.restaurantName} | لكوفر`;
   if (!sessionStorage.getItem("v_" + id)) { sessionStorage.setItem("v_" + id, "1"); bump(id, "viewsCount"); }
   const bs = branchesOf(o);
   let br = bs.find((b) => b.id === state.branchId) || nearestBranch(o).b;
@@ -420,7 +420,7 @@ export function openOffer(id, push) {
         ${!isOwner && offerOrderable(o) ? `<button class="btn dir big deal-go" data-act="dealgo">${esc(offerOrderable(o))}</button>` : ""}
         <div class="actions">
           <a class="btn dir" data-act="dir" href="https://www.google.com/maps/dir/?api=1&destination=${br.latitude},${br.longitude}" target="_blank" rel="noopener">🧭 الاتجاهات إلى المحل</a>
-          <a class="btn wa" data-act="wa" href="https://wa.me/${waDigits(br.phone || o.phone)}?text=${encodeURIComponent(`مرحباً، أود طلب العرض: ${o.offerTitle} (${priceLabel(o)}) المعلن عنه في حيّنا\n${offerUrl(o)}`)}" target="_blank" rel="noopener">💬 طلب واتساب</a>
+          <a class="btn wa" data-act="wa" href="https://wa.me/${waDigits(br.phone || o.phone)}?text=${encodeURIComponent(`مرحباً، أود طلب العرض: ${o.offerTitle} (${priceLabel(o)}) المعلن عنه في لكوفر\n${offerUrl(o)}`)}" target="_blank" rel="noopener">💬 طلب واتساب</a>
           <a class="btn call" href="tel:${esc(br.phone || o.phone)}">📞 اتصال</a>
         </div>
       </div>`);
@@ -471,7 +471,7 @@ export async function openStore(uid, push) {
   if (!s) { if (state.storesLoaded) { toast("صفحة المتجر غير متاحة"); go("/", true); } return; }
   state.view = { type: "s", id: uid };
   if (push) history.pushState({ v: "s", id: uid }, "", `/s/${encodeURIComponent(uid)}`);
-  document.title = `${s.name} | حيّنا`;
+  document.title = `${s.name} | لكوفر`;
   const offers = state.offers.filter((o) => o.merchantId === uid && !X.isExpired(o) && (o.reportsCount || 0) < AUTO_HIDE_REPORTS);
   const del = deliveryText(s), phone = s.phone || (s.branches || [])[0]?.phone || "";
   showSheet(`${s.coverUrl ? `<img class="cover" src="${esc(cld(s.coverUrl, 1000))}" alt="">` : `<div class="cover"></div>`}
@@ -498,7 +498,7 @@ export async function openStore(uid, push) {
   const body = $("sheetBody");
   body.querySelectorAll("[data-offer]").forEach((el) => el.onclick = () => openOffer(el.dataset.offer, true));
   body.querySelectorAll(".menu-img").forEach((im) => im.onclick = () => openViewer(im.dataset.full));
-  body.querySelector('[data-act="share"]').onclick = () => share(`🏪 ${s.name} على حيّنا`, storeUrl(uid), s.name);
+  body.querySelector('[data-act="share"]').onclick = () => share(`🏪 ${s.name} على لكوفر`, storeUrl(uid), s.name);
   renderStoreItems(s); // المنيو/المنتجات/الخدمات + السلة (لو الخدمة شغّالة)
   renderStoreRatings(uid);
 }
@@ -529,12 +529,12 @@ async function openPoi({ placeId, lat, lng }) {
   const cfg = state.config;
   const shown = name || "هذا المحل";
   const appLink = withRef(cfg.appLink || location.origin);
-  const invite = (cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة حيّنا. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')
+  const invite = (cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة لكوفر. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')
     .replace(/\{name\}/g, name || "محلكم") + "\n" + appLink;
   const isMerchant = state.role === "merchant" || (state.user && ADMIN_EMAILS.includes(state.user.email));
   const inviteBtn = mobile
     ? `<a class="btn wa" id="poiInvite" href="https://wa.me/${mobile}?text=${encodeURIComponent(invite)}" target="_blank" rel="noopener">💬 ${mine ? "ذكّره على واتساب المحل" : "ادعه على واتساب المحل"}</a>`
-    : `<button class="btn wa" id="poiInvite">📨 ${mine ? "ذكّره مرة ثانية" : "ادعه لحيّنا"}</button>`;
+    : `<button class="btn wa" id="poiInvite">📨 ${mine ? "ذكّره مرة ثانية" : "ادعه إلى لكوفر"}</button>`;
   let inviteHtml = "";
   if (cfg.poiInviteEnabled !== false) {
     if (locked && !mine) inviteHtml = `<div class="poi-locked">📨 تمت دعوة هذا المحل من أحد أهل الحي<br><small>ننتظره يسجّل — تقدر تدعوه بعد ${daysLeft(until)} ${daysLeft(until) === 1 ? "يوم" : "أيام"}</small></div>`;
@@ -546,7 +546,7 @@ async function openPoi({ placeId, lat, lng }) {
   showSheet(`<div class="pad poi-card">
     <div class="poi-ico">🏪</div>
     <div class="section-title" style="text-align:center">${esc(shown)}</div>
-    <p class="desc tr" style="text-align:center">هذا المحل مو مسجّل في حيّنا للحين</p>
+    <p class="desc tr" style="text-align:center">هذا المحل مو مسجّل في لكوفر للحين</p>
     ${inviteHtml}
     ${phone && !mobile ? `<a class="btn call" href="tel:${esc(phone.replace(/[^\d+]/g, ""))}">📞 اتصل بالمحل (${esc(phone)})</a>` : ""}
     ${!state.user || isMerchant ? `<button class="btn dir" id="poiClaim">🏪 أنا صاحب المحل — سجّله</button>`
@@ -558,7 +558,7 @@ async function openPoi({ placeId, lat, lng }) {
     poiLog(placeId, "invites");
     // نحجز الدعوة باسمه كم يوم عشان ما يتكرر الإزعاج للمحل
     setDoc(doc(db, "poiInvites", placeId), { by: state.user.uid, at: serverTimestamp(), until: Timestamp.fromMillis(Date.now() + INVITE_LOCK_DAYS * 864e5) }).catch(() => {});
-    if (!mobile) share(invite, "", "حيّنا");
+    if (!mobile) share(invite, "", "لكوفر");
   });
   $("poiClaim")?.addEventListener("click", () => {
     poiLog(placeId, "claims");
@@ -623,7 +623,7 @@ export const isDark = () => prefs.theme === "dark" || (prefs.theme === "auto" &&
 export function applyTheme() {
   const dark = isDark();
   document.documentElement.dataset.theme = dark ? "dark" : "light";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#0F1A15" : "#2D6A4F");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#0A1230" : "#10318F");
   map?.setDark?.(dark);
 }
 darkMQ.addEventListener?.("change", () => { if (prefs.theme === "auto") applyTheme(); });
@@ -690,7 +690,7 @@ function renderCustomer(el, { name, pr, u, support, foot }) {
       <div class="menu">
         ${ordersOn() ? row("myOrders", "🧾", "طلباتي", "طلباتك من المحلات، وتعيدها بضغطة") : ""}
         ${row("settingsRow", "⚙️", "الإعدادات", "المظهر، اللغة، الحساب")}
-        ${canOfferInstall() ? row("installAcc", "📲", "ثبّت حيّنا على جوالك", "يفتح بشاشة كاملة مثل التطبيق") : ""}
+        ${canOfferInstall() ? row("installAcc", "📲", "ثبّت لكوفر على جوالك", "يفتح بشاشة كاملة مثل التطبيق") : ""}
         ${row("contactBtn", "💬", "تواصل معنا", "اقتراح، مشكلة، أو محل تبيه ينضم")}
         ${row("", "🟢", "واتساب الدعم", esc(support), `https://wa.me/${waDigits(support)}`)}
         ${row("", "🔒", "سياسة الخصوصية", "", "/privacy.html")}
@@ -711,7 +711,7 @@ function ambassadorCard() {
   const st = (r) => r.offerPts ? ["🔥", "نزّل عروض", "done"] : r.verifiedPts ? ["✅", "انضم وتوثّق", "done"] : ["⏳", "تحت المراجعة", "wait"];
   return `<div class="amb tier-${TIERS.indexOf(TIERS.find((x) => x.name === t.name))}">
     <div class="amb-top"><div class="amb-ico">${t.ico}</div>
-      <div class="amb-main"><b>${t.name}</b><small>${refs.length ? `دعيت ${refs.length} ${refs.length === 1 ? "محل" : "محلات"}` : "ادع المحلات اللي تحبها لحيّنا"}</small></div>
+      <div class="amb-main"><b>${t.name}</b><small>${refs.length ? `دعيت ${refs.length} ${refs.length === 1 ? "محل" : "محلات"}` : "ادع المحلات اللي تحبها إلى لكوفر"}</small></div>
       <div class="amb-pts"><b>${pts.toLocaleString("en")}</b><small>نقطة</small></div></div>
     <div class="amb-bar"><span style="width:${t.pct}%"></span></div>
     <div class="amb-next">${t.next ? `باقي <b>${t.left.toLocaleString("en")}</b> نقطة وتصير <b>${t.next.ico} ${t.next.name}</b>` : "💎 وصلت أعلى مستوى — أنت فخر الحي"}</div>
@@ -728,14 +728,14 @@ function howPoints() {
       <li>إذا نزّل أول عرض: <b>+${POINTS.offer}</b> نقطة</li>
     </ol>
     <div class="tiers">${TIERS.map((x) => `<div><span>${x.ico}</span><b>${x.name}</b><small>${x.min ? x.min.toLocaleString("en") + "+" : "البداية"}</small></div>`).join("")}</div>
-    <p class="muted">النقاط تنحسب بعد مراجعة فريق حيّنا، وقريباً تقدر تستبدلها بخصومات وكوبونات من المحلات 🎁</p>
+    <p class="muted">النقاط تنحسب بعد مراجعة فريق لكوفر، وقريباً تقدر تستبدلها بخصومات وكوبونات من المحلات 🎁</p>
     <button class="btn primary" id="howOk">تمام</button></div>`);
   $("howOk").onclick = hideSheet;
 }
 async function inviteFriend() {
   const link = withRef(state.config.appLink || location.origin);
-  const text = `شف حيّنا 📍 تطبيق يعرض لك عروض وخصومات المحلات اللي حولك على الخريطة — مطاعم، مقاهي، ملابس وأكثر. جرّبه:`;
-  if (navigator.share) { try { await navigator.share({ title: "حيّنا", text, url: link }); return; } catch (e) { if (e?.name === "AbortError") return; } }
+  const text = `شف لكوفر 📍 تطبيق يعرض لك عروض وخصومات المحلات اللي حولك على الخريطة — مطاعم، مقاهي، ملابس وأكثر. جرّبه:`;
+  if (navigator.share) { try { await navigator.share({ title: "لكوفر", text, url: link }); return; } catch (e) { if (e?.name === "AbortError") return; } }
   window.open(`https://wa.me/?text=${encodeURIComponent(text + "\n" + link)}`, "_blank");
 }
 
@@ -747,13 +747,13 @@ export function renderAccount() {
   const u = state.user;
   const support = X.toLocalPhone(state.config.supportWhatsapp || "0552793379");
   if (!u) {
-    el.innerHTML = `<div class="acc-hero"><img src="/img/icon-192.png" alt=""><h1>أهلاً بك في حيّنا</h1><p>سجّل دخولك عشان تحفظ مفضلتك، أو تنشر عروض محلك</p></div>
+    el.innerHTML = `<div class="acc-hero"><img src="/img/icon-192.png" alt=""><h1>أهلاً بك في لكوفر</h1><p>سجّل دخولك عشان تحفظ مفضلتك، أو تنشر عروض محلك</p></div>
       <div class="pad">
         <button class="role-card" data-login="customer"><div class="rc-ico">🏡</div><div><b>أنا من أهل الحي</b><br><small>أدوّر عروض المحلات حولي، وأحفظ اللي يعجبني</small></div></button>
         <button class="role-card" data-login="merchant"><div class="rc-ico">🏪</div><div><b>أنا صاحب محل</b><br><small>انشر عروضك مجاناً وخلّ أهل الحي يوصلون لك</small></div></button>
         <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
         <button class="btn call" id="settingsBtn">⚙️ الإعدادات</button>
-        ${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت حيّنا على جوالك</button>` : ""}
+        ${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت لكوفر على جوالك</button>` : ""}
         <div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div>
       </div>`;
     el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => openLogin(b.dataset.login));
@@ -771,7 +771,7 @@ export function renderAccount() {
   const head = `<div class="acc-user">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="">` : `<div class="avatar">${esc((name || "؟")[0])}</div>`}
     <div class="au-main"><b>${esc(name)}</b><br><small dir="ltr">${esc(X.toLocalPhone(pr.phone))}</small> <span class="pill role">${roleName(state.role)}</span></div>
     <button class="icon-btn" id="editProfile" aria-label="تعديل البيانات">✎</button></div>`;
-  const foot = `<div class="pad acc-foot">${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت حيّنا على جوالك</button>` : ""}<button class="btn call" id="settingsBtn">⚙️ الإعدادات</button><button class="btn ghost" id="logoutBtn">تسجيل الخروج</button><div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div></div>`;
+  const foot = `<div class="pad acc-foot">${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت لكوفر على جوالك</button>` : ""}<button class="btn call" id="settingsBtn">⚙️ الإعدادات</button><button class="btn ghost" id="logoutBtn">تسجيل الخروج</button><div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div></div>`;
   if (state.role === "merchant" || isAdmin) {
     el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
     import("./merchant.js").then((m) => m.renderMerchant($("merchantRoot"), { isAdmin, support, logout: doLogout, contact: openContact }));
@@ -932,12 +932,13 @@ export function setTab(t, fromPop) {
   if (t === "map") { setTimeout(() => map?.resize(), 50); setTimeout(() => state.loaded && maybeSpotlight(filtered()), 400); } // بطاقة "قريب منك" لما يرجع للخريطة
   if (t === "account") renderAccount();
   try { sessionStorage.setItem("hayyna_tab", t); } catch {}
+  window.dispatchEvent(new Event("tabchange"));
 }
 $("nav").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { hideSheet(); if (location.pathname !== "/") history.replaceState({ tab: b.dataset.tab }, "", "/"); setTab(b.dataset.tab); } };
 
 function route() {
   const m = location.pathname.match(/^\/(o|s)\/([^/]+)/);
-  if (!m) { hideSheet(); document.title = "حيّنا — عروض المحلات حولك على الخريطة"; return; }
+  if (!m) { hideSheet(); document.title = "لكوفر — عروض المحلات حولك على الخريطة"; return; }
   const id = decodeURIComponent(m[2]);
   if (m[1] === "o") {
     setTab("map"); openOffer(id, false);
@@ -952,12 +953,12 @@ window.addEventListener("popstate", () => {
   $("viewer").classList.add("hidden");
   if (!$("page").classList.contains("hidden")) { closePage(true); return; }
   if (/^\/(o|s)\//.test(location.pathname)) { route(); return; }
-  if (!$("sheet").classList.contains("hidden")) { hideSheet(true); document.title = "حيّنا — عروض المحلات حولك على الخريطة"; return; }
+  if (!$("sheet").classList.contains("hidden")) { hideSheet(true); document.title = "لكوفر — عروض المحلات حولك على الخريطة"; return; }
   if (state.tab !== "map") { setTab("map", true); return; }
   // على الخريطة وما فيه شي مفتوح: رجوع مرة ثانية يطلع
   if (exitArmed) return;
   exitArmed = true;
-  toast("اضغط رجوع مرة ثانية للخروج من حيّنا");
+  toast("اضغط رجوع مرة ثانية للخروج من لكوفر");
   setTimeout(() => { exitArmed = false; history.pushState({ guard: 1 }, "", location.pathname); }, 2500);
 });
 const closeSheet = () => { if (location.pathname !== "/") { history.state?.v ? history.back() : go("/", true); } else hideSheet(); };
@@ -1057,11 +1058,11 @@ function locate(center) {
 function locationHelp() {
   const standalone = window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
   const steps = IS_IOS
-    ? ["افتح <b>الإعدادات</b> في الآيفون ← <b>الخصوصية والأمان</b> ← <b>خدمات الموقع</b> وتأكد إنها شغّالة", `انزل لـ <b>${standalone ? "سفاري / مواقع سفاري" : "سفاري"}</b> واختر <b>«أثناء الاستخدام»</b> أو «اسأل»`, "ارجع لحيّنا واضغط زر موقعي مرة ثانية"]
+    ? ["افتح <b>الإعدادات</b> في الآيفون ← <b>الخصوصية والأمان</b> ← <b>خدمات الموقع</b> وتأكد إنها شغّالة", `انزل لـ <b>${standalone ? "سفاري / مواقع سفاري" : "سفاري"}</b> واختر <b>«أثناء الاستخدام»</b> أو «اسأل»`, "ارجع إلى لكوفر واضغط زر موقعي مرة ثانية"]
     : standalone
-      ? ["اضغط مطوّلاً على أيقونة <b>حيّنا</b> ← <b>معلومات التطبيق</b>", "<b>الأذونات</b> ← <b>الموقع</b> ← <b>السماح أثناء الاستخدام</b>", "إذا ما لقيتها: افتح كروم ← ⋮ ← الإعدادات ← إعدادات المواقع ← الموقع، وشيل حيّنا من «محظور»"]
+      ? ["اضغط مطوّلاً على أيقونة <b>لكوفر</b> ← <b>معلومات التطبيق</b>", "<b>الأذونات</b> ← <b>الموقع</b> ← <b>السماح أثناء الاستخدام</b>", "إذا ما لقيتها: افتح كروم ← ⋮ ← الإعدادات ← إعدادات المواقع ← الموقع، وشيل لكوفر من «محظور»"]
       : ["اضغط أيقونة <b>القفل / الإعدادات</b> جنب الرابط فوق", "اختر <b>الأذونات</b> ← <b>الموقع</b> ← <b>سماح</b>", "حدّث الصفحة واضغط زر موقعي"];
-  showSheet(`<div class="pad install-sheet"><div style="font-size:44px">📍</div><h2>الموقع مقفول لحيّنا</h2>
+  showSheet(`<div class="pad install-sheet"><div style="font-size:44px">📍</div><h2>الموقع مقفول على لكوفر</h2>
     <p class="muted">عشان نعرض لك عروض حيّك والأقرب لك، فعّل إذن الموقع:</p>
     <ol>${steps.map((s) => `<li>${s}</li>`).join("")}</ol>
     <button class="btn primary" id="locRetry">جرّبت، حدّد موقعي</button></div>`);
@@ -1075,7 +1076,7 @@ $("locate").onclick = () => locate(true);
 $("scopeBtn").onclick = cycleScope;
 navigator.permissions?.query({ name: "geolocation" }).then((r) => { if (r.state === "granted") locate(!location.pathname.startsWith("/o/")); }).catch(() => {});
 
-// ---------------- ثبّت حيّنا (أندرويد + آيفون) ----------------
+// ---------------- ثبّت لكوفر (أندرويد + آيفون) ----------------
 const IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const IS_MOBILE = IS_IOS || /android/i.test(navigator.userAgent);
 const isStandalone = () => window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
@@ -1089,9 +1090,9 @@ function hideInstallTip(remember) {
 function installSteps() {
   const inSafari = !/CriOS|FxiOS|EdgiOS/i.test(navigator.userAgent);
   const steps = IS_IOS
-    ? [`اضغط زر المشاركة <span class="share-ico">⬆︎</span> ${inSafari ? "تحت في الشريط" : "جنب الرابط فوق"}`, "انزل واختر <b>«إضافة إلى الشاشة الرئيسية»</b>", "اضغط <b>«إضافة»</b>، وافتح حيّنا من أيقونته"]
-    : ["اضغط قائمة المتصفح <b>⋮</b> فوق", "اختر <b>«تثبيت التطبيق»</b> أو <b>«إضافة إلى الشاشة الرئيسية»</b>", "افتح حيّنا من أيقونته"];
-  showSheet(`<div class="pad install-sheet"><img src="/img/icon-192.png" alt=""><h2>ثبّت حيّنا على جوالك 📲</h2>
+    ? [`اضغط زر المشاركة <span class="share-ico">⬆︎</span> ${inSafari ? "تحت في الشريط" : "جنب الرابط فوق"}`, "انزل واختر <b>«إضافة إلى الشاشة الرئيسية»</b>", "اضغط <b>«إضافة»</b>، وافتح لكوفر من أيقونته"]
+    : ["اضغط قائمة المتصفح <b>⋮</b> فوق", "اختر <b>«تثبيت التطبيق»</b> أو <b>«إضافة إلى الشاشة الرئيسية»</b>", "افتح لكوفر من أيقونته"];
+  showSheet(`<div class="pad install-sheet"><img src="/img/icon-192.png" alt=""><h2>ثبّت لكوفر على جوالك 📲</h2>
     <p class="muted">يفتح بشاشة كاملة بدون شريط المتصفح، مثل التطبيق تماماً</p>
     <ol>${steps.map((s) => `<li>${s}</li>`).join("")}</ol>
     ${IS_IOS && !inSafari ? `<p class="muted small">ما لقيت الخيار؟ افتح الموقع من سفاري وجرّب.</p>` : ""}
@@ -1104,7 +1105,7 @@ export async function doInstall() {
     const e = installEvt; installEvt = null;
     e.prompt();
     const r = await e.userChoice.catch(() => null);
-    if (r?.outcome === "accepted") toast("تم التثبيت 🎉 افتح حيّنا من أيقونته");
+    if (r?.outcome === "accepted") toast("تم التثبيت 🎉 افتح لكوفر من أيقونته");
     return;
   }
   installSteps();
