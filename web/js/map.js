@@ -73,14 +73,22 @@ function loadLeaflet() {
  */
 export async function createMap(el, { key, center = [21.5433, 39.1728], zoom = 12, showShops = false, onMapClick, onPoiClick } = {}) {
   const opts = { center, zoom, showShops, onMapClick, onPoiClick };
+  const origStyle = el.getAttribute("style"), origClass = el.className;
   // واجهة ثابتة تحوّل لـ OpenStreetMap لو رفضت قوقل المفتاح (حتى بعد ما تنرسم الخريطة)
   const last = {};
   let impl = null, switching = false;
   const toOsm = async () => {
     if (switching || impl?.kind === "osm") return; switching = true;
     console.warn("Google Maps failed — switching to OpenStreetMap");
-    const c = impl?.center?.() || { lat: center[0], lng: center[1] };
-    el.innerHTML = ""; el.className = el.className.replace(/\bgm-err\b/, "");
+    let c = { lat: center[0], lng: center[1] };
+    try { c = impl?.center?.() || c; } catch {}
+    // قوقل تبقى تكتب رسالة الخطأ داخل عنصرها القديم، فنبدّله بعنصر جديد نظيف ونرسم OSM فيه
+    const fresh = document.createElement(el.tagName);
+    if (el.id) fresh.id = el.id;
+    fresh.className = (origClass || "").replace(/\bgm-err\b/, "");
+    if (origStyle) fresh.setAttribute("style", origStyle);
+    if (el.parentNode) el.replaceWith(fresh);
+    el = fresh;
     const L = await loadLeaflet();
     impl = leafletMap(L, el, { ...opts, center: [c.lat, c.lng] });
     if (last.markers) impl.setMarkers(last.markers);
