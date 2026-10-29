@@ -78,3 +78,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .switch input[type="checkbox"]:checked{background:#10318F;border-color:#10318F}
 .switch input[type="checkbox"]:checked::after{inset-inline-start:20px;background:#fff}
 .switch input[type="checkbox"]:disabled{opacity:.5;cursor:not-allowed}
+
+/* 📷 عروض الإعلانات */
+.ads-grid{display:grid;grid-template-columns:minmax(0,440px) minmax(0,1fr);gap:16px;align-items:start}
+.ads-grid #adSlot{position:sticky;top:12px}
+@media (max-width:900px){.ads-grid{grid-template-columns:1fr}.ads-grid #adSlot{position:static}}

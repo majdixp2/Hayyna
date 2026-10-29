@@ -158,6 +158,8 @@ fun MerchantStoreScreen(
     val aiConfig by viewModel.aiConfig.collectAsStateWithLifecycle()
     val poiConfig by viewModel.poiConfig.collectAsStateWithLifecycle()
     val selectedPoi by viewModel.selectedPoi.collectAsStateWithLifecycle()
+    val isScout by viewModel.isScout.collectAsStateWithLifecycle()
+    val adUploadPoi by viewModel.adUploadPoi.collectAsStateWithLifecycle()
     val pendingClaim by viewModel.pendingClaim.collectAsStateWithLifecycle()
     val topPoi by viewModel.topPoi.collectAsStateWithLifecycle()
     val appCheckToken by viewModel.appCheckDebugToken.collectAsStateWithLifecycle()
@@ -846,7 +848,8 @@ fun MerchantStoreScreen(
                 onOpenStore = approvedStores.firstOrNull { it.uid == offer.merchantId }?.let { st -> { viewModel.openStorePage(st) } },
                 isVerified = approvedStores.firstOrNull { it.uid == offer.merchantId }?.verified == true,
                 orderLabel = viewModel.offerOrderLabel(offer),
-                onOrder = { viewModel.orderFromOffer(offer) }
+                onOrder = { viewModel.orderFromOffer(offer) },
+                onClaimAd = { viewModel.closeOfferDetail(); viewModel.claimAdOffer(offer) }
             )
         }
 
@@ -861,9 +864,13 @@ fun MerchantStoreScreen(
                 isLoggedIn = currentUser != null,
                 canClaim = currentUser == null || viewModel.isMerchantAccount,
                 onLoginToInvite = { viewModel.loginToInvite() },
-                loadLock = { id -> viewModel.poiInviteLock(id) }
+                loadLock = { id -> viewModel.poiInviteLock(id) },
+                canScout = isScout,
+                onUploadAd = { viewModel.openAdUpload(poi) }
             )
         }
+        // 📷 رفع عرض من إعلان (الأدمن والفريق)
+        adUploadPoi?.let { poi -> com.example.ui.components.AdScoutSheet(poi = poi, vm = viewModel) }
 
         // توثيق المتجر
         if (isVerifyOpen) {

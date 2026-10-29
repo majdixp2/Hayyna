@@ -88,6 +88,18 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    // 📷 عروض من إعلانات: الأدمن أو موظف بصلاحية scout يرفع عرض لمحل Google غير مسجّل
+    // التاجر الوهمي = poi_<placeId>، والعرض مؤقت (حد أقصى 31 يوم) لين يستلمه صاحب المحل
+    function isScoutOffer(d) {
+      return can('scout')
+        && d.get('source', '') == 'ad'
+        && d.placeId is string && d.placeId.size() > 0 && d.placeId.size() <= 300
+        && d.merchantId == 'poi_' + d.placeId
+        && d.scoutedBy == request.auth.uid
+        && d.expiresAt is timestamp
+        && d.expiresAt <= request.time + duration.value(31, 'd');
+    }
+
     function incrementsOnly(field) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field])
         && request.resource.data[field] == resource.data.get(field, 0) + 1;
@@ -675,7 +687,8 @@ service cloud.firestore {
       // أي أحد يتصفح العروض المعتمدة، وصاحب العرض والأدمن يشوفون اللي بانتظار المراجعة
       allow read: if resource.data.isApproved == true
         || (isAuthenticated() && resource.data.merchantId == request.auth.uid)
-        || can('review');
+        || can('review')
+        || (resource.data.get('source', '') == 'ad' && can('scout'));
 
       // التاجر المسجّل ينشر عرض باسمه، بدون "مميز" وبعدّادات صفر
       allow create: if isAuthenticated()
@@ -688,7 +701,17 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && !isSuspended(request.auth.uid)
         && approvalAllowed(request.auth.uid)
-        && isValidOffer(request.resource.data);
+        && isValidOffer(request.resource.data)
+        // أو: عرض من إعلان يرفعه الفريق لمحل غير مسجّل
+        || (isAuthenticated()
+          && request.resource.data.get('isFeatured', false) == false
+          && request.resource.data.get('viewsCount', 0) == 0
+          && request.resource.data.get('directionsCount', 0) == 0
+          && request.resource.data.get('whatsappCount', 0) == 0
+          && request.resource.data.get('reportsCount', 0) == 0
+          && request.resource.data.createdAt == request.time
+          && isScoutOffer(request.resource.data)
+          && isValidOffer(request.resource.data));
 
       // صاحب العرض يعدّل عرضه (بدون "مميز" والعدّادات)، والأدمن يعدّل أي شي، والزوار يزيدون العدّادات فقط
       allow update: if
@@ -704,11 +727,15 @@ service cloud.firestore {
           && approvalAllowed(request.auth.uid)
           && isValidOffer(request.resource.data))
         || can('review')
+        // الفريق يعدّل عروض الإعلانات (بدون ما يغيّر صاحبها أو العدّادات)
+        || (resource.data.get('source', '') == 'ad' && keepsProtectedFields()
+          && isScoutOffer(request.resource.data) && isValidOffer(request.resource.data))
         || isCounterIncrement();
 
       // صاحب العرض أو الأدمن يحذف
       allow delete: if isAuthenticated()
-        && (resource.data.merchantId == request.auth.uid || can('review'));
+        && (resource.data.merchantId == request.auth.uid || can('review')
+          || (resource.data.get('source', '') == 'ad' && can('scout')));
     }
   }
 }

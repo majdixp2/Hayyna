@@ -40,7 +40,9 @@ fun PoiInviteSheet(
     isLoggedIn: Boolean = true,
     canClaim: Boolean = true,
     onLoginToInvite: () -> Unit = {},
-    loadLock: suspend (String) -> Pair<Boolean, Long>? = { null }
+    loadLock: suspend (String) -> Pair<Boolean, Long>? = { null },
+    canScout: Boolean = false,
+    onUploadAd: () -> Unit = {}
 ) {
     val context = LocalContext.current
     // رقم المحل من خرائط Google (لو متاح): جوال = نفتح واتساب المحل مباشرة
@@ -142,6 +144,23 @@ fun PoiInviteSheet(
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
+            // فتح في Google Maps + (للأدمن والفريق) رفع عرض من إعلان
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val u = "https://www.google.com/maps/search/?api=1&query=${poi.latLng.latitude},${poi.latLng.longitude}&query_place_id=${android.net.Uri.encode(poi.placeId)}"
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u))) }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                ) { Text("فتح في Google Maps", fontSize = 13.sp) }
+                if (canScout) Button(
+                    onClick = onUploadAd,
+                    colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                ) { Text("📷 ارفع عرض", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+            }
             Row { Text("المعلومات من خرائط Google", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }

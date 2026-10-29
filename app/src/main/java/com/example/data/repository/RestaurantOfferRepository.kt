@@ -498,6 +498,36 @@ class RestaurantOfferRepository(
         ).await()
     }
 
+    // ---------------- 📷 عروض من إعلانات (الأدمن وفريق الإعلانات) ----------------
+
+    /** المالك، أو موظف فعّال عنده صلاحية scout. */
+    suspend fun isScout(email: String?): Boolean {
+        val e = email?.lowercase()?.trim().orEmpty()
+        if (e.isBlank()) return false
+        if (com.example.data.AdminConfig.isAdmin(e)) return true
+        return runCatching {
+            val d = db.collection("staff").document(e).get().await()
+            d.getBoolean("active") == true && ((d.get("perms") as? List<*>)?.contains("scout") == true)
+        }.getOrDefault(false)
+    }
+
+    /** مدة عروض الإعلانات الافتراضية بالأيام (الأدمن يغيّرها من اللوحة). */
+    suspend fun adScoutDays(): Int = runCatching {
+        (db.collection("config").document("app").get().await().getLong("adScoutDays") ?: 7L).toInt().coerceIn(1, 31)
+    }.getOrDefault(7)
+
+    /** ينشر عرض من إعلان لمحل غير مسجّل. يرجّع رقم العرض. */
+    suspend fun addAdOffer(data: Map<String, Any?>): String {
+        val ref = db.collection("offers").document()
+        val doc = HashMap<String, Any?>(data)
+        doc["id"] = ref.id
+        doc["isApproved"] = true; doc["isFeatured"] = false
+        doc["viewsCount"] = 0; doc["directionsCount"] = 0; doc["whatsappCount"] = 0; doc["reportsCount"] = 0
+        doc["createdAt"] = FieldValue.serverTimestamp()
+        ref.set(doc).await()
+        return ref.id
+    }
+
     suspend fun logPoi(placeId: String, field: String) {
         require(field in setOf("taps", "invites", "claims"))
         poiInterest.document(placeId.take(200)).set(

@@ -9,7 +9,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { EFFECTS, creditsOf, itemList, exclusiveOf, DEFAULT_ITEMS, rewardOf } from "/js/credits.js";
 import { KINDS, KIND_IDS, catalogOf, vatOf, baseKindOf, limitOf, itemVisible, itemPaidUp, riyal, ORDER_STATUS, FEATURES, feat, MODES, PAY, noshowOf, blockedUntil, noshowCount } from "/js/catalog.js";
-import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS } from "../config.js";
+import { firebaseConfig, FIRESTORE_DB_ID, ADMIN_EMAILS, AUTO_HIDE_REPORTS, MAPS_WEB_KEY } from "../config.js";
+import { mountAdForm, adDays, AD_MAX_DAYS } from "/js/scout.js";
+import { CATEGORIES } from "/js/logic.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -60,6 +62,7 @@ export const PERMS = [
   ["messages", "📨 الرسائل", "قراءة رسائل التواصل والرد عليها"],
   ["merchants", "🏪 إدارة التجار", "الإيقاف، صفحات المتاجر، الإحالات، محلات Google"],
   ["credits", "💰 الرصيد", "الأكواد وتعديل أرصدة التجار"],
+  ["scout", "📷 عروض الإعلانات", "رفع عروض من صور إعلانات لمحلات غير مسجّلة"],
 ];
 const can = (p) => !!state.me && (state.me.owner || state.me.perms.has(p));
 const canStores = () => can("review") || can("verify") || can("merchants");
@@ -111,6 +114,8 @@ function listen() {
     sub(query(collection(db, "verificationRequests"), where("status", "==", "pending")), (sn) => { state.verifs = parse(sn).map((x) => ({ ...x, uid: x.id })); });
     sub(query(collection(db, "verificationRequests"), where("status", "in", ["approved", "rejected"])), (sn) => { state.verifHist = parse(sn).map((x) => ({ ...x, uid: x.id })); });
   }
+  // عروض الإعلانات: المراجع يشوفها ضمن كل العروض، وفريق الإعلانات بس هذي
+  if (can("scout") && !can("review")) sub(query(collection(db, "offers"), where("source", "==", "ad")), (sn) => { state.offers = parse(sn); });
   if (can("credits")) sub(collection(db, "wallets"), (sn) => { state.wallets = parse(sn); loadNames(); });
   if (can("review")) {
     sub(collection(db, "items"), (sn) => { state.items = parse(sn); });
@@ -149,7 +154,7 @@ function refInfo(r) {
 }
 
 // ---------------- سجل العمليات ----------------
-const AREAS = { catalog: "🛍️ المنتجات", review: "📝 العروض", verify: "🛡️ التوثيق", merchants: "🏪 التجار", messages: "📨 الرسائل", credits: "💰 الرصيد", settings: "⚙️ الإعدادات", team: "👥 الفريق" };
+const AREAS = { scout: "📷 الإعلانات", catalog: "🛍️ المنتجات", review: "📝 العروض", verify: "🛡️ التوثيق", merchants: "🏪 التجار", messages: "📨 الرسائل", credits: "💰 الرصيد", settings: "⚙️ الإعدادات", team: "👥 الفريق" };
 async function audit(action, area, target = {}, details = "") {
   try {
     await addDoc(collection(db, "adminLog"), {
@@ -238,12 +243,12 @@ function computed() {
 
 const TABS = [
   ["home", "🏠 الرئيسية"], ["review", "⏳ المراجعة"], ["stores", "🏪 المتاجر"],
-  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["catalog", "🛍️ المنتجات"], ["credits", "💰 الرصيد"],
+  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["ads", "📷 الإعلانات"], ["catalog", "🛍️ المنتجات"], ["credits", "💰 الرصيد"],
   ["log", "📜 السجل"], ["team", "👥 الفريق"], ["settings", "⚙️ الإعدادات"],
 ];
 function tabAllowed(k) {
   return ({ home: true, log: true, review: can("review"), offers: can("review"), stores: canStores(), messages: can("messages"),
-    refs: can("merchants"), credits: can("credits"), catalog: can("review"), team: !!state.me?.owner, settings: !!state.me?.owner })[k];
+    refs: can("merchants"), credits: can("credits"), catalog: can("review"), team: !!state.me?.owner, settings: !!state.me?.owner, ads: can("scout") })[k];
 }
 
 function render() {
@@ -257,7 +262,8 @@ function render() {
   $("tabs").querySelectorAll(".tab").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; localStorage.setItem("hayyna_admin_tab", state.tab); render(); }));
   const focused = document.activeElement?.id;
   const caret = document.activeElement?.selectionStart;
-  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, catalog: catalogPage, settings, log: logPage, team }[state.tab] || home)(c);
+  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, catalog: catalogPage, settings, log: logPage, team, ads: adsPage }[state.tab] || home)(c);
+  if (state.tab === "ads") attachAdForm();
   bind();
   if (focused && $(focused)) { $(focused).focus(); try { $(focused).setSelectionRange(caret, caret); } catch {} }
 }
@@ -989,7 +995,79 @@ function settings() {
     </div>`;
 }
 
+// ---------------- 📷 عروض من إعلانات ----------------
+// الفورم يتركّب مرة وحدة ويرجع ينحط بعد كل تحديث للصفحة (عشان ما تضيع الصورة والبيانات)
+let adHost = null, adForm = null, adKey = "";
+function attachAdForm() {
+  const slot = $("adSlot"); if (!slot) return;
+  const cats = state.config.categories?.length ? state.config.categories : CATEGORIES.slice(1);
+  const key = JSON.stringify([!!state.config.aiAutofillEnabled, state.config.aiModel || "", adDays(state.config), cats]);
+  const remount = () => {
+    adKey = key;
+    adForm = mountAdForm(adHost, {
+      db, fbApp: app, user: auth.currentUser, config: state.config, mapsKey: MAPS_WEB_KEY, categories: cats, toast,
+      onDone: (id, f) => { audit("رفع عرض من إعلان", "scout", { type: "offer", id, name: `${f.title} — ${f.name || f.place?.name || ""}` }, f.place?.address || ""); remount(); },
+    });
+  };
+  if (!adHost) { adHost = document.createElement("div"); remount(); }
+  else if (key !== adKey && !adForm?.dirty()) remount(); // الإعدادات وصلت/تغيّرت والفورم لسا فاضي
+  slot.appendChild(adHost);
+}
+const adLeft = (o) => { const ms = (o.expiresAt?.toMillis?.() || 0) - Date.now(); if (ms <= 0) return "انتهى"; const d = Math.ceil(ms / 864e5); return d === 1 ? "باقي يوم" : `باقي ${d} أيام`; };
+function adsPage() {
+  const ads = state.offers.filter((o) => o.source === "ad").sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  const live = ads.filter((o) => !isExpired(o));
+  const near = (o) => state.storesAll.filter((s) => s.approved).map((s) => {
+    const b = (s.branches || [])[0]; const d = b ? Math.hypot(b.latitude - o.latitude, (b.longitude - o.longitude) * Math.cos(o.latitude * Math.PI / 180)) * 111 : 1e9;
+    return { s, d };
+  }).sort((a, b) => a.d - b.d).slice(0, 15);
+  return `<h2>📷 عروض من إعلانات</h2>
+    <p class="muted">ارفع صورة إعلان لمحل مو مسجّل في لكوفر: الذكاء الاصطناعي يقرأه ويدوّر على المحل في Google، وبعد ما تتأكد ينزل على موقعه في الخريطة بعلامة «📷 من إعلان المحل».
+    تقدر بعد ترفع من التطبيق: اضغط على أي محل في الخريطة ← «📷 ارفع عرض».</p>
+    <div class="ads-grid">
+      <div class="card" id="adSlot"></div>
+      <div>
+        ${state.me.owner ? `<div class="card"><b>⏱️ مدة العرض الافتراضية</b>
+          <div class="row" style="margin-top:8px"><input type="number" id="adDaysCfg" min="1" max="${AD_MAX_DAYS}" value="${adDays(state.config)}" style="max-width:90px"> <span class="muted">يوم (الحد ${AD_MAX_DAYS})</span> <button class="btn" id="adDaysSave">حفظ</button></div>
+          <p class="muted" style="margin:6px 0 0">العرض يختفي لحاله بعد المدة، عشان ما يبقى عرض منتهي والمحل ما يدري.</p></div>` : ""}
+        <h3>المنشورة (${live.length})${ads.length > live.length ? ` <span class="muted">• منتهية ${ads.length - live.length}</span>` : ""}</h3>
+        ${ads.length ? ads.map((o) => offerCard(o,
+          `<div class="muted">${isExpired(o) ? "⛔ انتهى" : "🟢 " + adLeft(o)} • 💬 ${o.whatsappCount || 0} • 🧭 ${o.directionsCount || 0}</div>`,
+          `<a class="btn" target="_blank" rel="noopener" href="/o/${encodeURIComponent(o.id)}">فتح ↗</a>
+           ${!isExpired(o) ? `<button class="btn" data-adext="${esc(o.id)}">+${adDays(state.config)} أيام</button>` : `<button class="btn" data-adext="${esc(o.id)}">🔁 رجّعه ${adDays(state.config)} أيام</button>`}
+           ${can("review") && state.storesAll.length ? `<select class="btn" data-admove="${esc(o.id)}"><option value="">🔁 نقل لمتجر سجّل…</option>${near(o).map(({ s, d }) => `<option value="${esc(s.uid)}">${esc(s.name)}${d < 1e8 ? ` (${d < 1 ? Math.round(d * 1000) + " م" : d.toFixed(1) + " كم"})` : ""}</option>`).join("")}</select>` : ""}
+           <button class="btn danger" data-addel="${esc(o.id)}">حذف</button>`)).join("") : `<p class="muted">ما رفعت عروض من إعلانات للحين.</p>`}
+      </div>
+    </div>`;
+}
+function bindAds(c) {
+  const byId = (id) => state.offers.find((o) => o.id === id);
+  $("adDaysSave")?.addEventListener("click", () => run(async () => {
+    const d = Math.min(AD_MAX_DAYS, Math.max(1, parseInt($("adDaysCfg").value, 10) || 7));
+    await actions.saveConfig({ adScoutDays: d }); await audit("مدة عروض الإعلانات", "settings", {}, `${d} يوم`);
+  }, "انحفظ ✅"));
+  c.querySelectorAll("[data-adext]").forEach((b) => (b.onclick = () => run(async () => {
+    const o = byId(b.dataset.adext), from = Math.max(Date.now(), o.expiresAt?.toMillis?.() || 0);
+    const until = Math.min(from + adDays(state.config) * 864e5, Date.now() + AD_MAX_DAYS * 864e5 - 6e4);
+    await updateDoc(doc(db, "offers", o.id), { expiresAt: Timestamp.fromMillis(until), scoutedBy: state.me.uid });
+    await audit("تمديد عرض إعلان", "scout", offerT(o), new Date(until).toLocaleDateString("ar-SA"));
+  }, "تمدّد ✅", "التمديد")));
+  c.querySelectorAll("[data-addel]").forEach((b) => (b.onclick = () => {
+    const o = byId(b.dataset.addel); if (!confirm(`حذف «${o.offerTitle}» من الخريطة؟`)) return;
+    run(async () => { await deleteDoc(doc(db, "offers", o.id)); await audit("حذف عرض إعلان", "scout", offerT(o)); }, "انحذف ✅", "الحذف");
+  }));
+  c.querySelectorAll("[data-admove]").forEach((sel) => (sel.onchange = () => {
+    const o = byId(sel.dataset.admove), st = state.storesAll.find((s) => s.uid === sel.value); if (!st) return;
+    if (!confirm(`ننقل «${o.offerTitle}» لمتجر «${st.name}»؟ بيصير عرضه ويقدر يعدّله ويمدده.`)) { sel.value = ""; return; }
+    run(async () => {
+      await updateDoc(doc(db, "offers", o.id), { merchantId: st.uid, source: "claimed", restaurantName: (st.name || o.restaurantName).slice(0, 100), logoUrl: st.logoUrl || "" });
+      await audit("نقل عرض إعلان لمتجر", "scout", offerT(o), st.name);
+    }, "انتقل للمتجر ✅", "النقل");
+  }));
+}
+
 function bind() {
+  if (state.tab === "ads") bindAds($("content"));
   const byId = (id) => state.offers.find((o) => o.id === id);
   const c = $("content");
   c.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { state.tab = b.dataset.go; render(); }));
