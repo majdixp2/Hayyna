@@ -716,3 +716,30 @@ textarea.input { resize: vertical; line-height: 1.6; }
 :root[data-theme="dark"] .oc-req { background: #3A2516; color: #F8B98A; border-color: #5C3A20; }
 :root[data-theme="dark"] .oc-warn { background: #3A3216; color: #F3C677; }
 :root[data-theme="dark"] .oc-remind { background: #3A1C1C; color: #F8A5A5; }
+
+/* ===== 🧾 متابعة الطلب الحي (شريط / دائرة) ===== */
+.otr { position: fixed; z-index: 650; }
+.otr.m-bar { left: 12px; right: 12px; max-width: 616px; margin: 0 auto; bottom: calc(var(--nav) + 8px); animation: otrUp .35s ease-out; transition: bottom .25s ease; }
+.otr-bar { position: relative; display: flex; align-items: center; gap: 10px; background: #10318F; color: #fff; border-radius: 18px; padding: 10px 14px 16px; box-shadow: 0 8px 24px rgba(16,49,143,.35); cursor: pointer; }
+.otr.ready .otr-bar { background: #15803D; box-shadow: 0 8px 24px rgba(21,128,61,.35); }
+.otr-ic { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.16); display: flex; align-items: center; justify-content: center; font-size: 18px; flex: none; }
+.otr-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.otr-tx small { font-size: 12px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.otr-tx b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.otr-cnt { background: #F4B400; color: #10318F; font-weight: 800; font-size: 11px; border-radius: 10px; padding: 3px 8px; flex: none; }
+.otr-go { border: 0; background: #F4B400; color: #10318F; font-weight: 800; font-size: 13px; border-radius: 12px; padding: 0 12px; min-height: 36px; flex: none; }
+.otr-chev { font-size: 22px; font-weight: 800; flex: none; }
+.otr-prog { position: absolute; left: 14px; right: 14px; bottom: 7px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.22); overflow: hidden; }
+.otr-prog i { display: block; height: 100%; background: #F4B400; border-radius: 3px; transition: width .6s ease; margin-inline-start: 0; }
+.otr.m-bubble { left: 12px; top: 44%; animation: otrPop .35s ease-out; }
+.otr-bub { position: relative; width: 68px; height: 68px; border-radius: 50%; border: 0; background: #10318F; color: #fff; box-shadow: 0 8px 22px rgba(16,49,143,.4); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0; }
+.otr.ready .otr-bub { background: #15803D; animation: otrPulse 1.3s ease-in-out infinite; }
+.otr-bub svg { position: absolute; inset: 3px; width: 62px; height: 62px; transform: rotate(-90deg); }
+.otr-bub .trk { fill: none; stroke: rgba(255,255,255,.22); stroke-width: 4; }
+.otr-bub .prg { fill: none; stroke: #F4B400; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+.otr-bub .e { font-size: 20px; line-height: 1; position: relative; }
+.otr-bub small { font-size: 8px; font-weight: 800; position: relative; margin-top: 2px; white-space: nowrap; }
+.otr-n { position: absolute; top: -4px; right: -4px; min-width: 22px; height: 22px; border-radius: 11px; background: #F4B400; color: #10318F; font-weight: 800; font-size: 11px; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; }
+@keyframes otrUp { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes otrPop { from { transform: scale(.5); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes otrPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.1); } }

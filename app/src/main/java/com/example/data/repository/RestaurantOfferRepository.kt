@@ -828,7 +828,8 @@ class RestaurantOfferRepository(
                 categoryTypes = types.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap(),
                 features = (c["features"] as? Map<*, *>)?.mapNotNull { (k, v) -> (k as? String)?.let { kk -> (v as? Boolean)?.let { kk to it } } }?.toMap() ?: emptyMap(),
                 noshow = (c["noshow"] as? Map<*, *>).let { n -> com.example.data.model.NoshowCfg(
-                    (n?.get("max") as? Number)?.toInt() ?: 3, (n?.get("days") as? Number)?.toInt() ?: 60, (n?.get("blockDays") as? Number)?.toInt() ?: 7) }
+                    (n?.get("max") as? Number)?.toInt() ?: 3, (n?.get("days") as? Number)?.toInt() ?: 60, (n?.get("blockDays") as? Number)?.toInt() ?: 7) },
+                tracker = (c["tracker"] as? String)?.takeIf { it in listOf("bar", "bubble", "off") } ?: "bar"
             ))
         }
         awaitClose { l.remove() }

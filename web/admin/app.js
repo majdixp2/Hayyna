@@ -752,6 +752,10 @@ function catalogPage() {
     <div class="card">
       <p class="muted">كل ميزة تقدر توقفها لكل المنصة. لو وقفتها تختفي عند التاجر والزبون، والبيانات تبقى محفوظة.</p>
       ${Object.entries(FEATURES).map(([k, l]) => `<label class="switch"><input type="checkbox" data-feat="${k}" ${feat(cfg, k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}
+      <h3 style="margin:14px 0 6px">🧾 متابعة الطلب عند العميل</h3>
+      <p class="muted">لما يكون عند العميل طلب شغّال، يشوف حالته في كل الشاشات بدون ما يفتح «طلباتي». يتلوّن أخضر ويهتز الجوال لما يصير جاهز، وزر «🚗 وصلت» يطلع عليه في الاستلام من السيارة.</p>
+      <div class="row" style="flex-wrap:wrap;gap:8px">${[["bar", "▬ شريط أسفل الشاشة"], ["bubble", "● دائرة عائمة"], ["off", "⛔ مقفل"]].map(([v, l]) =>
+        `<label class="switch"><input type="radio" name="trackerMode" value="${v}" ${(["bar", "bubble", "off"].includes(cat.tracker) ? cat.tracker : "bar") === v ? "checked" : ""}> ${l}</label>`).join("")}</div>
     </div>
 
     <h2 id="ct-noshow">🚫 الطلبات اللي ما انستلمت</h2>
@@ -870,6 +874,10 @@ function bindCatalog(c) {
   }));
   c.querySelectorAll("[data-ifilter]").forEach((b) => (b.onclick = () => { state.itemFilter = b.dataset.ifilter; render(); }));
   const setCat = (path, val) => updateDoc(doc(db, "config", "app"), { [path]: val }).catch(() => setDoc(doc(db, "config", "app"), { catalog: {} }, { merge: true }).then(() => updateDoc(doc(db, "config", "app"), { [path]: val })));
+  document.querySelectorAll('input[name="trackerMode"]').forEach((x) => x.onchange = () => run(async () => {
+    await setCat("catalog.tracker", x.value);
+    await audit(`متابعة الطلب عند العميل: ${({ bar: "شريط", bubble: "دائرة", off: "مقفل" })[x.value]}`, "catalog");
+  }, "انحفظ ✅", "متابعة الطلب"));
   c.querySelectorAll("[data-catcfg]").forEach((x) => (x.onchange = () => run(async () => {
     await setCat("catalog." + x.dataset.catcfg, x.checked);
     await audit(`${x.checked ? "تشغيل" : "إيقاف"}: ${x.parentElement.textContent.trim().slice(0, 40)}`, "catalog");

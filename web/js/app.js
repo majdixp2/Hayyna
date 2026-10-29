@@ -932,6 +932,7 @@ export function setTab(t, fromPop) {
   if (t === "map") { setTimeout(() => map?.resize(), 50); setTimeout(() => state.loaded && maybeSpotlight(filtered()), 400); } // بطاقة "قريب منك" لما يرجع للخريطة
   if (t === "account") renderAccount();
   try { sessionStorage.setItem("hayyna_tab", t); } catch {}
+  window.dispatchEvent(new Event("tabchange"));
 }
 $("nav").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { hideSheet(); if (location.pathname !== "/") history.replaceState({ tab: b.dataset.tab }, "", "/"); setTab(b.dataset.tab); } };
 

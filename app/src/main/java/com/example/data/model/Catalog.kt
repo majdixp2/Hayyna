@@ -47,7 +47,9 @@ data class CatalogConfig(
     val categoryTypes: Map<String, String> = emptyMap(),
     // مزايا الطلب (مفاتيح من الأدمن، كلها شغّالة افتراضياً)
     val features: Map<String, Boolean> = emptyMap(),
-    val noshow: NoshowCfg = NoshowCfg()
+    val noshow: NoshowCfg = NoshowCfg(),
+    // متابعة الطلب الحي للعميل: "bar" شريط أسفل الشاشة، "bubble" دائرة عائمة، "off" مقفل
+    val tracker: String = "bar"
 ) {
     fun feat(k: String) = features[k] != false
     fun limitOf(kind: String) = limits[kind] ?: 0

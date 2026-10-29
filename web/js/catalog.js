@@ -24,6 +24,7 @@ export function catalogOf(config) {
   const c = config?.catalog || {}, p = c.pricing || {}, D = CATALOG_DEFAULT;
   return {
     enabled: !!c.enabled, orderEnabled: !!c.orderEnabled, review: c.review ?? true,
+    tracker: ["bar", "bubble", "off"].includes(c.tracker) ? c.tracker : "bar",
     limits: { ...D.limits, ...(c.limits || {}) },
     pricing: { ...D.pricing, ...p, menu: { ...D.pricing.menu, ...(p.menu || {}) }, product: { ...D.pricing.product, ...(p.product || {}) },
       service: { ...D.pricing.service, ...(p.service || {}) }, all: { ...D.pricing.all, ...(p.all || {}) } },

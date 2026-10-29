@@ -469,11 +469,12 @@ const myRatings = new Set();
 export function watchMyOrders() {
   // المفتاح يشمل حالة الخدمة: لو الإعدادات وصلت متأخرة نبدأ المتابعة بعدها
   const uid = state.user?.uid && cat().enabled && cat().orderEnabled ? state.user.uid : null;
-  if (MY.uid === uid) return;
+  if (MY.uid === uid) { renderTracker(); return; } // الإعداد تغيّر من الأدمن؟ نحدّث الشكل
   subscribeMy(uid);
 }
 function subscribeMy(uid) {
   MY.unsub?.(); MY.unsub = null; MY.uid = uid; MY.list = []; MY.loaded = false; myRatings.clear();
+  renderTracker();
   if (!uid) return;
   getDocs(query(collection(db, "ratings"), where("uid", "==", uid))).then((r) => r.docs.forEach((d) => myRatings.add(d.id))).catch(() => {});
   MY.unsub = onSnapshot(myOrdersQuery(uid), (snap) => applyMyOrders(snap.docs), (e) => {
@@ -493,9 +494,85 @@ function applyMyOrders(docs) {
   if (MY.loaded) for (const o of MY.list) {
     const was = prevStatus.get(o.id);
     if (was && was !== o.status && o.status !== "sent") toast(`🧾 طلبك #${o.code}: ${statusText(o)}`, true);
+    if (was && was !== o.status) {
+      if (["ready", "delivering"].includes(o.status)) try { navigator.vibrate?.([180, 120, 180]); } catch {}
+      if (!LIVE.includes(o.status)) TR.fin.set(o.id, Date.now());
+    }
   }
   MY.loaded = true; MY.err = "";
   if (MY.open && changed) drawMyOrders(); else if (MY.open) stampMy();
+  renderTracker();
+}
+
+// ----- 🧾 متابعة الطلب الحي: شريط أسفل الشاشة أو دائرة عائمة (إعداد الأدمن catalog.tracker) -----
+const LIVE = ["sent", "received", "ready", "delivering"];
+const TR = { fin: new Map(), timer: null };
+const TR_LINGER = 8000; // المنتهي يبقى ظاهر ثواني عشان العميل يشوف النتيجة
+const trMode = () => ["bar", "bubble", "off"].includes(cat().tracker) ? cat().tracker : "bar";
+const trSteps = (o) => o.mode === "delivery" ? ["sent", "received", "delivering", "done"] : ["sent", "received", "ready", "done"];
+function trProgress(o) {
+  if (!LIVE.includes(o.status)) return 1;
+  const st = trSteps(o), i = Math.max(0, st.indexOf(o.status));
+  return (i + 1) / st.length;
+}
+const trEmoji = (o) => ({ sent: "📨", received: "👨‍🍳", ready: o.mode === "curbside" ? "🚗" : "🛍️", delivering: "🚚", done: "✅" })[o.status] || "✕";
+const trShort = (o) => ({ sent: "بانتظار المحل", received: "يتجهّز", ready: o.mode === "curbside" && o.arrivedAt ? "المحل جايك" : "جاهز ✅", delivering: "بالطريق", done: "تم 👍", cancelled: "ملغي", noshow: "ما انستلم" })[o.status] || o.status;
+const trReady = (o) => ["ready", "delivering"].includes(o.status);
+function trShown() {
+  const now = Date.now();
+  for (const [id, at] of TR.fin) if (now - at > TR_LINGER) TR.fin.delete(id);
+  return MY.list.filter((o) => LIVE.includes(o.status) || TR.fin.has(o.id))
+    .sort((a, b) => (trReady(b) - trReady(a)) || (X.ms(b.createdAt) - X.ms(a.createdAt)));
+}
+function trPlace(el) {
+  if (!el || el.dataset.mode !== "bar") return;
+  const car = $("carousel"), onMap = state.tab === "map";
+  const carH = onMap && car && car.offsetParent && car.children.length ? car.offsetHeight : 0;
+  el.style.bottom = `calc(var(--nav) + ${carH + 8}px)`;
+}
+export function renderTracker() {
+  let el = $("orderTracker");
+  const list = trMode() === "off" || !MY.uid ? [] : trShown();
+  if (!list.length) { if (el) el.remove(); clearInterval(TR.timer); TR.timer = null; return; }
+  if (!el) { el = document.createElement("div"); el.id = "orderTracker"; document.body.appendChild(el); }
+  const o = list[0], mode = trMode(), n = list.length, p = trProgress(o);
+  const ready = trReady(o) ? " ready" : "";
+  const canArrive = o.mode === "curbside" && !o.arrivedAt && ["received", "ready"].includes(o.status);
+  el.dataset.mode = mode;
+  el.className = "otr m-" + mode + ready;
+  if (mode === "bubble") {
+    const C = 2 * Math.PI * 27;
+    el.innerHTML = `<button class="otr-bub" aria-label="طلبك: ${esc(statusText(o))}">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" class="trk"/><circle cx="32" cy="32" r="27" class="prg" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - p)).toFixed(1)}"/></svg>
+      <span class="e">${trEmoji(o)}</span><small>${esc(trShort(o))}</small></button>
+      ${n > 1 ? `<span class="otr-n">${n}</span>` : ""}`;
+  } else {
+    el.innerHTML = `<div class="otr-bar" role="button" tabindex="0" aria-label="افتح طلباتي">
+      <span class="otr-ic">${trEmoji(o)}</span>
+      <span class="otr-tx"><small>${esc(o.storeName || "طلبك")}</small><b>${esc(statusText(o))}</b></span>
+      ${n > 1 ? `<span class="otr-cnt">${n} طلبات</span>` : ""}
+      ${canArrive ? `<button class="otr-go" data-trarrive="${esc(o.id)}">🚗 وصلت</button>` : `<span class="otr-chev">‹</span>`}
+      <span class="otr-prog"><i style="width:${Math.round(p * 100)}%"></i></span></div>`;
+  }
+  el.querySelector(".otr-bar, .otr-bub").onclick = (e) => { if (e.target.closest("[data-trarrive]")) return; openMyOrders(); };
+  const go = el.querySelector("[data-trarrive]");
+  if (go) go.onclick = (e) => { e.stopPropagation(); markArrived(MY.list.find((y) => y.id === go.dataset.trarrive)); };
+  trPlace(el);
+  // نعيد التموضع (البطاقات تحت تتغير) ونخفي المنتهي بعد ثواني
+  if (!TR.timer) TR.timer = setInterval(() => { if (TR.fin.size) renderTracker(); else trPlace($("orderTracker")); }, 1500);
+}
+window.addEventListener("resize", () => trPlace($("orderTracker")));
+window.addEventListener("tabchange", () => trPlace($("orderTracker")));
+
+/** 🚗 وصلت: ننبّه المحل + رسالة واتساب جاهزة (من «طلباتي» أو من شريط المتابعة) */
+async function markArrived(o) {
+  if (!o) return;
+  const store = state.stores.find((y) => y.uid === o.storeId);
+  const wa = store ? X.waDigits(store.phone || store.branches?.[0]?.phone || "") : "";
+  const w = wa ? window.open("", "_blank") : null;
+  try { await updateDoc(doc(db, "orders", o.id), { arrivedAt: serverTimestamp(), updatedAt: serverTimestamp() }); } catch (e) { console.warn(e); }
+  if (w) w.location = `https://wa.me/${wa}?text=${encodeURIComponent(`وصلت عند المحل 🚗 ${o.car || ""}${o.spot ? " — " + o.spot : ""}\nطلب #${o.code}`)}`;
+  toast("بلّغنا المحل إنك وصلت 🚗", true);
 }
 // الجوال يوقف الاتصال المباشر لما الصفحة تروح للخلفية (مثلاً فتح واتساب)، والمكتبة أحياناً ما ترجع تتصل لحالها:
 // عند الرجوع نعيد الاتصال بالقوة ونسحب آخر حالة من السيرفر، وكل 10 ثواني والشاشة مفتوحة.
@@ -556,14 +633,7 @@ function drawMyOrders() {
   });
   b.querySelectorAll("[data-rate]").forEach((x) => x.onclick = () => rateOrder(list.find((y) => y.id === x.dataset.rate)));
   // 🚗 وصلت: ننبّه المحل في لكوفر + رسالة واتساب جاهزة
-  b.querySelectorAll("[data-arrive]").forEach((x) => x.onclick = async () => {
-    const o = list.find((y) => y.id === x.dataset.arrive), store = state.stores.find((y) => y.uid === o.storeId);
-    const wa = store ? X.waDigits(store.phone || store.branches?.[0]?.phone || "") : "";
-    const w = wa ? window.open("", "_blank") : null;
-    try { await updateDoc(doc(db, "orders", o.id), { arrivedAt: serverTimestamp(), updatedAt: serverTimestamp() }); } catch (e) { console.warn(e); }
-    if (w) w.location = `https://wa.me/${wa}?text=${encodeURIComponent(`وصلت عند المحل 🚗 ${o.car || ""}${o.spot ? " — " + o.spot : ""}\nطلب #${o.code}`)}`;
-    toast("بلّغنا المحل إنك وصلت 🚗", true);
-  });
+  b.querySelectorAll("[data-arrive]").forEach((x) => x.onclick = () => markArrived(list.find((y) => y.id === x.dataset.arrive)));
 }
 /** 🙋 طلب إلغاء (بعد ما يستلمه المحل) */
 function askCancel(o) {

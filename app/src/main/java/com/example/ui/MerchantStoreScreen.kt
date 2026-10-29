@@ -817,6 +817,15 @@ fun MerchantStoreScreen(
                         }
                     }
                 }
+
+                // 🧾 متابعة الطلب الحي (شريط أو دائرة حسب إعداد الأدمن) — بس في شاشات العميل
+                if (currentRole == AppRole.CUSTOMER_OFFERS || (currentRole == AppRole.CUSTOMER_MAP && selectedOfferOnMap == null)) {
+                    com.example.ui.components.OrderTracker(
+                        vm = viewModel,
+                        bottomPadding = if (currentRole == AppRole.CUSTOMER_MAP) 64.dp else 12.dp,
+                        onOpen = { showMyOrders = true }
+                    )
+                }
             }
         }
 
