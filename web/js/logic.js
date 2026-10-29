@@ -54,7 +54,8 @@ export function effectivePercent(o) {
   if (o.originalPrice > 0 && o.price > 0 && o.price < o.originalPrice) return Math.floor((o.originalPrice - o.price) / o.originalPrice * 100);
   return currentPercent(o);
 }
-export const priceLabel = (o, scope = false) => o.postType === "new" && !(o.price > 0) && !isPercentOnly(o) ? "✨ منتج جديد"
+export const priceLabel = (o, scope = false) => o.source === "ad" && !(o.price > 0) && !isPercentOnly(o) ? "📷 التفاصيل في الإعلان"
+  : o.postType === "new" && !(o.price > 0) && !isPercentOnly(o) ? "✨ منتج جديد"
   : isPercentOnly(o)
   ? `خصم ${currentPercent(o)}%${scope && o.itemsScope ? " " + o.itemsScope : ""}`
   : `${money(o.price)} ${o.currency || "ر.س"}`;

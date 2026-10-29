@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import com.example.ui.components.ExclusiveBadge
 import kotlinx.coroutines.flow.stateIn
@@ -245,13 +246,94 @@ class MerchantViewModel(
     val pendingClaim = MutableStateFlow<com.google.android.gms.maps.model.PointOfInterest?>(null)
 
     fun onPoiClick(poi: com.google.android.gms.maps.model.PointOfInterest) {
-        if (!poiConfig.value.inviteEnabled) return
+        if (!poiConfig.value.inviteEnabled && !isScout.value) return
         selectedOfferOnMap.value = null
         selectedPoi.value = poi
         launchSafely { repository.logPoi(poi.placeId, "taps") }
     }
 
     fun dismissPoi() { selectedPoi.value = null }
+
+    // ---------------- 📷 عروض من إعلانات ----------------
+
+    /** الأدمن أو موظف بصلاحية «عروض الإعلانات»: يرفع عرض من صورة إعلان لمحل مو مسجّل. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val isScout: StateFlow<Boolean> = currentUser
+        .mapLatest { u -> if (u == null) false else repository.isScout(u.email) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** المحل اللي نرفع له عرض الحين (يفتح شاشة الرفع). */
+    val adUploadPoi = MutableStateFlow<com.google.android.gms.maps.model.PointOfInterest?>(null)
+    val isPublishingAd = MutableStateFlow(false)
+
+    fun openAdUpload(poi: com.google.android.gms.maps.model.PointOfInterest) {
+        selectedPoi.value = null
+        adUploadPoi.value = poi
+    }
+    fun closeAdUpload() { if (!isPublishingAd.value) adUploadPoi.value = null }
+    suspend fun adScoutDays(): Int = repository.adScoutDays()
+
+    data class AdDraft(
+        val imageUri: String, val name: String, val title: String, val price: String, val originalPrice: String,
+        val description: String, val phone: String, val category: String, val days: Int, val tags: List<String>
+    )
+
+    fun publishAdOffer(poi: com.google.android.gms.maps.model.PointOfInterest, place: com.example.data.PlacesLookup.Info?, d: AdDraft) {
+        val uid = currentUser.value?.uid ?: return
+        if (isPublishingAd.value) return
+        viewModelScope.launch {
+            isPublishingAd.value = true
+            try {
+                val url = com.example.data.MediaUploader.uploadOfferMedia(getApplication(), d.imageUri, false)
+                fun num(v: String) = v.map { c -> if (c in '٠'..'٩') ('0' + (c - '٠')) else c }.joinToString("")
+                    .filter { it.isDigit() || it == '.' }.toDoubleOrNull()?.takeIf { it > 0 }
+                val price = num(d.price) ?: 0.0
+                val orig = num(d.originalPrice)?.takeIf { it > price }
+                val pct = if (orig != null && price > 0) ((orig - price) / orig * 100).toInt() else 0
+                val days = d.days.coerceIn(1, 31)
+                val data = mapOf<String, Any?>(
+                    "merchantId" to "poi_" + poi.placeId, "placeId" to poi.placeId, "source" to "ad", "scoutedBy" to uid,
+                    "restaurantName" to d.name.trim().ifBlank { place?.name ?: poi.name }.ifBlank { "محل" }.take(100),
+                    "offerTitle" to d.title.trim().take(150),
+                    "description" to d.description.trim().ifBlank { "عرض من إعلان المحل." }.take(2000),
+                    "cuisineType" to d.category.take(60), "postType" to "offer",
+                    "price" to price, "originalPrice" to orig, "currency" to "ر.س",
+                    "discountBadge" to (if (pct >= 1) "خصم $pct% 🔥" else ""),
+                    "mediaType" to "IMAGE", "mediaUri" to url, "mediaUris" to listOf(url), "isPromotionalVideo" to false,
+                    "district" to (place?.district ?: "").take(100), "region" to (place?.city ?: "").take(100),
+                    "latitude" to poi.latLng.latitude, "longitude" to poi.latLng.longitude,
+                    "phone" to d.phone.filter { it.isDigit() || it == '+' }.ifBlank { place?.phone?.filter { it.isDigit() || it == '+' } ?: "" }.take(30),
+                    "openMinute" to -1, "closeMinute" to -1, "workingHours" to "",
+                    "expiresAt" to com.google.firebase.Timestamp(java.util.Date(System.currentTimeMillis() + days * 86_400_000L)),
+                    "startsAt" to null, "discountPercent" to 0, "dailyPercents" to emptyList<Int>(), "itemsScope" to "",
+                    "grandOpening" to false, "exclusive" to false, "tags" to d.tags.take(12), "delivery" to false,
+                    "logoUrl" to "", "branches" to emptyList<Any>(), "deal" to null
+                )
+                val id = repository.addAdOffer(data)
+                audit("رفع عرض من إعلان", "scout", details = "${d.title} — ${poi.placeId}")
+                adUploadPoi.value = null
+                toast("انتشر العرض على الخريطة ✅")
+                Log.d(TAG, "ad offer $id")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "ad offer failed", e)
+                toast(
+                    if (e is com.google.firebase.firestore.FirebaseFirestoreException && e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)
+                        "ما عندك صلاحية رفع عروض الإعلانات" else (e.message?.take(150) ?: "تعذّر النشر، جرّب مرة ثانية")
+                )
+            } finally {
+                isPublishingAd.value = false
+            }
+        }
+    }
+
+    /** «أنا صاحب المحل» من عرض إعلان: نفس تسجيل محل Google. */
+    fun claimAdOffer(offer: RestaurantOffer) {
+        selectedOfferOnMap.value = null
+        claimPoi(com.google.android.gms.maps.model.PointOfInterest(
+            com.google.android.gms.maps.model.LatLng(offer.latitude, offer.longitude), offer.placeId, offer.restaurantName))
+    }
 
     /** نص الدعوة (الأدمن يعدّله من الإعدادات). */
     fun inviteText(poi: com.google.android.gms.maps.model.PointOfInterest): String {

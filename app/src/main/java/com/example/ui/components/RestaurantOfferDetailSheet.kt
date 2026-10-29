@@ -78,7 +78,9 @@ fun RestaurantOfferDetailSheet(
     isVerified: Boolean = false,
     // 🛒 اطلب العرض (باقة / 1+1 / خصم المنيو) — null = العرض ما ينطلب
     orderLabel: String? = null,
-    onOrder: () -> Unit = {}
+    onOrder: () -> Unit = {},
+    // 📷 عرض من إعلان: «أنا صاحب المحل»
+    onClaimAd: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val orderScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -273,6 +275,8 @@ fun RestaurantOfferDetailSheet(
             }
 
             Spacer(modifier = Modifier.height(6.dp))
+
+            if (offer.source == "ad") AdSourceBanner(onClaim = if (isOwner) null else onClaimAd)
 
             // Offer Title
             Text(

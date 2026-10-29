@@ -88,6 +88,10 @@ data class RestaurantOffer(
     val branches: List<Branch> = emptyList(),
     // 🎁 العروض مع المنيو: {type: discount|bundle|bogo|promo, scope, kind, section, itemIds, itemId, getPct, orderable}
     val deal: Map<String, Any>? = null,
+    // 📷 عرض من إعلان: الفريق رفعه لمحل Google مو مسجّل (merchantId = poi_<placeId>)
+    val source: String = "",
+    val placeId: String = "",
+    val scoutedBy: String = "",
     @ServerTimestamp
     val createdAt: Timestamp? = null,
     // محلي فقط (ما ينحفظ): الفرع اللي اختاره المستخدم أو الأقرب له

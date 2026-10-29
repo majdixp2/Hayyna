@@ -240,3 +240,34 @@ function leafletMap(L, el, { center, zoom, onMapClick }) {
     resize: () => map.invalidateSize(),
   };
 }
+
+// ---------------- بحث المحلات في Google (لرفع عروض الإعلانات) ----------------
+const PLACE_FIELDS = ["id", "displayName", "formattedAddress", "location", "nationalPhoneNumber", "internationalPhoneNumber", "addressComponents"];
+function placeOut(p) {
+  const comp = (t) => (p.addressComponents || []).find((c) => (c.types || []).includes(t))?.longText || "";
+  return {
+    placeId: p.id, name: p.displayName || "", address: p.formattedAddress || "",
+    lat: p.location?.lat?.(), lng: p.location?.lng?.(),
+    phone: p.internationalPhoneNumber || p.nationalPhoneNumber || "",
+    district: comp("sublocality_level_1") || comp("sublocality") || comp("neighborhood"),
+    city: comp("locality") || comp("administrative_area_level_2") || comp("administrative_area_level_1"),
+  };
+}
+const withTimeout = (p, ms = 8000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+/** يدوّر على محل بالاسم/العنوان. near = {lat,lng} اختياري يقرّب النتائج */
+export async function searchPlaces(key, text, near) {
+  const g = await loadGoogle(key);
+  const { Place } = await g.importLibrary("places");
+  const req = { textQuery: text, fields: PLACE_FIELDS, language: "ar", region: "sa", maxResultCount: 6 };
+  if (near?.lat != null) req.locationBias = { center: { lat: near.lat, lng: near.lng }, radius: 30000 };
+  const { places } = await withTimeout(Place.searchByText(req));
+  return (places || []).map(placeOut).filter((p) => p.lat != null);
+}
+/** تفاصيل محل واحد (الاسم، الجوال، الحي، المدينة، الإحداثيات) */
+export async function placeDetails(key, placeId) {
+  const g = await loadGoogle(key);
+  const { Place } = await g.importLibrary("places");
+  const p = new Place({ id: placeId, requestedLanguage: "ar" });
+  await withTimeout(p.fetchFields({ fields: PLACE_FIELDS.filter((f) => f !== "id") }));
+  return placeOut(p);
+}

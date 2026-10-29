@@ -20,7 +20,11 @@ object PlacesLookup {
     private const val TAG = "PlacesLookup"
     private val client by lazy { OkHttpClient.Builder().callTimeout(8, TimeUnit.SECONDS).build() }
 
-    data class Info(val name: String, val phone: String)
+    data class Info(
+        val name: String, val phone: String,
+        val address: String = "", val district: String = "", val city: String = "",
+        val lat: Double? = null, val lng: Double? = null
+    )
 
     suspend fun lookup(context: Context, placeId: String): Info? = withContext(Dispatchers.IO) {
         runCatching {
@@ -28,7 +32,7 @@ object PlacesLookup {
             val req = Request.Builder()
                 .url("https://places.googleapis.com/v1/places/$placeId?languageCode=ar")
                 .header("X-Goog-Api-Key", key)
-                .header("X-Goog-FieldMask", "displayName,nationalPhoneNumber,internationalPhoneNumber")
+                .header("X-Goog-FieldMask", "displayName,nationalPhoneNumber,internationalPhoneNumber,formattedAddress,addressComponents,location")
                 .header("X-Android-Package", context.packageName)
                 .apply { certSha1(context)?.let { header("X-Android-Cert", it) } }
                 .build()
@@ -36,9 +40,25 @@ object PlacesLookup {
                 val body = r.body?.string().orEmpty()
                 if (!r.isSuccessful) { Log.w(TAG, "places ${r.code}: ${body.take(300)}"); return@use null }
                 val j = JSONObject(body)
+                val comps = j.optJSONArray("addressComponents")
+                fun comp(type: String): String {
+                    if (comps == null) return ""
+                    for (i in 0 until comps.length()) {
+                        val c = comps.optJSONObject(i) ?: continue
+                        val types = c.optJSONArray("types") ?: continue
+                        if ((0 until types.length()).any { types.optString(it) == type }) return c.optString("longText")
+                    }
+                    return ""
+                }
+                val loc = j.optJSONObject("location")
                 Info(
                     name = j.optJSONObject("displayName")?.optString("text").orEmpty(),
-                    phone = j.optString("internationalPhoneNumber").ifBlank { j.optString("nationalPhoneNumber") }
+                    phone = j.optString("internationalPhoneNumber").ifBlank { j.optString("nationalPhoneNumber") },
+                    address = j.optString("formattedAddress"),
+                    district = comp("sublocality_level_1").ifBlank { comp("sublocality") }.ifBlank { comp("neighborhood") },
+                    city = comp("locality").ifBlank { comp("administrative_area_level_2") }.ifBlank { comp("administrative_area_level_1") },
+                    lat = loc?.optDouble("latitude")?.takeIf { !it.isNaN() },
+                    lng = loc?.optDouble("longitude")?.takeIf { !it.isNaN() }
                 )
             }
         }.getOrNull()

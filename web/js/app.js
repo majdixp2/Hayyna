@@ -9,7 +9,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
 import * as X from "./logic.js";
-import { createMap } from "./map.js";
+import { createMap, placeDetails } from "./map.js";
+import { canScout, mountAdForm } from "./scout.js";
 import { startI18n } from "./i18n.js";
 import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
 import { renderStoreItems, openMyOrders, ordersOn, watchMyOrders, myOrdersClosed, renderStoreRatings, orderFromOffer, offerOrderable } from "./catalog-ui.js";
@@ -29,7 +30,7 @@ export const state = {
   offers: [], stores: [], q: "", cat: "الكل", sort: "near", openOnly: false, browse: null,
   me: null, selected: null, branchId: null, view: null, tab: "map",
   favs: new Set(), user: null, role: null, profile: null, scope: "all", roleLoading: false, pendingRole: null,
-  config: {}, loaded: false, storesLoaded: false, referrals: [], boosts: [], fresh: false, kind: "all",
+  config: {}, loaded: false, storesLoaded: false, referrals: [], boosts: [], fresh: false, kind: "all", scout: false,
 };
 
 // ---------------- الإحالات: مين دعا المحل ----------------
@@ -401,6 +402,7 @@ export function openOffer(id, push) {
           ${store || isOwner ? `<button class="btn-soft" data-store="${esc(o.merchantId)}">🏪 ${isOwner ? "صفحة متجري" : "صفحة المتجر"} ›</button>` : ""}
           ${isOwner ? "" : `<button class="icon-report" data-act="report" title="بلاغ عن العرض" aria-label="بلاغ">🚩</button>`}
         </div>
+        ${o.source === "ad" ? `<div class="ad-src">📷 <div><b>من إعلان المحل</b><small>المحل مو مسجّل في لكوفر — تأكد من العرض مع المحل قبل ما تروح</small></div>${isOwner ? "" : `<button class="btn-soft" data-act="adclaim">أنا صاحب المحل</button>`}</div>` : ""}
         <h1 class="title">${esc(o.offerTitle)}</h1>
         <div class="pills">${exclBadge(o)}${o.deal?.type === "bundle" ? '<span class="pill">🎁 باقة</span>' : o.deal?.type === "bogo" ? `<span class="pill urgent">➕ ${o.deal.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"}</span>` : ""}${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
         <div class="${isOwner ? "row3" : "row2"}">
@@ -436,6 +438,10 @@ export function openOffer(id, push) {
     body.querySelector('[data-act="fav"]').onclick = () => { toggleFav(o.id); draw(); };
     body.querySelector('[data-act="share"]').onclick = () => share(`🔥 ${o.offerTitle}\n📍 ${o.restaurantName}${o.district ? " — " + o.district : ""}\n💰 ${priceLabel(o, true)}`, offerUrl(o), o.offerTitle);
     body.querySelector('[data-act="report"]')?.addEventListener("click", () => reportOffer(o));
+    body.querySelector('[data-act="adclaim"]')?.addEventListener("click", () => {
+      try { sessionStorage.setItem("hayyna_claim", JSON.stringify({ name: o.restaurantName, lat: o.latitude, lng: o.longitude, placeId: o.placeId || "" })); } catch {}
+      poiLog(o.placeId || o.id, "claims"); hideSheet(); setTab("account"); if (!state.user) openLogin("merchant");
+    });
     body.querySelector('[data-act="dealgo"]')?.addEventListener("click", (e) => { e.currentTarget.disabled = true; orderFromOffer(o).finally(() => { const b = body.querySelector('[data-act="dealgo"]'); if (b) b.disabled = false; }); });
     body.querySelector('[data-act="edit"]')?.addEventListener("click", async () => { const m = await import("./merchant.js"); m.openOfferForm(o); });
     body.querySelectorAll(".gallery img").forEach((im) => im.onclick = () => openViewer(im.dataset.full));
@@ -543,16 +549,24 @@ async function openPoi({ placeId, lat, lng }) {
     else inviteHtml = (mine ? `<div class="poi-locked mine">✅ دعيت هذا المحل — ننتظره يسجّل (باقي ${daysLeft(until)} ${daysLeft(until) === 1 ? "يوم" : "أيام"} محجوز لك)</div>` : "")
       + inviteBtn + (mine ? "" : `<p class="poi-pts">🎁 لو سجّل المحل عن طريق دعوتك تاخذ لين <b>${POINTS.verified + POINTS.offer} نقطة</b></p>`);
   }
+  const adOffers = state.offers.filter((o) => o.placeId === placeId && o.source === "ad" && !X.isExpired(o));
   showSheet(`<div class="pad poi-card">
     <div class="poi-ico">🏪</div>
     <div class="section-title" style="text-align:center">${esc(shown)}</div>
     <p class="desc tr" style="text-align:center">هذا المحل مو مسجّل في لكوفر للحين</p>
+    ${adOffers.length ? `<div class="section-title">📷 من إعلانات المحل (${adOffers.length})</div><div class="hscroll">${adOffers.map((o) =>
+      `<button class="mini" data-offer="${esc(o.id)}"><img src="${esc(thumb(o))}" alt=""><div>${esc(o.offerTitle)}<small>${esc(priceLabel(o))}</small></div></button>`).join("")}</div>` : ""}
     ${inviteHtml}
     ${phone && !mobile ? `<a class="btn call" href="tel:${esc(phone.replace(/[^\d+]/g, ""))}">📞 اتصل بالمحل (${esc(phone)})</a>` : ""}
     ${!state.user || isMerchant ? `<button class="btn dir" id="poiClaim">🏪 أنا صاحب المحل — سجّله</button>`
       : `<p class="poi-owner-hint">صاحب المحل؟ سجّل خروج وادخل بحساب <b>صاحب محل</b> عشان تسجّله</p>`}
-    <a class="btn call" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${encodeURIComponent(placeId)}" target="_blank" rel="noopener">فتح في Google Maps</a>
+    <div class="${state.scout ? "row2" : ""}">
+      <a class="btn call" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${encodeURIComponent(placeId)}" target="_blank" rel="noopener">فتح في Google Maps</a>
+      ${state.scout ? `<button class="btn dir" id="poiAd">📷 ارفع عرض</button>` : ""}
+    </div>
   </div>`);
+  $("sheetBody").querySelectorAll("[data-offer]").forEach((el) => el.onclick = () => openOffer(el.dataset.offer, true));
+  $("poiAd")?.addEventListener("click", () => openAdUpload({ placeId, lat, lng, name, phone }));
   $("poiLoginInvite")?.addEventListener("click", () => { hideSheet(); setTab("account"); openLogin("customer"); });
   $("poiInvite")?.addEventListener("click", () => {
     poiLog(placeId, "invites");
@@ -566,6 +580,17 @@ async function openPoi({ placeId, lat, lng }) {
     hideSheet();
     if (!state.user) { setTab("account"); openLogin("merchant"); return; }
     setTab("account");
+  });
+}
+// 📷 الفريق يرفع عرض من صورة إعلان على موقع هذا المحل
+async function openAdUpload(base) {
+  showSheet(`<div class="pad"><div class="spinner"></div></div>`);
+  const d = await placeDetails(MAPS_WEB_KEY, base.placeId).catch(() => null);
+  const place = { ...base, ...(d || {}), lat: base.lat, lng: base.lng, name: base.name || d?.name || "", phone: base.phone || d?.phone || "" };
+  showSheet(`<div class="pad" id="adHost"></div>`);
+  mountAdForm($("adHost"), {
+    db, fbApp, user: state.user, config: state.config, mapsKey: MAPS_WEB_KEY, categories: categories(), toast, place,
+    onDone: (id) => { hideSheet(); setTimeout(() => openOffer(id, true), 900); },
   });
 }
 export function takeClaim() {
@@ -1137,7 +1162,9 @@ let refUnsub = null;
 onAuthStateChanged(auth, async (u) => {
   state.user = u;
   refUnsub?.(); refUnsub = null; state.referrals = [];
+  state.scout = false;
   if (!u) { state.role = null; state.profile = null; renderAll(); return; }
+  canScout(db, u, ADMIN_EMAILS).then((v) => { state.scout = v; }); // فريق الإعلانات: يرفع عروض لمحلات غير مسجّلة
   refUnsub = onSnapshot(query(collection(db, "referrals"), where("referrer", "==", u.uid)),
     (snap) => { state.referrals = snap.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.tab === "account") renderAccount(); }, () => {});
   state.roleLoading = true; renderAccount();

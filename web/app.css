@@ -743,3 +743,12 @@ textarea.input { resize: vertical; line-height: 1.6; }
 @keyframes otrUp { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes otrPop { from { transform: scale(.5); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes otrPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+
+/* 📷 عرض من إعلان (محل غير مسجّل) */
+.ad-src{display:flex;align-items:center;gap:10px;margin:10px 0 4px;padding:10px 12px;border-radius:14px;background:rgba(244,180,0,.14);border:1px solid rgba(244,180,0,.35);font-size:20px}
+.ad-src>div{flex:1;min-width:0;font-size:13px;line-height:1.5}
+.ad-src b{display:block;font-size:14px}
+.ad-src small{opacity:.75}
+.ad-src .btn-soft{white-space:nowrap;font-size:12px}
+.poi-card .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.poi-card .row2 .btn{margin:0}

@@ -111,7 +111,8 @@ private fun fmt(v: Double): String = if (v % 1.0 == 0.0) v.toLong().toString() e
 
 /** نص السعر للعرض: "25 ر.س" أو "خصم 30%" لعروض النسبة. */
 fun RestaurantOffer.priceLabel(nowMillis: Long = System.currentTimeMillis(), withScope: Boolean = false): String =
-    if (postType == "new" && price <= 0.0 && !OfferPricing.isPercentOnly(this)) "✨ منتج جديد"
+    if (source == "ad" && price <= 0.0 && !OfferPricing.isPercentOnly(this)) "📷 التفاصيل في الإعلان"
+    else if (postType == "new" && price <= 0.0 && !OfferPricing.isPercentOnly(this)) "✨ منتج جديد"
     else if (OfferPricing.isPercentOnly(this)) {
         val p = OfferPricing.currentPercent(this, nowMillis)
         if (withScope && itemsScope.isNotBlank()) "خصم $p% $itemsScope" else "خصم $p%"
