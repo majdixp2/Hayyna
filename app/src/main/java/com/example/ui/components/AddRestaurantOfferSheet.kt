@@ -152,7 +152,8 @@ fun AddRestaurantOfferSheet(
     var isNewProduct by remember { mutableStateOf(editingOffer?.postType == "new") }
     // 💎 حصري لعملاء لكوفر
     var exclusive by remember { mutableStateOf(editingOffer?.exclusive ?: false) }
-    var startMillis by remember { mutableStateOf(editingOffer?.startsAt?.toDate()?.time) }
+    // تاريخ بداية فات = العرض بدأ خلاص (إعادة النشر تحسب المدة من اليوم)
+    var startMillis by remember { mutableStateOf(editingOffer?.startsAt?.toDate()?.time?.takeIf { it > System.currentTimeMillis() }) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     // ---------- الوسوم / التوصيل / المَعلَم ----------
@@ -194,7 +195,9 @@ fun AddRestaurantOfferSheet(
     var expiryOptionIndex by remember { mutableStateOf(if (paid) 1 else 0) } // النشر بالرصيد يحتاج مدة
     // مدة مخصصة بالأيام (expiryOptionIndex = -1)
     var customDaysText by remember { mutableStateOf("") }
-    var keepCurrentExpiry by remember { mutableStateOf(isEditing) }
+    // عرض منتهي: ما نخلي «بدون تغيير» — لازم يختار مدة جديدة عشان يرجع ينشر
+    val currentExpired = editingOffer?.expiresAt?.toDate()?.time?.let { it <= System.currentTimeMillis() } == true
+    var keepCurrentExpiry by remember { mutableStateOf(isEditing && !currentExpired) }
 
     var errorMessage by remember { mutableStateOf("") }
     var showDiscardDialog by remember { mutableStateOf(false) }
@@ -236,7 +239,7 @@ fun AddRestaurantOfferSheet(
         val now = System.currentTimeMillis()
         val dayMs = 24 * 3_600_000L
         val useTiers = percentMode && tiered
-        val base = startMillis ?: (if (useTiers) editingOffer?.createdAt?.toDate()?.time else null) ?: now
+        val base = startMillis ?: (if (useTiers && !currentExpired) editingOffer?.createdAt?.toDate()?.time else null) ?: now
         val newExpiry: Long? = when {
             useTiers -> OfferPricing.midnight(base) + steps.size * dayMs
             keepCurrentExpiry -> editingOffer?.expiresAt?.toDate()?.time
@@ -879,7 +882,7 @@ fun AddRestaurantOfferSheet(
                     if (!(percentMode && tiered)) {
                     Text(if (isNewProduct) "كم يظهر كـ «جديد»؟ ⏰" else "مدة العرض ⏰", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (isEditing) {
+                        if (isEditing && !currentExpired) {
                             item {
                                 val current = editingOffer?.let { OfferTime.remainingText(it) } ?: "بدون انتهاء"
                                 FilterChip(

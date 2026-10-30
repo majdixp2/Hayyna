@@ -527,7 +527,7 @@ export async function openOfferForm(editing) {
     tags: (e?.tags || []).join("، "), delivery: e ? !!e.delivery : !!p.delivery,
     fee: X.money((e ? e.deliveryFee : p.deliveryFee) || 0).replace(/^0$/, ""), min: X.money((e ? e.deliveryMinOrder : p.deliveryMinOrder) || 0).replace(/^0$/, ""),
     free: X.money((e ? e.deliveryFreeOver : p.deliveryFreeOver) || 0).replace(/^0$/, ""), customDays: "",
-    opening: !!e?.grandOpening, start: X.ms(e?.startsAt) || null, durIdx: 1, keepExpiry: !!e,
+    opening: !!e?.grandOpening, start: X.ms(e?.startsAt) > Date.now() ? X.ms(e.startsAt) : null, durIdx: 1, keepExpiry: !!e && !X.isExpired(e),
     all: !e || !(e.branches || []).length || p.branches.every((b) => (e.branches || []).some((x) => x.id === b.id)),
     sel: new Set((e?.branches || []).map((b) => b.id)),
     media: e ? X.gallery(e).map((u) => ({ url: u })) : [], isVideo: e?.mediaType === "VIDEO",
@@ -598,7 +598,7 @@ export async function openOfferForm(editing) {
       ${exclusiveOf(state.config).enabled ? `<label class="switch-row"><span>${esc(exclusiveOf(state.config).icon)} ${esc(exclusiveOf(state.config).label)} <small class="hint">(العرض لعملاء لكوفر بس، يوري التطبيق عند الكاشير)</small>${r.on && cr().enabled ? `<small class="excl-reward">🎁 ${r.free ? "نشر العرض الحصري مجاني" : `خصم ${r.percent}% على نشر العرض الحصري`}</small>` : ""}</span><input type="checkbox" id="oExcl" ${f.exclusive ? "checked" : ""} ${exclLocked ? "disabled" : ""}></label>
         ${exclLocked ? `<small class="hint">💎 العرض انتشر كحصري، فما تقدر تشيل الحصري. لو تبيه لكل الناس احذفه وانشره من جديد.</small>` : ""}` : ""}
       ${cr().enabled && e ? `<div class="hint-box">⏰ لتمديد مدة العرض أو تمييزه استخدم زر 🚀 في قائمة عروضك.</div>` : f.percentMode && f.tiered ? "" : `<div class="section-title">⏰ ${isNew ? "كم يظهر كـ «جديد»؟" : "مدة العرض"}</div><div class="chips wrap">
-        ${e ? `<button class="chip${f.keepExpiry ? " on" : ""}" data-dur="keep">بدون تغيير (${esc(X.remainingText(e)?.t || "بدون انتهاء")})</button>` : ""}
+        ${e && !X.isExpired(e) ? `<button class="chip${f.keepExpiry ? " on" : ""}" data-dur="keep">بدون تغيير (${esc(X.remainingText(e)?.t || "بدون انتهاء")})</button>` : ""}
         ${X.DURATIONS.map((d, i) => paid && !d.days ? "" : `<button class="chip${!f.keepExpiry && f.durIdx === i ? " on" : ""}" data-dur="${i}">${d.label}</button>`).join("")}
         <button class="chip${!f.keepExpiry && f.durIdx === -1 ? " on" : ""}" data-dur="-1">✎ عدد أيام</button></div>
         ${!f.keepExpiry && f.durIdx === -1 ? `<input id="oDays" class="input" inputmode="numeric" maxlength="2" value="${esc(f.customDays)}" placeholder="كم يوم؟ مثال: 2">` : ""}`}
@@ -672,7 +672,7 @@ export async function openOfferForm(editing) {
     const useTiers = f.percentMode && f.tiered;
     const branches = f.all ? p.branches : p.branches.filter((b) => f.sel.has(b.id));
     const created = X.ms(e?.createdAt);
-    const base = f.start || (useTiers && created ? created : now);
+    const base = f.start || (useTiers && created && !X.isExpired(e) ? created : now); // عرض منتهي: المدة الجديدة من اليوم
     const expiry = useTiers ? X.midnight(base) + steps.length * DAY
       : f.keepExpiry && e ? X.ms(e.expiresAt)
       : f.durIdx === -1 ? ((+f.customDays >= 1 && +f.customDays <= 90) ? base + (+f.customDays) * DAY : null)

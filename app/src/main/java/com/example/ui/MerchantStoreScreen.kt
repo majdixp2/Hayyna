@@ -309,7 +309,7 @@ fun MerchantStoreScreen(
                                             OutlinedTextField(
                                                 value = searchQuery,
                                                 onValueChange = { viewModel.onSearchQueryChange(it) },
-                                                placeholder = { Text("ابحث عن متجر، عرض، أو حي...", fontSize = 12.sp) },
+                                                placeholder = { Text("ابحث: محل، عرض، حي", fontSize = 13.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                                 trailingIcon = {
                                                     if (searchQuery.isNotBlank()) {
