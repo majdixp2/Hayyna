@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -79,6 +80,9 @@ fun CustomerOffersView(
     districts: List<Pair<String, Int>> = emptyList(),
     browseName: String? = null,
     onClearBrowse: () -> Unit = {},
+    // 🏪 محلات مسجّلة تطابق البحث (تطلع فوق العروض)
+    storeHits: List<com.example.data.model.StoreProfile> = emptyList(),
+    onStoreClick: (com.example.data.model.StoreProfile) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isFilterExpanded by remember { mutableStateOf(false) }
@@ -90,6 +94,30 @@ fun CustomerOffersView(
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // محلات مطابقة للبحث
+        if (storeHits.isNotEmpty()) item(key = "storeHits") {
+            Column(Modifier.fillMaxWidth()) {
+                Text("🏪 محلات", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(storeHits, key = { it.uid }) { st ->
+                        Surface(
+                            shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.clickable { onStoreClick(st) }
+                        ) {
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (st.logoUrl.isNotBlank()) coil.compose.AsyncImage(
+                                    model = st.logoUrl, contentDescription = null,
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.size(24.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                                ) else Text("🏪")
+                                Spacer(Modifier.width(6.dp))
+                                Text(st.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // Search & Filters Card
         item {
             Surface(

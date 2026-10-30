@@ -9,7 +9,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
 import * as X from "./logic.js";
-import { createMap, placeDetails } from "./map.js";
+import { createMap, placeDetails, searchPlaces } from "./map.js";
 import { canScout, mountAdForm } from "./scout.js";
 import { startI18n } from "./i18n.js";
 import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
@@ -339,7 +339,7 @@ export function renderAll() {
   document.querySelectorAll(".car-arrow").forEach((a) => a.classList.toggle("hidden", list.length < 2));
   const empty = $("empty");
   if (state.loaded && !list.length) {
-    empty.innerHTML = state.offers.length ? `<b>ما لقينا عروض مطابقة</b>جرّب كلمة ثانية أو شيل الفلاتر` : `<b>لا توجد عروض حالياً</b>المحلات تنزّل عروضها أول بأول 🔥`;
+    empty.innerHTML = state.offers.length ? (state.q && storeMatches().length ? `<b>ما فيه عروض بهالاسم</b>بس لقينا محلات فوق 👆` : `<b>ما لقينا عروض مطابقة</b>جرّب كلمة ثانية أو شيل الفلاتر`) : `<b>لا توجد عروض حالياً</b>المحلات تنزّل عروضها أول بأول 🔥`;
     empty.classList.remove("hidden");
   } else empty.classList.add("hidden");
   $("filterDot").classList.toggle("hidden", !(state.openOnly || state.sort !== "near" || state.fresh || state.kind !== "all"));
@@ -359,7 +359,54 @@ export function renderAll() {
   const favList = state.offers.filter((o) => state.favs.has(o.id) && !X.isExpired(o));
   $("favs").innerHTML = favList.length ? favList.map(listCard).join("")
     : `<div class="empty-inline"><div style="font-size:40px">🤍</div><b>ما عندك مفضلة للحين</b><br>اضغط القلب على أي عرض عشان تحفظه هنا</div>`;
+  renderStoreHits();
   if (state.tab === "account") renderAccount();
+}
+
+// ---------------- البحث عن محل (المتاجر المسجّلة + محلات Google) ----------------
+function storeMatches() {
+  const q = norm(state.q); if (q.length < 2) return [];
+  return state.stores.map((s) => {
+    const bs = s.branches || [];
+    const hay = [s.name, s.category, s.about, ...bs.flatMap((b) => [b.name, b.district, b.landmark])].map(norm);
+    const score = norm(s.name).startsWith(q) ? 3 : norm(s.name).includes(q) ? 2 : hay.some((h) => h.includes(q)) ? 1 : 0;
+    const b = state.me && bs.length ? bs.reduce((a, c) => km(state.me, { lat: c.latitude, lng: c.longitude }) < km(state.me, { lat: a.latitude, lng: a.longitude }) ? c : a) : bs[0];
+    return { s, b, score, d: state.me && b ? km(state.me, { lat: b.latitude, lng: b.longitude }) : null };
+  }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score || (a.d ?? 1e9) - (b.d ?? 1e9)).slice(0, 8);
+}
+function renderStoreHits() {
+  const el = $("storeHits"); if (!el) return;
+  const q = state.q.trim(), hits = storeMatches();
+  const google = q.length >= 2 && map?.kind === "google";
+  if (!hits.length && !google) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  el.innerHTML = hits.map(({ s, d }, i) => `<button class="sh" data-sh="${i}">${s.logoUrl ? `<img src="${esc(cld(s.logoUrl, 80))}" alt="">` : "🏪"} <span>${esc(s.name)}</span>${d != null ? `<small>${esc(distText(d))}</small>` : ""}</button>`).join("")
+    + (google ? `<button class="sh g" data-shg="1">🔎 «${esc(q.slice(0, 20))}» في محلات Google</button>` : "");
+  el.classList.remove("hidden");
+  el.querySelectorAll("[data-sh]").forEach((b) => b.onclick = () => {
+    const { s, b: br } = hits[+b.dataset.sh];
+    if (br && map) map.panTo(br.latitude, br.longitude, 16);
+    openStore(s.uid, true);
+  });
+  el.querySelector("[data-shg]")?.addEventListener("click", searchGoogleShops);
+}
+async function searchGoogleShops() {
+  const q = state.q.trim(); if (!q) return;
+  showSheet(`<div class="pad"><div class="spinner"></div></div>`);
+  const near = state.me || map?.center?.();
+  let res = [];
+  try { res = await searchPlaces(MAPS_WEB_KEY, q, near ? { lat: near.lat, lng: near.lng } : null); } catch (e) { console.warn(e); }
+  if (!res.length) { showSheet(`<div class="pad"><div class="section-title">🔎 ${esc(q)}</div><p class="desc">ما لقينا محلات بهالاسم في Google. جرّب اسم ثاني.</p></div>`); return; }
+  showSheet(`<div class="pad"><div class="section-title">🔎 محلات Google: ${esc(q)}</div>
+    <div class="branches">${res.map((p, i) => {
+      const d = state.me ? km(state.me, { lat: p.lat, lng: p.lng }) : null;
+      return `<button class="branch" data-gp="${i}"><div class="b-main"><div class="b-name">${esc(p.name)}</div><div class="b-sub">${esc(p.address)}</div></div><div class="b-sub">${esc(distText(d))}</div></button>`;
+    }).join("")}</div></div>`);
+  $("sheetBody").querySelectorAll("[data-gp]").forEach((b) => b.onclick = () => {
+    const p = res[+b.dataset.gp];
+    // لو المحل مسجّل عندنا نفتح صفحته، وإلا بطاقة المحل (ادعه / ارفع عرض)
+    map?.panTo(p.lat, p.lng, 17);
+    openPoi({ placeId: p.placeId, lat: p.lat, lng: p.lng });
+  });
 }
 
 // ---------------- تفاصيل العرض ----------------

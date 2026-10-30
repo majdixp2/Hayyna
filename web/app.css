@@ -752,3 +752,11 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .ad-src .btn-soft{white-space:nowrap;font-size:12px}
 .poi-card .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .poi-card .row2 .btn{margin:0}
+
+/* 🏪 نتائج البحث عن محل (تحت مربع البحث) */
+.store-hits{display:flex;gap:6px;overflow-x:auto;padding:6px 2px 2px;scrollbar-width:none;pointer-events:auto}
+.store-hits::-webkit-scrollbar{display:none}
+.store-hits .sh{flex:none;display:flex;align-items:center;gap:6px;border:0;border-radius:20px;padding:6px 12px 6px 10px;background:var(--card,#fff);color:inherit;font:inherit;font-size:13px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.14);cursor:pointer;white-space:nowrap}
+.store-hits .sh img{width:22px;height:22px;border-radius:50%;object-fit:cover}
+.store-hits .sh small{font-weight:400;opacity:.65}
+.store-hits .sh.g{background:#10318F;color:#fff}
