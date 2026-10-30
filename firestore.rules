@@ -417,17 +417,78 @@ service cloud.firestore {
         && (d.approved == false || isTrusted(uid) || isVerifiedStore(uid) || catalogCfg().get('review', true) == false)
         && d.updatedAt == request.time;
     }
+    // ===== 👥 موظفين المتجر: دخول برقم المتجر + رقم الموظف + رمز سري (حساب داخلي بدون إيميل حقيقي) =====
+    function staffPath() { return /databases/$(database)/documents/storeStaff/$(request.auth.uid); }
+    function isStoreStaff(store, perm) {
+      return isAuthenticated() && featureOn('staff')
+        && exists(staffPath())
+        && get(staffPath()).data.storeId == store
+        && get(staffPath()).data.active == true
+        && perm in get(staffPath()).data.perms;
+    }
+    function codeOwner(code) { return get(/databases/$(database)/documents/storeCodes/$(code)).data.uid; }
+    function staffOk(staffUid, d) {
+      return d.keys().hasOnly(['storeId', 'storeName', 'code', 'n', 'name', 'role', 'perms', 'active', 'createdAt', 'email'])
+        && d.storeId == request.auth.uid && staffUid != request.auth.uid
+        && d.code is string && codeOwner(d.code) == request.auth.uid
+        && d.n is int && d.n >= 1 && d.n <= 50
+        && d.name is string && d.name.size() <= 40
+        && d.storeName is string && d.storeName.size() <= 100
+        && d.role in ['cashier', 'kitchen']
+        && d.perms is list && d.perms.size() <= 5 && d.perms.hasOnly(['orders', 'stock'])
+        && d.active is bool
+        && d.email is string && d.email.size() <= 120;
+    }
+    // رقم المتجر (5 أرقام) — ما يتكرر لأن الإنشاء يفشل لو الرقم مأخوذ
+    match /storeCodes/{code} {
+      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() && featureOn('staff') && code.matches('^[1-9][0-9]{4}$')
+        && request.resource.data.keys().hasOnly(['uid', 'at'])
+        && request.resource.data.uid == request.auth.uid && request.resource.data.at == request.time;
+      allow delete: if isAdmin();
+    }
+    // دليل الدخول: «رقم المتجر-رقم الموظف» ← الحساب الداخلي (ما فيه أي سر)
+    function staffLoginOk(key, d) {
+      return d.keys().hasOnly(['email', 'storeId', 'n'])
+        && d.storeId == request.auth.uid
+        && d.n is int && d.n >= 1 && d.n <= 50
+        && codeOwner(key.split('-')[0]) == request.auth.uid
+        && key == key.split('-')[0] + '-' + string(d.n)
+        && d.email is string && d.email.size() <= 120
+        && d.email.matches('^' + key + '-[a-z0-9]{4,12}@staff[.]lacover[.]app$');
+    }
+    match /staffLogin/{key} {
+      allow read: if true;
+      allow create: if isAuthenticated() && featureOn('staff') && staffLoginOk(key, request.resource.data);
+      allow update: if isAuthenticated() && featureOn('staff') && resource.data.storeId == request.auth.uid && staffLoginOk(key, request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.storeId == request.auth.uid || isAdmin());
+    }
+    match /storeStaff/{staffUid} {
+      allow read: if isAuthenticated() && (request.auth.uid == staffUid || resource.data.storeId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && featureOn('staff') && staffOk(staffUid, request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update: if isAuthenticated() && resource.data.storeId == request.auth.uid && staffOk(staffUid, request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.n == resource.data.n && request.resource.data.code == resource.data.code;
+      allow delete: if isAuthenticated() && (resource.data.storeId == request.auth.uid || isAdmin());
+    }
+
     match /items/{itemId} {
       allow read: if resource.data.approved == true
         || (isAuthenticated() && resource.data.merchantId == request.auth.uid)
-        || can('review');
+        || can('review')
+        || isStoreStaff(resource.data.merchantId, 'stock');
       allow create: if can('review')
         || (isAuthenticated() && itemOk(request.auth.uid, itemId, request.resource.data)
           && request.resource.data.createdAt == request.time);
       allow update: if can('review')
         || (isAuthenticated() && resource.data.merchantId == request.auth.uid
           && itemOk(request.auth.uid, itemId, request.resource.data)
-          && request.resource.data.createdAt == resource.data.createdAt);
+          && request.resource.data.createdAt == resource.data.createdAt)
+        // 👥 موظف «نفد اليوم»: يغيّر التوفر بس
+        || (isStoreStaff(resource.data.merchantId, 'stock')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['available', 'updatedAt'])
+          && request.resource.data.available is bool && request.resource.data.updatedAt == request.time);
       allow delete: if can('review') || (isAuthenticated() && resource.data.merchantId == request.auth.uid);
     }
 
@@ -483,10 +544,13 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && !noshowBlocked(request.auth.uid);
       allow read: if can('merchants')
-        || (isAuthenticated() && (resource.data.customerUid == request.auth.uid || resource.data.storeId == request.auth.uid));
+        || (isAuthenticated() && (resource.data.customerUid == request.auth.uid || resource.data.storeId == request.auth.uid))
+        || isStoreStaff(resource.data.storeId, 'orders');
       // المحل يحدّث الحالة (ما يرجع طلب انتهى)، ويلغي بسبب، ويرد على طلب الإلغاء
       allow update: if can('merchants')
-        || (isAuthenticated() && resource.data.storeId == request.auth.uid
+        || (isAuthenticated() && (resource.data.storeId == request.auth.uid
+              // 👥 موظف الطلبات: نفس صلاحية المحل ما عدا «ما انستلم» (لصاحب المحل)
+              || (isStoreStaff(resource.data.storeId, 'orders') && request.resource.data.status != 'noshow'))
           && resource.data.status in ['sent', 'received', 'ready', 'delivering']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'etaAt', 'readyAt', 'cancelReason', 'cancelReqAns', 'cancelBy'])
           && request.resource.data.status in ['sent', 'received', 'ready', 'delivering', 'done', 'cancelled', 'noshow']
