@@ -68,6 +68,8 @@ const tmr = () => { const d = new Date(); d.setHours(24, 0, 0, 0); return d; };
 await t("الكاشير يشوف عروض محله (حتى اللي بالمراجعة)", () => assertSucceeds(getDocs(query(collection(CASH(), "offers"), where("merchantId", "==", "own")))));
 await t("الكاشير يعلّم العرض نفد", () => assertSucceeds(updateDoc(doc(CASH(), "offers/of1"), { soldOutUntil: tmr() })));
 await t("الكاشير يرجّع العرض", () => assertSucceeds(updateDoc(doc(CASH(), "offers/of1"), { soldOutUntil: null })));
+await t("الزبون يطلب تذكير (يزيد العدّاد)", () => assertSucceeds(updateDoc(doc(RND(), "offers/of1"), { notifyCount: 1 })));
+await t("الكاشير يرجّعه ويصفّر المنتظرين", () => assertSucceeds(updateDoc(doc(CASH(), "offers/of1"), { soldOutUntil: null, notifyCount: 0 })));
 await t("الكاشير ما يعدّل عنوان العرض", () => assertFails(updateDoc(doc(CASH(), "offers/of1"), { offerTitle: "x" })));
 await t("المطبخ ما يعلّم العرض نفد", () => assertFails(updateDoc(doc(KIT(), "offers/of1"), { soldOutUntil: tmr() })));
 await t("ما يقفل العرض أيام طويلة", () => assertFails(updateDoc(doc(CASH(), "offers/of1"), { soldOutUntil: new Date(Date.now() + 5 * 864e5) })));

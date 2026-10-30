@@ -202,6 +202,8 @@ export function storeDeals(config, offers, quick, items = [], now = Date.now()) 
   const D = { rules: [], bogo: {}, packs: [], banners: [] };
   for (const o of offers || []) {
     const d = o.deal; if (!d || !live(o, now) || !DEAL_TYPES[d.type] || !on(d.type)) continue;
+    const sold = ms(o.soldOutUntil) > now; // ❌ نفد اليوم
+    if (sold && d.type !== "bundle" && d.type !== "promo") continue;
     if (d.type === "discount") {
       const pct = offerPct(o, now); if (pct <= 0 || pct >= 100) continue;
       const r = { pct, scope: d.scope || "all", kind: d.kind || "", section: d.section || "", itemIds: d.itemIds || [], src: o.id };
@@ -216,7 +218,7 @@ export function storeDeals(config, offers, quick, items = [], now = Date.now()) 
       const sum = r2d(linked.reduce((a, x) => a + (+x.price || 0), 0));
       const was = sum > o.price ? sum : (o.originalPrice > o.price ? o.originalPrice : 0);
       D.packs.push({ id: "deal_" + o.id, offerId: o.id, kind: "deal", name: o.offerTitle, desc: linked.length ? linked.map((x) => x.name).join(" + ") : (o.description || "").slice(0, 120),
-        price: +o.price, was, imageUrl: o.mediaType === "VIDEO" ? "" : o.mediaUri, type: d.type, available: true });
+        price: +o.price, was, imageUrl: o.mediaType === "VIDEO" ? "" : o.mediaUri, type: d.type, available: !sold });
     }
   }
   if (quick && on("discount") && feat(config, "quickDeal") && +quick.pct > 0 && +quick.pct < 100 && ms(quick.endsAt) > now) {

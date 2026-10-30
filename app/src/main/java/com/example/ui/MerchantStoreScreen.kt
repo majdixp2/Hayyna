@@ -164,6 +164,7 @@ fun MerchantStoreScreen(
     val poiConfig by viewModel.poiConfig.collectAsStateWithLifecycle()
     val selectedPoi by viewModel.selectedPoi.collectAsStateWithLifecycle()
     val isScout by viewModel.isScout.collectAsStateWithLifecycle()
+    val restockIds by viewModel.restockIds.collectAsStateWithLifecycle()
     val adUploadPoi by viewModel.adUploadPoi.collectAsStateWithLifecycle()
     val pendingClaim by viewModel.pendingClaim.collectAsStateWithLifecycle()
     val topPoi by viewModel.topPoi.collectAsStateWithLifecycle()
@@ -877,7 +878,9 @@ fun MerchantStoreScreen(
                 isVerified = approvedStores.firstOrNull { it.uid == offer.merchantId }?.verified == true,
                 orderLabel = viewModel.offerOrderLabel(offer),
                 onOrder = { viewModel.orderFromOffer(offer) },
-                onClaimAd = { viewModel.closeOfferDetail(); viewModel.claimAdOffer(offer) }
+                onClaimAd = { viewModel.closeOfferDetail(); viewModel.claimAdOffer(offer) },
+                restockOn = offer.id in restockIds,
+                onRestock = { viewModel.toggleRestock(offer) }
             )
         }
 

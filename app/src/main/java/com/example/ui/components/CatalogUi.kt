@@ -140,7 +140,15 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
                         if (p.desc.isNotBlank()) Text(p.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         PriceLine(p.price, p.was, 0, "", Color(0xFFB45309))
                     }
-                    if (q == 0) OutlinedButton(onClick = { vm.cartAddPack(store.uid, p, 1) }, border = BorderStroke(1.dp, Color(0xFFB45309)), contentPadding = PaddingValues(horizontal = 10.dp)) { Text("＋ أضف", color = Color(0xFFB45309), fontWeight = FontWeight.Bold) }
+                    if (!p.available) Column(horizontalAlignment = Alignment.End) {
+                        Text("❌ نفد اليوم", color = Color(0xFFB91C1C), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        val restock by vm.restockIds.collectAsStateWithLifecycle()
+                        val on = p.offerId in restock
+                        TextButton(onClick = { vm.toggleRestockId(p.offerId) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                            Text(if (on) "🔔 بنذكّرك ✓" else "🔔 ذكّرني", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    else if (q == 0) OutlinedButton(onClick = { vm.cartAddPack(store.uid, p, 1) }, border = BorderStroke(1.dp, Color(0xFFB45309)), contentPadding = PaddingValues(horizontal = 10.dp)) { Text("＋ أضف", color = Color(0xFFB45309), fontWeight = FontWeight.Bold) }
                     else QtyControl(q, Color(0xFFB45309), onMinus = { vm.cartAddPack(store.uid, p, -1) }, onPlus = { vm.cartAddPack(store.uid, p, 1) })
                 }
             }

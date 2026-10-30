@@ -210,7 +210,7 @@ data class OfferDeal(
 data class QuickDeal(val pct: Int = 0, val scope: String = "all", val kind: String = "", val section: String = "", val itemIds: List<String> = emptyList(), val endsAt: Long = 0L)
 
 data class DealRule(val pct: Int, val scope: String, val kind: String, val section: String, val itemIds: List<String>)
-data class DealPack(val id: String, val offerId: String, val name: String, val desc: String, val price: Double, val was: Double, val imageUrl: String)
+data class DealPack(val id: String, val offerId: String, val name: String, val desc: String, val price: Double, val was: Double, val imageUrl: String, val available: Boolean = true)
 data class CartTotals(val lines: List<CartLine>, val sub: Double, val saved: Double)
 
 data class StoreDeals(
@@ -251,6 +251,8 @@ data class StoreDeals(
                 val d = OfferDeal.from(o.deal) ?: return@forEach
                 val t = DealType.of(d.type) ?: return@forEach
                 if (!cfg.feat(t.feat) || o.draft || !o.isApproved || OfferTime.isExpired(o, now) || OfferPricing.isUpcoming(o, now)) return@forEach
+                val sold = o.isSoldOut(now) // ❌ نفد اليوم: الخصم والـ1+1 يوقفون، والباقة تظهر «نفد»
+                if (sold && (t == DealType.DISCOUNT || t == DealType.BOGO)) return@forEach
                 when (t) {
                     DealType.DISCOUNT -> {
                         val pct = OfferPricing.currentPercent(o, now)
@@ -265,7 +267,7 @@ data class StoreDeals(
                         val sum = r2(linked.sumOf { it.price })
                         val was = if (sum > o.price) sum else if ((o.originalPrice ?: 0.0) > o.price) o.originalPrice!! else 0.0
                         packs += DealPack("deal_${o.id}", o.id, o.offerTitle, if (linked.isNotEmpty()) linked.joinToString(" + ") { it.name } else o.description.take(120),
-                            o.price, was, if (o.mediaType == MediaType.VIDEO) "" else o.mediaUri)
+                            o.price, was, if (o.mediaType == MediaType.VIDEO) "" else o.mediaUri, available = !sold)
                     }
                 }
             }

@@ -1029,6 +1029,7 @@ class MerchantViewModel(
         carts.value = carts.value + (storeId to cart)
     }
     fun cartAddPack(storeId: String, p: com.example.data.model.DealPack, delta: Int) {
+        if (!p.available && delta > 0) { toast("❌ هذا العرض نفد اليوم"); return }
         val cart = carts.value[storeId].orEmpty().toMutableMap()
         val q = (cart[p.id]?.qty ?: 0) + delta
         if (q <= 0) cart.remove(p.id) else cart[p.id] = com.example.data.model.CartLine(p.id, p.name, "deal", p.price, q.coerceAtMost(99), was = p.was)
@@ -1039,7 +1040,7 @@ class MerchantViewModel(
         val d = dealsOf(storeId)
         val cart = carts.value[storeId] ?: return
         val out = cart.mapNotNull { (id, l) ->
-            d.packs.firstOrNull { it.id == id }?.let { p -> return@mapNotNull id to l.copy(name = p.name, price = p.price, was = p.was) }
+            d.packs.firstOrNull { it.id == id }?.let { p -> return@mapNotNull if (!p.available) null else id to l.copy(name = p.name, price = p.price, was = p.was) }
             val it = items.firstOrNull { x -> x.id == id && x.available } ?: return@mapNotNull null
             val (price, was, _) = d.price(it); id to l.copy(price = price, was = was)
         }.toMap()
@@ -1076,6 +1077,7 @@ class MerchantViewModel(
     val directCheckout = MutableStateFlow<com.example.data.model.StoreProfile?>(null)
     /** 🛒 اطلب من شاشة العرض: لو المتجر عنده منيو مفتوح نضيفه للسلة ونفتح المتجر، وإلا نطلبه مباشرة */
     fun orderFromOffer(o: RestaurantOffer) {
+        if (o.isSoldOut()) { toast("❌ هذا العرض نفد اليوم"); return }
         viewModelScope.launch {
             val st = approvedStores.value.firstOrNull { it.uid == o.merchantId } ?: runCatching { repository.getStore(o.merchantId) }.getOrNull()
             if (st == null) { toast("صفحة المتجر مو جاهزة"); return@launch }
@@ -1140,6 +1142,13 @@ class MerchantViewModel(
         if (digits.isBlank()) { toast("المحل ما عنده رقم واتساب."); return }
         val url = "https://wa.me/$digits?text=" + java.net.URLEncoder.encode(o.text(), "UTF-8").replace("+", "%20")
         viewModelScope.launch {
+            // ❌ نتأكد من السيرفر إن العروض اللي في السلة ما نفدت (يمكن الموظف علّمها الحين)
+            val sold = lines.filter { it.id.startsWith("deal_") }.filter { repository.offerSoldOutNow(it.id.removePrefix("deal_")) }
+            if (sold.isNotEmpty()) {
+                carts.value = carts.value + (store.uid to carts.value[store.uid].orEmpty().filterKeys { k -> sold.none { it.id == k } })
+                toast("❌ «${sold.first().name}» نفد اليوم — شلناه من سلتك")
+                return@launch
+            }
             currentUser.value?.uid?.let { uid -> runCatching { repository.saveOrder(o, uid, branch?.id.orEmpty()) }.onFailure { Log.w(TAG, "order: ${it.message}") } }
             carts.value = carts.value - store.uid
             toast("انرسل طلبك #${o.code} ✅ كمّل في واتساب")
@@ -2031,6 +2040,34 @@ class MerchantViewModel(
         auth?.removeAuthStateListener(authListener)
         OfferTracker.handler = null
         locationManager.stopLocationUpdates()
+    }
+
+    // ---------------- 🔔 ذكّرني لما يتوفر ----------------
+    private val restockPrefs = application.getSharedPreferences("hayyna_restock", android.content.Context.MODE_PRIVATE)
+    val restockIds = MutableStateFlow(restockPrefs.getStringSet("ids", emptySet()).orEmpty().toSet())
+    private fun saveRestock(ids: Set<String>) { restockIds.value = ids; restockPrefs.edit().putStringSet("ids", ids).apply() }
+    fun toggleRestockId(id: String) { approvedOffers.value.firstOrNull { it.id == id }?.let { toggleRestock(it) } }
+    fun toggleRestock(o: RestaurantOffer) {
+        if (o.id in restockIds.value) { saveRestock(restockIds.value - o.id); toast("لغينا التذكير"); return }
+        saveRestock(restockIds.value + o.id)
+        toast("🔔 بنذكّرك أول ما يرجع متوفر")
+        launchSafely { repository.incrementCounter(o.id, "notifyCount") } // المحل يشوف كم واحد ينتظر
+    }
+    init {
+        viewModelScope.launch {
+            approvedOffers.collect { list ->
+                val ids = restockIds.value; if (ids.isEmpty() || list.isEmpty()) return@collect
+                val now = System.currentTimeMillis()
+                val back = list.filter { it.id in ids && !it.isSoldOut(now) && !OfferTime.isExpired(it, now) }
+                val gone = ids.filter { id -> list.none { it.id == id } }
+                if (back.isEmpty() && gone.isEmpty()) return@collect
+                back.forEach { o ->
+                    toast("🔔 «${o.offerTitle}» رجع متوفر — اطلبه الحين")
+                    runCatching { com.example.data.OrderSounds.play(getApplication(), "ready") }
+                }
+                saveRestock(ids - back.map { it.id }.toSet() - gone.toSet())
+            }
+        }
     }
 
     companion object {

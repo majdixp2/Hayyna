@@ -13,7 +13,7 @@ import { createMap, placeDetails, searchPlaces } from "./map.js";
 import { canScout, mountAdForm } from "./scout.js";
 import { startI18n } from "./i18n.js";
 import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
-import { renderStoreItems, openMyOrders, ordersOn, watchMyOrders, myOrdersClosed, renderStoreRatings, orderFromOffer, offerOrderable } from "./catalog-ui.js";
+import { renderStoreItems, openMyOrders, ordersOn, watchMyOrders, myOrdersClosed, renderStoreRatings, orderFromOffer, offerOrderable, restockBtn, bindRestock, checkRestock } from "./catalog-ui.js";
 startI18n();
 
 const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf, km, distText, openNow, hoursText,
@@ -514,6 +514,7 @@ export function openOffer(id, push) {
         </div>
         ${o.source === "ad" ? `<div class="ad-src">📷 <div><b>من إعلان المحل</b><small>المحل مو مسجّل في لكوفر — تأكد من العرض مع المحل قبل ما تروح</small></div>${isOwner ? "" : `<button class="btn-soft" data-act="adclaim">أنا صاحب المحل</button>`}</div>` : ""}
         <h1 class="title">${esc(o.offerTitle)}</h1>
+        ${X.isSoldOut(o) ? `<div class="sold-box"><div><b>❌ هذا العرض نفد اليوم</b><small>يرجع غالباً بكرة — نذكّرك أول ما يتوفر</small></div>${restockBtn(o.id)}</div>` : ""}
         <div class="pills">${X.isSoldOut(o) ? '<span class="pill closed">❌ نفد اليوم — يرجع بكرة</span>' : ""}${exclBadge(o)}${o.deal?.type === "bundle" ? '<span class="pill">🎁 باقة</span>' : o.deal?.type === "bogo" ? `<span class="pill urgent">➕ ${o.deal.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"}</span>` : ""}${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
         <div class="${isOwner ? "row3" : "row2"}">
           <button class="btn-out" data-act="fav">${heartSvg(fav)} ${fav ? "محفوظ" : "حفظ"}</button>
@@ -548,6 +549,7 @@ export function openOffer(id, push) {
     body.querySelector('[data-act="fav"]').onclick = () => { toggleFav(o.id); draw(); };
     body.querySelector('[data-act="share"]').onclick = () => share(`🔥 ${o.offerTitle}\n📍 ${o.restaurantName}${o.district ? " — " + o.district : ""}\n💰 ${priceLabel(o, true)}`, offerUrl(o), o.offerTitle);
     body.querySelector('[data-act="report"]')?.addEventListener("click", () => reportOffer(o));
+    bindRestock(body, draw);
     body.querySelector('[data-act="adclaim"]')?.addEventListener("click", () => {
       try { sessionStorage.setItem("hayyna_claim", JSON.stringify({ name: o.restaurantName, lat: o.latitude, lng: o.longitude, placeId: o.placeId || "" })); } catch {}
       poiLog(o.placeId || o.id, "claims"); hideSheet(); setTab("account"); if (!state.user) openLogin("merchant");
@@ -1336,6 +1338,7 @@ onSnapshot(query(collection(db, "boosts"), where("endsAt", ">", Timestamp.now())
 onSnapshot(query(collection(db, "offers"), where("isApproved", "==", true)), (snap) => {
   state.offers = snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((o) => !o.draft); // المسودات ما تظهر للناس
   const first = !state.loaded; state.loaded = true;
+  checkRestock(); // 🔔 عرض كان نافد ورجع؟
   renderAll(); if (first) route();
 }, (e) => { console.error(e); toast("تعذّر تحميل العروض، حدّث الصفحة"); });
 onSnapshot(query(collection(db, "stores"), where("approved", "==", true)), (snap) => {
