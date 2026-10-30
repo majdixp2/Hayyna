@@ -112,7 +112,7 @@ class MerchantViewModel(
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
                 val m = e.message.orEmpty()
                 onError(when {
-                    e is com.google.firebase.auth.FirebaseTooManyRequestsException -> "محاولات كثيرة — انتظر شوي وجرّب"
+                    e is com.google.firebase.FirebaseTooManyRequestsException -> "محاولات كثيرة — انتظر شوي وجرّب"
                     e is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException || e is com.google.firebase.auth.FirebaseAuthInvalidUserException -> "الرمز السري غلط"
                     else -> "تعذّر الدخول: ${m.take(120)}"
                 })
