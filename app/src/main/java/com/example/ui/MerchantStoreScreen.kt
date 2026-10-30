@@ -326,6 +326,8 @@ fun MerchantStoreScreen(
                                             }
                                         }
 
+                                        // 🏪 محلات (المسجّلة + بحث محلات Google)
+                                        com.example.ui.components.ShopSearchSection(viewModel, searchQuery, approvedStores, horizontalPadding = 0)
                                         // اقتراحات الأحياء/الأماكن أثناء الكتابة
                                         if (placeSuggestions.isNotEmpty()) {
                                             Column(modifier = Modifier.padding(top = 6.dp)) {
@@ -664,14 +666,7 @@ fun MerchantStoreScreen(
                                 districts = districtCounts.map { it.name to it.count },
                                 browseName = browsePlace?.name,
                                 onClearBrowse = { viewModel.clearBrowse() },
-                                storeHits = remember(searchQuery, approvedStores) {
-                                    val q = searchQuery.trim().lowercase()
-                                    if (q.length < 2) emptyList() else approvedStores.filter { st ->
-                                        (listOf(st.name, st.category) + st.branches.flatMap { listOf(it.name, it.district, it.landmark) })
-                                            .any { it.lowercase().contains(q) }
-                                    }.sortedByDescending { it.name.lowercase().contains(q) }.take(10)
-                                },
-                                onStoreClick = { viewModel.openStorePage(it) },
+                                shopSearch = { com.example.ui.components.ShopSearchSection(viewModel, searchQuery, approvedStores) },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
