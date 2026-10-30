@@ -287,6 +287,20 @@ fun MerchantStoreScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            // شعار لكوفر: ضغطة = قائمة، ضغطة طويلة = تحديث
+                                            val seenAt by viewModel.seenAt.collectAsStateWithLifecycle()
+                                            val newCount = remember(filteredCustomerOffers, seenAt) {
+                                                val now = System.currentTimeMillis()
+                                                filteredCustomerOffers.count { o ->
+                                                    val t = (o.startsAt ?: o.createdAt)?.toDate()?.time ?: 0L
+                                                    t > seenAt && t <= now
+                                                }
+                                            }
+                                            com.example.ui.components.BrandMenuButton(
+                                                vm = viewModel, newCount = newCount, isAdmin = isAdmin, isScout = isScout,
+                                                onBrowse = { isFilterExpanded = true }
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
                                             OutlinedTextField(
                                                 value = searchQuery,
                                                 onValueChange = { viewModel.onSearchQueryChange(it) },
@@ -874,6 +888,8 @@ fun MerchantStoreScreen(
         }
         // 📷 رفع عرض من إعلان (الأدمن والفريق)
         adUploadPoi?.let { poi -> com.example.ui.components.AdScoutSheet(poi = poi, vm = viewModel) }
+        val adPickerOpen by viewModel.adPickerOpen.collectAsStateWithLifecycle()
+        if (adPickerOpen && adUploadPoi == null) com.example.ui.components.AdShopPickerSheet(viewModel)
 
         // توثيق المتجر
         if (isVerifyOpen) {

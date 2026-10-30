@@ -36,7 +36,15 @@
     <div id="map"></div>
     <header class="top">
       <div class="searchbar">
-        <img src="/img/icon-192.png" alt="لكوفر" class="brand">
+        <button id="brandBtn" class="brand-btn" aria-label="قائمة لكوفر" aria-haspopup="menu">
+          <svg viewBox="-14 -10 128 140" width="36" height="36" aria-hidden="true">
+            <circle cx="50" cy="50" r="50" fill="#fff"/><path d="M27 86 L50 120 L73 86 Z" fill="#fff"/>
+            <circle cx="50" cy="50" r="33" fill="#10318F"/><path d="M77.4 64.6 L80.7 82.9 L69.1 74.4 Z" fill="#10318F"/>
+            <g class="pct"><text x="50" y="50" text-anchor="middle" dominant-baseline="central" font-family="Montserrat, Arial, sans-serif" font-weight="800" font-size="40" fill="#fff">%</text></g>
+          </svg>
+          <span id="brandDot" class="brand-dot hidden"></span>
+        </button>
+        <div id="brandMenu" class="brand-menu hidden" role="menu"></div>
         <input id="q" type="search" placeholder="ابحث: شاورما، قهوة، جوالات، اسم حي…" autocomplete="off" enterkeyhint="search">
         <button id="clearQ" class="icon-btn hidden" aria-label="مسح">✕</button>
         <button id="filterBtn" class="icon-btn filter-btn" aria-label="الفلاتر">

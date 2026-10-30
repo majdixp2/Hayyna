@@ -5,7 +5,7 @@ import {
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, deleteUser
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
-  getFirestore, initializeFirestore, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, getDocs, addDoc, deleteDoc, increment, serverTimestamp, Timestamp
+  getFirestore, initializeFirestore, disableNetwork, enableNetwork, collection, doc, onSnapshot, query, where, updateDoc, setDoc, getDoc, getDocs, addDoc, deleteDoc, increment, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, FIRESTORE_DB_ID, AUTO_HIDE_REPORTS, ADMIN_EMAILS, MAPS_WEB_KEY } from "../config.js";
 import * as X from "./logic.js";
@@ -30,7 +30,7 @@ export const state = {
   offers: [], stores: [], q: "", cat: "الكل", sort: "near", openOnly: false, browse: null,
   me: null, selected: null, branchId: null, view: null, tab: "map",
   favs: new Set(), user: null, role: null, profile: null, scope: "all", roleLoading: false, pendingRole: null,
-  config: {}, loaded: false, storesLoaded: false, referrals: [], boosts: [], fresh: false, kind: "all", scout: false,
+  config: {}, loaded: false, storesLoaded: false, referrals: [], boosts: [], fresh: false, kind: "all", scout: false, seenAt: Date.now(), newCount: 0,
 };
 
 // ---------------- الإحالات: مين دعا المحل ----------------
@@ -360,7 +360,70 @@ export function renderAll() {
   $("favs").innerHTML = favList.length ? favList.map(listCard).join("")
     : `<div class="empty-inline"><div style="font-size:40px">🤍</div><b>ما عندك مفضلة للحين</b><br>اضغط القلب على أي عرض عشان تحفظه هنا</div>`;
   renderStoreHits();
+  // 🟡 نقطة الشعار: عروض نزلت حولك بعد ما فتحت (أو بعد آخر تحديث)
+  state.newCount = list.filter(({ o }) => (X.ms(o.startsAt) || X.ms(o.createdAt) || 0) > state.seenAt && !X.isUpcoming(o)).length;
+  $("brandDot")?.classList.toggle("hidden", !state.newCount);
   if (state.tab === "account") renderAccount();
+}
+
+// ---------------- شعار لكوفر: ضغطة = قائمة، ضغطة طويلة = تحديث ----------------
+let refreshing = false;
+async function refreshOffers() {
+  if (refreshing) return; refreshing = true;
+  const btn = $("brandBtn"); btn.classList.add("spin");
+  const fresh = filtered().filter(({ o }) => (X.ms(o.startsAt) || X.ms(o.createdAt) || 0) > state.seenAt && !X.isUpcoming(o));
+  try { await disableNetwork(db); await enableNetwork(db); } catch {}
+  if (state.me) locate(false);
+  await new Promise((r) => setTimeout(r, 900));
+  state.seenAt = Date.now();
+  if (fresh.length && map) { map.fitBounds(fresh.map(({ b }) => [b.latitude, b.longitude])); toast(`🆕 ${fresh.length === 1 ? "عرض جديد" : fresh.length + " عروض جديدة"} حولك`); }
+  else toast("✅ العروض محدّثة");
+  renderAll();
+  btn.classList.remove("spin"); refreshing = false;
+}
+function closeBrandMenu() { $("brandMenu").classList.add("hidden"); $("brandBtn").setAttribute("aria-expanded", "false"); }
+function openBrandMenu() {
+  const m = $("brandMenu"), n = state.newCount, team = state.scout;
+  const item = (act, ico, label, sub = "") => `<button role="menuitem" data-bm="${act}"><span class="bi">${ico}</span><span class="bl">${label}${sub ? `<small>${sub}</small>` : ""}</span></button>`;
+  m.innerHTML = item("refresh", "🔄", "تحديث العروض", n ? `نزل ${n === 1 ? "عرض جديد" : n + " عروض جديدة"} حولك` : "")
+    + item("fresh", "🆕", state.fresh ? "كل العروض" : "نزل اليوم")
+    + item("places", "📍", "تصفّح حي")
+    + item("theme", isDark() ? "☀️" : "🌙", isDark() ? "المظهر الفاتح" : "المظهر الداكن")
+    + item("share", "↗️", "شارك لكوفر مع صديق")
+    + (team ? `<div class="bm-sep">للفريق</div>` + item("ad", "📷", "ارفع عرض من إعلان", "اكتب اسم المحل وارفع الإعلان") + item("admin", "🛠️", "لوحة الإدارة") : "")
+    + `<div class="bm-tip">💡 ضغطة طويلة على الشعار = تحديث سريع</div>`;
+  m.classList.remove("hidden"); $("brandBtn").setAttribute("aria-expanded", "true");
+  m.querySelectorAll("[data-bm]").forEach((b) => b.onclick = () => {
+    closeBrandMenu();
+    ({
+      refresh: refreshOffers,
+      fresh: () => { state.fresh = !state.fresh; fitted = false; renderAll(); },
+      places: openPlaces,
+      theme: () => { try { localStorage.setItem("hayyna_theme", isDark() ? "light" : "dark"); } catch {} applyTheme(); },
+      share: () => share("لكوفر 📍 كل عروض المحلات اللي حولك على خريطة وحدة", withRef(location.origin), "لكوفر"),
+      ad: openAdSearch,
+      admin: () => { location.href = "/admin/"; },
+    })[b.dataset.bm]?.();
+  });
+}
+(() => {
+  const btn = $("brandBtn"); let t = null, long = false;
+  btn.addEventListener("pointerdown", () => { long = false; t = setTimeout(() => { long = true; navigator.vibrate?.(30); closeBrandMenu(); refreshOffers(); }, 550); });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((e) => btn.addEventListener(e, () => clearTimeout(t)));
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
+  btn.addEventListener("click", (e) => { e.stopPropagation(); if (long) return; $("brandMenu").classList.contains("hidden") ? openBrandMenu() : closeBrandMenu(); });
+  document.addEventListener("click", (e) => { if (!e.target.closest("#brandMenu")) closeBrandMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeBrandMenu(); });
+})();
+// 📷 للفريق: رفع عرض من إعلان بالبحث عن المحل (بدون ما تدوّر عليه في الخريطة)
+function openAdSearch() {
+  showSheet(`<div class="pad" id="adHost"></div>`);
+  const c = state.me || map?.center?.();
+  mountAdForm($("adHost"), {
+    db, fbApp, user: state.user, config: state.config, mapsKey: MAPS_WEB_KEY, categories: categories(), toast,
+    near: c ? { lat: c.lat, lng: c.lng } : null,
+    onDone: (id) => { hideSheet(); setTimeout(() => openOffer(id, true), 900); },
+  });
 }
 
 // ---------------- البحث عن محل (المتاجر المسجّلة + محلات Google) ----------------
