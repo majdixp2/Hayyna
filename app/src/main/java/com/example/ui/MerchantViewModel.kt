@@ -1392,8 +1392,34 @@ class MerchantViewModel(
     }
 
     fun requestLocationUpdates() = locationManager.requestLocationUpdates()
+    // ---------------- 🔎 البحث عن محل في Google (مسجّل أو لا) ----------------
+    val googleShops = MutableStateFlow<List<com.example.data.PlacesLookup.Found>?>(null)
+    val searchingShops = MutableStateFlow(false)
+
+    fun searchGoogleShops(query: String) {
+        val q = query.trim(); if (q.length < 2 || searchingShops.value) return
+        viewModelScope.launch {
+            searchingShops.value = true
+            val near = browsePlace.value?.let { it.latitude to it.longitude }
+                ?: userLocation.value?.let { it.latitude to it.longitude }
+            googleShops.value = com.example.data.PlacesLookup.searchText(getApplication(), q, near?.first, near?.second)
+            searchingShops.value = false
+        }
+    }
+
+    /** يفتح بطاقة المحل (ادعه / أنا صاحب المحل / 📷 ارفع عرض) ويودّي الخريطة له. */
+    fun openGoogleShop(f: com.example.data.PlacesLookup.Found) {
+        googleShops.value = null
+        browseTo(BrowsePlace(f.name, f.lat, f.lng, f.address))
+        currentRole.value = AppRole.CUSTOMER_MAP
+        selectedPoi.value = com.google.android.gms.maps.model.PointOfInterest(
+            com.google.android.gms.maps.model.LatLng(f.lat, f.lng), f.placeId, f.name)
+        launchSafely { repository.logPoi(f.placeId, "taps") }
+    }
+
     fun onSearchQueryChange(query: String) {
         searchQuery.value = query
+        googleShops.value = null
         placeSearchJob?.cancel()
         val q = query.trim()
         if (q.length < 2) {

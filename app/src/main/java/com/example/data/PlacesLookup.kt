@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
@@ -62,6 +64,39 @@ object PlacesLookup {
                 )
             }
         }.getOrNull()
+    }
+
+    data class Found(val placeId: String, val name: String, val address: String, val lat: Double, val lng: Double)
+
+    /** بحث عن محلات بالاسم في خرائط Google (Text Search) — قريب من موقع معيّن لو متوفر. */
+    suspend fun searchText(context: Context, query: String, lat: Double?, lng: Double?): List<Found> = withContext(Dispatchers.IO) {
+        runCatching {
+            val key = mapsKey(context) ?: return@runCatching emptyList()
+            val body = JSONObject().apply {
+                put("textQuery", query); put("languageCode", "ar"); put("regionCode", "SA"); put("maxResultCount", 8)
+                if (lat != null && lng != null) put("locationBias", JSONObject().put("circle", JSONObject()
+                    .put("center", JSONObject().put("latitude", lat).put("longitude", lng)).put("radius", 30000.0)))
+            }
+            val req = Request.Builder()
+                .url("https://places.googleapis.com/v1/places:searchText")
+                .post(body.toString().toRequestBody("application/json".toMediaType()))
+                .header("X-Goog-Api-Key", key)
+                .header("X-Goog-FieldMask", "places.id,places.displayName,places.formattedAddress,places.location")
+                .header("X-Android-Package", context.packageName)
+                .apply { certSha1(context)?.let { header("X-Android-Cert", it) } }
+                .build()
+            client.newCall(req).execute().use { r ->
+                val txt = r.body?.string().orEmpty()
+                if (!r.isSuccessful) { Log.w(TAG, "search ${r.code}: ${txt.take(300)}"); return@use emptyList() }
+                val arr = JSONObject(txt).optJSONArray("places") ?: return@use emptyList()
+                (0 until arr.length()).mapNotNull { i ->
+                    val p = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val loc = p.optJSONObject("location") ?: return@mapNotNull null
+                    Found(p.optString("id"), p.optJSONObject("displayName")?.optString("text").orEmpty(),
+                        p.optString("formattedAddress"), loc.optDouble("latitude"), loc.optDouble("longitude"))
+                }.filter { it.placeId.isNotBlank() && !it.lat.isNaN() }
+            }
+        }.getOrDefault(emptyList())
     }
 
     /** رقم جوال سعودي (عليه واتساب غالباً) بصيغة 9665xxxxxxxx، وإلا null. */
