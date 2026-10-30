@@ -827,7 +827,7 @@ export async function orderFromOffer(o) {
   carts[sid] = {}; addToCart(sid, pk.id); openCheckout(sid);
 }
 export const offerOrderable = (o) => {
-  const d = o?.deal; if (!d || !ordersOn() || !DEAL_TYPES[d.type] || !feat(state.config, DEAL_TYPES[d.type].feat)) return null;
+  const d = o?.deal; if (!d || X.isSoldOut(o) || !ordersOn() || !DEAL_TYPES[d.type] || !feat(state.config, DEAL_TYPES[d.type].feat)) return null;
   if (d.type === "discount") return "🛍️ تسوّق بالخصم من المنيو";
   if (d.type === "bogo") return "🛒 اطلب العرض (1+1)";
   if ((d.type === "bundle" || (d.type === "promo" && d.orderable)) && o.price > 0) return "🛒 اطلب العرض";

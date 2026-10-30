@@ -92,9 +92,14 @@ data class RestaurantOffer(
     val source: String = "",
     val placeId: String = "",
     val scoutedBy: String = "",
+    // ❌ نفد اليوم: لين هالوقت (منتصف الليل) — يعلّمه المحل أو موظفه
+    val soldOutUntil: Timestamp? = null,
     @ServerTimestamp
     val createdAt: Timestamp? = null,
     // محلي فقط (ما ينحفظ): الفرع اللي اختاره المستخدم أو الأقرب له
     @get:com.google.firebase.firestore.Exclude
     val selectedBranchId: String = ""
 )
+
+/** ❌ العرض نفد اليوم؟ */
+fun RestaurantOffer.isSoldOut(now: Long = System.currentTimeMillis()): Boolean = (soldOutUntil?.toDate()?.time ?: 0L) > now

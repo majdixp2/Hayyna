@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.OfferTime
 import com.example.data.model.RestaurantOffer
+import com.example.data.model.isSoldOut
 
 /** شارة العد التنازلي "⏰ باقي 3 ساعات". لا تظهر إذا العرض بلا وقت انتهاء. */
 @Composable
@@ -22,6 +23,13 @@ fun OfferExpiryChip(
     nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier
 ) {
+    // ❌ نفد اليوم (المحل أو موظفه علّمه) — يرجع لحاله بعد منتصف الليل
+    if (offer.isSoldOut(nowMillis) && !OfferTime.isExpired(offer, nowMillis)) {
+        Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFDE8E6), modifier = modifier) {
+            Text("❌ نفد اليوم", color = Color(0xFFB42318), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+        }
+        return
+    }
     val text = OfferTime.remainingText(offer, nowMillis) ?: return
     val expired = OfferTime.isExpired(offer, nowMillis)
     val soon = OfferTime.isEndingSoon(offer, nowMillis)

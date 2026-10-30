@@ -3,7 +3,7 @@
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updatePassword } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
-  collection, doc, onSnapshot, query, where, limit, getDoc, getDocs, setDoc, updateDoc, writeBatch, serverTimestamp
+  collection, doc, onSnapshot, query, where, limit, getDoc, getDocs, setDoc, updateDoc, writeBatch, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig } from "../config.js";
 import { db, auth, state, $, toast, showSheet, hideSheet, openPage } from "./app.js";
@@ -229,7 +229,7 @@ export function openStaffLogin(prefill = "") {
 }
 
 // =================== شاشة الموظف ===================
-const S = { unsub: null, tab: "orders", me: null };
+const S = { unsub: null, tab: "orders", me: null, offers: [], offUnsub: null };
 export function enterStaffMode(user) {
   document.body.classList.add("staff-mode");
   const root = $("staffApp"); root.classList.remove("hidden");
@@ -246,12 +246,16 @@ export function enterStaffMode(user) {
     if (first) {
       const cu = await import("./catalog-ui.js");
       cu.watchMerchantCatalog(me.storeId, () => { if (S.tab === "stock") drawStock(); });
+      S.offUnsub?.();
+      if (me.perms.includes("stock")) S.offUnsub = onSnapshot(query(collection(db, "offers"), where("merchantId", "==", me.storeId)), (q) => {
+        S.offers = q.docs.map((x) => ({ ...x.data(), id: x.id })); if (S.tab === "stock") drawStock();
+      }, (e) => console.warn("staff offers", e));
     }
     drawShell();
   }, () => { root.innerHTML = `<div class="staff-off"><b>تعذّر تحميل حسابك</b><button class="btn ghost" id="sfOut">تسجيل الخروج</button></div>`; $("sfOut").onclick = staffLogout; });
 }
 export function leaveStaffMode() {
-  S.unsub?.(); S.unsub = null; S.me = null; state.staff = null;
+  S.unsub?.(); S.unsub = null; S.offUnsub?.(); S.offUnsub = null; S.me = null; S.offers = []; state.staff = null;
   document.body.classList.remove("staff-mode");
   const root = $("staffApp"); if (root) { root.classList.add("hidden"); root.innerHTML = ""; }
 }
@@ -282,11 +286,24 @@ async function drawStock() {
   const box = $("sfBody"); if (!box || S.tab !== "stock") return;
   const cu = await import("./catalog-ui.js");
   const items = cu.storeItems().slice().sort((a, b) => (a.section || "").localeCompare(b.section || "") || (a.slot || 0) - (b.slot || 0));
-  box.innerHTML = `<div class="pad"><div class="section-title">🍽️ نفد اليوم</div><p class="desc tr">اضغط على الصنف اللي خلص — يختفي من الطلب لين ترجّعه.</p>
+  const now = Date.now();
+  const offers = S.offers.filter((o) => o.isApproved && !o.draft && !X.isExpired(o, now)).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt));
+  box.innerHTML = `<div class="pad"><div class="section-title">🍽️ نفد اليوم</div><p class="desc tr">اضغط على اللي خلص — يتعلّم «نفد» وما ينطلب لين ترجّعه (العروض ترجع لحالها بكرة).</p>
+    ${offers.length ? `<div class="sf-sec">🔥 العروض</div>${offers.map((o) => { const out = X.isSoldOut(o, now); return `<button class="sf-item${out ? " out" : ""}" data-of="${esc(o.id)}">
+      <img src="${esc(X.thumb(o))}" alt=""><span class="nm"><b>${esc(o.offerTitle)}</b><small>${esc(X.priceLabel(o))}</small></span>
+      <span class="st">${out ? "❌ نفد اليوم" : "✅ متوفر"}</span></button>`; }).join("")}` : ""}
+    ${items.length ? `<div class="sf-sec">📋 المنيو</div>` : ""}
     ${items.length ? items.map((it) => `<button class="sf-item${it.available === false ? " out" : ""}" data-it="${esc(it.id)}">
       ${it.imageUrl ? `<img src="${esc(X.cld(it.imageUrl, 120))}" alt="">` : `<span class="ph">🍽️</span>`}
       <span class="nm"><b>${esc(it.name)}</b><small>${esc(it.section || "")}</small></span>
-      <span class="st">${it.available === false ? "❌ نفد" : "✅ متوفر"}</span></button>`).join("") : `<div class="empty-inline">ما فيه أصناف في المنيو</div>`}</div>`;
+      <span class="st">${it.available === false ? "❌ نفد" : "✅ متوفر"}</span></button>`).join("") : offers.length ? "" : `<div class="empty-inline">ما فيه عروض ولا أصناف</div>`}</div>`;
+  box.querySelectorAll("[data-of]").forEach((b) => b.onclick = async () => {
+    const o = S.offers.find((x) => x.id === b.dataset.of); if (!o) return;
+    const out = X.isSoldOut(o); b.disabled = true;
+    const midnight = new Date(); midnight.setHours(24, 0, 0, 0);
+    try { await updateDoc(doc(db, "offers", o.id), { soldOutUntil: out ? null : Timestamp.fromDate(midnight) }); toast(out ? `✅ «${o.offerTitle}» رجع متوفر` : `❌ «${o.offerTitle}» نفد اليوم`); }
+    catch (e) { console.error(e); toast("تعذّر التحديث"); b.disabled = false; }
+  });
   box.querySelectorAll("[data-it]").forEach((b) => b.onclick = async () => {
     const it = cu.storeItems().find((x) => x.id === b.dataset.it); if (!it) return;
     b.disabled = true;

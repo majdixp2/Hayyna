@@ -38,6 +38,8 @@ export const branchesOf = (o) => (o.branches && o.branches.length) ? o.branches 
   id: "main", latitude: o.latitude, longitude: o.longitude, district: o.district, region: o.region,
   phone: o.phone, openMinute: o.openMinute, closeMinute: o.closeMinute, landmark: ""
 }];
+/** ❌ نفد اليوم (يعلّمه المحل أو موظفه، ويرجع لحاله بعد منتصف الليل) */
+export const isSoldOut = (o, now = Date.now()) => (ms(o.soldOutUntil) || 0) > now;
 export const isUpcoming = (o, now = Date.now()) => (ms(o.startsAt) || 0) > now;
 export const isExpired = (o, now = Date.now()) => { const e = ms(o.expiresAt); return e != null && e <= now; };
 export const isPercentOnly = (o) => (o.price || 0) <= 0 && ((o.discountPercent || 0) > 0 || (o.dailyPercents || []).length > 0);
