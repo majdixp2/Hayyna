@@ -3,6 +3,7 @@ import {
   collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDocs, getDoc, serverTimestamp, Timestamp, writeBatch, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { MAPS_WEB_KEY } from "../config.js";
+import { staffCardHtml, bindStaffCard } from "./staff.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, openStore, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
 import { createMap } from "./map.js";
@@ -62,6 +63,7 @@ function draw() {
     <button class="btn dir big" id="newOffer" ${st.suspended ? "disabled" : ""}>＋ عرض جديد</button>
     ${hasStore ? `<button class="btn call" id="viewStore">👀 شوف صفحة متجري مثل ما يشوفها الزبون</button>` : ""}
     ${hasStore ? catalogPanelHtml(p.cuisineType) : ""}
+    ${hasStore ? staffCardHtml() : ""}
     ${m.offers.some((o) => o.adminNote) ? `<div class="banner red">↩️ عندك ${m.offers.filter((o) => o.adminNote).length === 1 ? "عرض يحتاج تعديل" : m.offers.filter((o) => o.adminNote).length + " عروض تحتاج تعديل"} من فريق لكوفر — شوف الملاحظة تحت العرض واضغط ✎</div>` : ""}
     <div class="section-title">عروضي (${m.offers.length})</div>
     <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
@@ -76,6 +78,7 @@ function draw() {
     ${!st.verified ? `<div class="hint-box">✔ توثيق المتجر (السجل التجاري / العمل الحر) متاح حالياً من تطبيق أندرويد.</div>` : ""}
     <button class="btn call" id="mContact">💬 تواصل معنا</button>`;
   $("editStore").onclick = () => openStoreForm();
+  bindStaffCard(p.restaurantName || "");
   $("viewStore")?.addEventListener("click", () => openStore(state.user.uid, true));
   // جاي من "أنا صاحب المحل" على الخريطة: نفتح صفحة المتجر بموقع المحل
   const claim = takeClaim();

@@ -909,6 +909,79 @@ class RestaurantOfferRepository(
         else ref.update(data).await()
     }
     suspend fun deleteItem(id: String) { db.collection("items").document(id).delete().await() }
+    /** 👥 موظف «نفد اليوم»: يغيّر التوفر بس */
+    suspend fun setItemAvailable(id: String, available: Boolean) {
+        db.collection("items").document(id).update(mapOf("available" to available, "updatedAt" to FieldValue.serverTimestamp())).await()
+    }
+
+    // ---------------- 👥 موظفين المتجر ----------------
+    private fun parseStaff(d: DocumentSnapshot) = com.example.data.model.StoreStaff(
+        uid = d.id, storeId = d.getString("storeId").orEmpty(), storeName = d.getString("storeName").orEmpty(),
+        code = d.getString("code").orEmpty(), n = (d.getLong("n") ?: 0L).toInt(), name = d.getString("name").orEmpty(),
+        role = d.getString("role") ?: "cashier", perms = (d.get("perms") as? List<*>)?.mapNotNull { it as? String }.orEmpty(),
+        active = d.getBoolean("active") ?: false, email = d.getString("email").orEmpty()
+    )
+    /** ملف الموظف نفسه (null = انحذف) */
+    fun staffSelf(uid: String): Flow<com.example.data.model.StoreStaff?> = callbackFlow {
+        val l = db.collection("storeStaff").document(uid).addSnapshotListener { s, e ->
+            if (e != null) { trySend(null); return@addSnapshotListener }
+            trySend(if (s != null && s.exists()) parseStaff(s) else null)
+        }
+        awaitClose { l.remove() }
+    }
+    fun storeStaffList(ownerUid: String): Flow<List<com.example.data.model.StoreStaff>> = callbackFlow {
+        val l = db.collection("storeStaff").whereEqualTo("storeId", ownerUid).addSnapshotListener { s, _ ->
+            trySend(s?.documents.orEmpty().map { parseStaff(it) }.sortedBy { it.n })
+        }
+        awaitClose { l.remove() }
+    }
+    /** رقم المتجر (5 أرقام) — ينشأ أول مرة */
+    suspend fun ensureStoreCode(uid: String): String {
+        val q = db.collection("storeCodes").whereEqualTo("uid", uid).limit(1).get().await()
+        q.documents.firstOrNull()?.let { return it.id }
+        repeat(8) {
+            val code = (10000..99999).random().toString()
+            val ok = runCatching { db.collection("storeCodes").document(code).set(mapOf("uid" to uid, "at" to FieldValue.serverTimestamp())).await() }.isSuccess
+            if (ok) return code
+        }
+        throw IllegalStateException("تعذّر إنشاء رقم المتجر، جرّب مرة ثانية")
+    }
+    /** دخول الموظف: رقم المتجر + رقمه ← الحساب الداخلي */
+    suspend fun staffLoginEmail(code: String, n: Int): String? =
+        db.collection("staffLogin").document("$code-$n").get().await().takeIf { it.exists() }?.getString("email")
+
+    /** حساب داخلي جديد بدون ما يطلع صاحب المحل من حسابه (تطبيق Firebase ثاني مؤقت) */
+    private suspend fun createStaffAccount(context: Context, email: String, pin: String): String {
+        val main = com.google.firebase.FirebaseApp.getInstance()
+        val name = "staff-" + System.currentTimeMillis()
+        val app2 = com.google.firebase.FirebaseApp.initializeApp(context, main.options, name)
+        try {
+            val a2 = com.google.firebase.auth.FirebaseAuth.getInstance(app2)
+            val uid = a2.createUserWithEmailAndPassword(email, pin).await().user?.uid ?: throw IllegalStateException("no uid")
+            a2.signOut()
+            return uid
+        } finally { runCatching { app2.delete() } }
+    }
+    suspend fun addStaff(context: Context, ownerUid: String, storeName: String, code: String, n: Int, name: String, role: String, perms: List<String>, pin: String,
+                         replace: com.example.data.model.StoreStaff? = null) {
+        val rnd = (1..6).map { "abcdefghijklmnopqrstuvwxyz0123456789".random() }.joinToString("")
+        val email = "$code-$n-$rnd@${com.example.data.model.StoreStaff.DOMAIN}"
+        val uid = createStaffAccount(context, email, pin)
+        val wb = db.batch()
+        if (replace != null) wb.delete(db.collection("storeStaff").document(replace.uid))
+        wb.set(db.collection("storeStaff").document(uid), hashMapOf(
+            "storeId" to ownerUid, "storeName" to storeName.take(100), "code" to code, "n" to n.toLong(), "name" to name.take(40),
+            "role" to role, "perms" to perms, "active" to (replace?.active ?: true), "createdAt" to FieldValue.serverTimestamp(), "email" to email))
+        wb.set(db.collection("staffLogin").document("$code-$n"), hashMapOf("email" to email, "storeId" to ownerUid, "n" to n.toLong()))
+        wb.commit().await()
+    }
+    suspend fun updateStaff(uid: String, data: Map<String, Any>) { db.collection("storeStaff").document(uid).update(data).await() }
+    suspend fun deleteStaff(m: com.example.data.model.StoreStaff) {
+        val wb = db.batch()
+        wb.delete(db.collection("storeStaff").document(m.uid))
+        wb.delete(db.collection("staffLogin").document("${m.code}-${m.n}"))
+        wb.commit().await()
+    }
 
     /** شراء ظهور المنتجات: باقة كل المنتجات أو منتجات محددة من نوع — مع خصم الرصيد بنفس العملية */
     suspend fun buyItemPass(uid: String, balance: Long, charge: Boolean, scope: String, kind: String, itemIds: List<String>, days: Int, cost: Long, startMillis: Long, note: String) {

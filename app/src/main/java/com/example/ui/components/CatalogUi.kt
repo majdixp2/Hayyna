@@ -95,6 +95,11 @@ private fun FullDialog(title: String, onDismiss: () -> Unit, content: @Composabl
     }
 }
 
+@Composable
+private fun OrdersShell(embedded: Boolean, title: String, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    if (embedded) Box(Modifier.fillMaxSize()) { content() } else FullDialog(title, onDismiss, content)
+}
+
 // =================== الزبون: صفحة المتجر ===================
 
 /** المنيو/المنتجات/الخدمات داخل صفحة المتجر + السلة */
@@ -370,10 +375,13 @@ private const val REMIND_MIN = 30
 fun OrdersDialog(
     title: String, orders: List<HayynaOrder>, asStore: Boolean, vm: MerchantViewModel,
     onDismiss: () -> Unit, rated: Set<String> = emptySet(), onRate: ((HayynaOrder) -> Unit)? = null, storePhone: (String) -> String = { "" },
-    onArrive: ((HayynaOrder) -> Unit)? = null
+    onArrive: ((HayynaOrder) -> Unit)? = null,
+    // داخل شاشة (موظف) بدل نافذة
+    embedded: Boolean = false
 ) {
     val context = LocalContext.current
     val cfg by vm.catalogConfig.collectAsStateWithLifecycle()
+    val staffMe by vm.staffMe.collectAsStateWithLifecycle()
     val stats by vm.custStats.collectAsStateWithLifecycle()
     var etaFor by remember { mutableStateOf<HayynaOrder?>(null) }
     var cancelFor by remember { mutableStateOf<HayynaOrder?>(null) }      // المحل يلغي بسبب / الزبون يلغي طلب مرسل
@@ -383,9 +391,9 @@ fun OrdersDialog(
     // نحدّث «جاهز من X دقيقة» كل دقيقة
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); now = System.currentTimeMillis() } }
-    val ns = cfg.feat("noshow")
+    val ns = cfg.feat("noshow") && staffMe == null // «ما انستلم» لصاحب المحل بس
     val open = { u: String -> runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } }
-    FullDialog(title, onDismiss) {
+    OrdersShell(embedded, title, onDismiss) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (orders.isEmpty()) Text(if (asStore) "ما وصلتك طلبات للحين" else "ما طلبت شي للحين — ادخل صفحة أي متجر واطلب منه 🛍️", color = MaterialTheme.colorScheme.onSurfaceVariant)
             val card: @Composable (HayynaOrder) -> Unit = { o ->

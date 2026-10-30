@@ -146,6 +146,7 @@ dependencies {
   implementation(libs.firebase.appcheck.debug)
   implementation(libs.firebase.appcheck.playintegrity)
   implementation(libs.kotlinx.coroutines.android)
+  implementation("com.google.zxing:core:3.5.3") // QR دخول الموظفين
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)

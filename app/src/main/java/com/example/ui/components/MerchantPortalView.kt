@@ -91,6 +91,7 @@ fun MerchantPortalView(
     isMerchantAccount: Boolean = true,
     isRoleLoading: Boolean = false,
     onCustomerSignIn: () -> Unit = {},
+    onStaffLogin: (() -> Unit)? = null,
     onBecomeMerchant: () -> Unit = {},
     favoritesCount: Int = 0,
     onShowFavorites: () -> Unit = {},
@@ -134,6 +135,7 @@ fun MerchantPortalView(
             isSigningIn = isSigningIn,
             onGoogleSignIn = onGoogleSignIn,
             onCustomerSignIn = onCustomerSignIn,
+            onStaffLogin = onStaffLogin,
             onOpenContact = onOpenContact,
             modifier = modifier
         )
@@ -192,8 +194,10 @@ private fun MerchantLoginView(
     onGoogleSignIn: () -> Unit,
     onCustomerSignIn: () -> Unit,
     onOpenContact: () -> Unit,
+    onStaffLogin: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    var confirmMerchant by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -211,31 +215,35 @@ private fun MerchantLoginView(
             color = MaterialTheme.colorScheme.onBackground
         )
         Text(
-            text = "اختر نوع حسابك — الدخول بحساب Google، مجاناً وبدون كلمة مرور",
+            text = "احفظ مفضلتك، واطلب من المحلات، وتابع طلباتك",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+        // الزبون أولاً: زر واحد واضح
+        Button(
+            onClick = onCustomerSignIn, enabled = !isSigningIn,
+            colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag("customer_google_sign_in_btn")
+        ) { Text(if (isSigningIn) "…" else "تسجيل الدخول بحساب Google", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
 
-        AccountChoiceCard(
-            emoji = "🙋",
-            title = "دخول كعميل",
-            subtitle = "احفظ عروضك المفضلة وتابع متاجر حيّك",
-            buttonText = "الدخول كعميل",
-            filled = false,
-            isSigningIn = isSigningIn,
-            onClick = onCustomerSignIn,
-            testTag = "customer_google_sign_in_btn"
-        )
-        AccountChoiceCard(
-            emoji = "🏪",
-            title = "عندك متجر أو محل؟",
-            subtitle = "سجّل متجرك، وانشر عروضك والمنيو، وخلّ أهل الحي يوصلون لك من الخريطة",
-            buttonText = "تسجيل التاجر",
-            filled = true,
-            isSigningIn = isSigningIn,
-            onClick = onGoogleSignIn,
-            testTag = "merchant_google_sign_in_btn"
+        // أصحاب المحلات وموظفينهم: تحت ومفصولين
+        HorizontalDivider(Modifier.padding(top = 10.dp))
+        Text("لأصحاب المحلات وموظفيها", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(
+            onClick = { confirmMerchant = true }, enabled = !isSigningIn, shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp).testTag("merchant_google_sign_in_btn")
+        ) { Text("🏪 أنا صاحب محل — سجّل محلك", fontWeight = FontWeight.Bold) }
+        if (onStaffLogin != null) OutlinedButton(
+            onClick = onStaffLogin, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+        ) { Text("👨‍🍳 دخول موظف (رقم ورمز سري)", fontWeight = FontWeight.Bold) }
+        if (confirmMerchant) AlertDialog(
+            onDismissRequest = { confirmMerchant = false },
+            title = { Text("🏪 لأصحاب المحلات بس") },
+            text = { Text("هذا الدخول لتسجيل محلك ونشر عروضك. تبي تتصفح العروض وتطلب؟ ادخل كزبون.") },
+            confirmButton = { TextButton(onClick = { confirmMerchant = false; onGoogleSignIn() }) { Text("أنا صاحب محل", fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton(onClick = { confirmMerchant = false; onCustomerSignIn() }) { Text("ادخل كزبون") } }
         )
 
         Text(

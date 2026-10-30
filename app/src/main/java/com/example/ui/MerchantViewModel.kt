@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import com.example.ui.components.ExclusiveBadge
@@ -84,6 +85,89 @@ class MerchantViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, AdminConfig.isAdmin(auth?.currentUser?.email))
 
     val isSigningIn = MutableStateFlow(false)
+
+    // ---------------- 👥 حساب موظف (رقم المتجر + رقمه + رمز سري) ----------------
+    val isStaffAccount: StateFlow<Boolean> = currentUser.map { com.example.data.model.StoreStaff.isStaffEmail(it?.email) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.model.StoreStaff.isStaffEmail(auth?.currentUser?.email))
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val staffMe: StateFlow<com.example.data.model.StoreStaff?> = currentUser
+        .flatMapLatest { u -> if (u != null && com.example.data.model.StoreStaff.isStaffEmail(u.email)) repository.staffSelf(u.uid) else flowOf(null) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** المتجر اللي نشتغل عليه: صاحب المحل = حسابه، الموظف = متجره (لو عنده الصلاحية) */
+    private fun storeIdFlow(needs: (com.example.data.model.StoreStaff) -> Boolean) = combine(currentUser, staffMe) { u, st ->
+        when {
+            u == null -> null
+            com.example.data.model.StoreStaff.isStaffEmail(u.email) -> st?.takeIf(needs)?.storeId
+            else -> u.uid
+        }
+    }.distinctUntilChanged()
+    val isStaffLoggingIn = MutableStateFlow(false)
+    fun staffLogin(code: String, n: Int, pin: String, onError: (String) -> Unit) {
+        if (isStaffLoggingIn.value) return
+        viewModelScope.launch {
+            isStaffLoggingIn.value = true
+            try {
+                val email = repository.staffLoginEmail(code, n) ?: return@launch onError("رقم المتجر أو رقم الموظف غلط")
+                auth?.signInWithEmailAndPassword(email, pin)?.await() ?: return@launch onError("تعذّر الدخول")
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                val m = e.message.orEmpty()
+                onError(when {
+                    e is com.google.firebase.FirebaseTooManyRequestsException -> "محاولات كثيرة — انتظر شوي وجرّب"
+                    e is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException || e is com.google.firebase.auth.FirebaseAuthInvalidUserException -> "الرمز السري غلط"
+                    else -> "تعذّر الدخول: ${m.take(120)}"
+                })
+            } finally { isStaffLoggingIn.value = false }
+        }
+    }
+    fun staffLogout() { auth?.signOut() }
+    fun changeStaffPin(pin: String, onDone: (String) -> Unit) {
+        val u = auth?.currentUser ?: return
+        viewModelScope.launch {
+            onDone(runCatching { u.updatePassword(pin).await(); "✅ تغيّر رمزك السري" }.getOrElse { e ->
+                if (e is com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException) "سجّل خروج وادخل من جديد، بعدها غيّره" else "تعذّر: ${e.message?.take(100)}" })
+        }
+    }
+
+    // صاحب المحل: موظفينه ورقم متجره
+    val storeCode = MutableStateFlow<String?>(null)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val myStaff: StateFlow<List<com.example.data.model.StoreStaff>> = currentUser
+        .flatMapLatest { u -> if (u == null || com.example.data.model.StoreStaff.isStaffEmail(u.email)) flowOf(emptyList()) else repository.storeStaffList(u.uid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val isSavingStaff = MutableStateFlow(false)
+    fun loadStoreCode() {
+        val u = currentUser.value ?: return
+        if (storeCode.value != null) return
+        launchSafely("تعذّر إنشاء رقم المتجر") { storeCode.value = repository.ensureStoreCode(u.uid) }
+    }
+    fun saveStaff(old: com.example.data.model.StoreStaff?, name: String, role: String, perms: List<String>, pin: String, storeName: String, onDone: () -> Unit) {
+        val u = currentUser.value ?: return
+        val code = storeCode.value ?: return toast("انتظر رقم المتجر")
+        if (perms.isEmpty()) return toast("اختر صلاحية وحدة على الأقل")
+        viewModelScope.launch {
+            isSavingStaff.value = true
+            try {
+                if (old != null && pin.isBlank()) repository.updateStaff(old.uid, mapOf("name" to name.take(40), "role" to role, "perms" to perms))
+                else {
+                    val n = old?.n ?: (1..50).firstOrNull { k -> myStaff.value.none { it.n == k } } ?: return@launch toast("وصلت للحد (50 موظف)")
+                    repository.addStaff(getApplication(), u.uid, storeName, code, n, name.trim(), role, perms, pin, replace = old)
+                }
+                toast(if (old == null) "✅ انضاف الموظف" else if (pin.isNotBlank()) "✅ تغيّر الرمز السري" else "انحفظ ✅")
+                onDone()
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                Log.w(TAG, "staff: ${e.message}")
+                toast(when {
+                    e.message.orEmpty().contains("CONFIGURATION_NOT_FOUND") || e.message.orEmpty().contains("not allowed", true) -> "فعّل Email/Password في Firebase أول"
+                    e is com.google.firebase.auth.FirebaseAuthWeakPasswordException -> "الرمز السري ضعيف، اختر 6 أرقام ثانية"
+                    else -> "تعذّر الحفظ: ${e.message?.take(120)}"
+                })
+            } finally { isSavingStaff.value = false }
+        }
+    }
+    fun setStaffActive(m: com.example.data.model.StoreStaff, active: Boolean) = launchSafely("تعذّر") {
+        repository.updateStaff(m.uid, mapOf("active" to active)); toast(if (active) "▶️ رجع يشتغل" else "⏸️ انوقف — ما يقدر يدخل الحين")
+    }
+    fun deleteStaff(m: com.example.data.model.StoreStaff) = launchSafely("تعذّر الحذف") { repository.deleteStaff(m); toast("انحذف") }
 
     // ---------------- الموقع والوقت ----------------
 
@@ -761,16 +845,16 @@ class MerchantViewModel(
             com.example.data.model.CatalogFlags.eta = it.feat("eta"); com.example.data.model.CatalogFlags.ratings = it.feat("ratings") }
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.data.model.CatalogConfig())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val myItems: StateFlow<List<com.example.data.model.CatalogItem>> = currentUser
-        .flatMapLatest { u -> if (u == null) flowOf(emptyList()) else repository.myItems(u.uid) }
+    val myItems: StateFlow<List<com.example.data.model.CatalogItem>> = storeIdFlow { it.canStock }
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.myItems(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val myPasses: StateFlow<List<com.example.data.model.ItemPass>> = currentUser
         .flatMapLatest { u -> if (u == null) flowOf(emptyList()) else repository.myPasses(u.uid) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private val storeOrdersRaw: StateFlow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>?> = currentUser
-        .flatMapLatest { u -> if (u == null) flowOf(null) else repository.storeOrders(u.uid) }
+    private val storeOrdersRaw: StateFlow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>?> = storeIdFlow { it.canOrders }
+        .flatMapLatest { id -> if (id == null) flowOf(null) else repository.storeOrders(id) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val storeOrders: StateFlow<List<com.example.data.model.HayynaOrder>> = storeOrdersRaw.map { it?.first.orEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -813,6 +897,7 @@ class MerchantViewModel(
         }
     }
     fun toggleItemAvailable(it: com.example.data.model.CatalogItem) = launchSafely("تعذّر التحديث") {
+        if (isStaffAccount.value) { repository.setItemAvailable(it.id, !it.available); toast(if (it.available) "❌ ${it.name} نفد" else "✅ ${it.name} رجع متوفر"); return@launchSafely }
         repository.saveItem(it.copy(available = !it.available, approved = it.approved && catalogDirect), isNew = false, clearNote = false)
     }
     fun deleteCatalogItem(id: String) = launchSafely("تعذّر الحذف") { repository.deleteItem(id); toast("انحذف") }
@@ -1278,7 +1363,9 @@ class MerchantViewModel(
                 userRole.value = null
                 userName.value = ""
                 userPhone.value = ""
-                if (user != null) {
+                if (user != null && com.example.data.model.StoreStaff.isStaffEmail(user.email)) {
+                    userRole.value = "staff" // موظف: ما نكتب له ملف عميل
+                } else if (user != null) {
                     resolveRole(user.uid)
                     merchantProfile.value = runCatching { repository.getMerchantProfile(user.uid) }.getOrNull()
                 }

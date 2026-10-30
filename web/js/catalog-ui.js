@@ -48,7 +48,7 @@ export function watchMerchantCatalog(uid, onChange) {
       else if (o.status === "cancelled" && p.status !== "cancelled" && o.cancelBy !== "store") { toast(`✕ العميل ألغى طلب #${o.code}`, true); if (S) play("cancel"); }
     }
     M.ordersLoaded = true;
-    if (ordersOpen && !$("sheet").classList.contains("hidden")) M.onOrders?.();
+    if (ordersOpen && (M.ordersVisible ? M.ordersVisible() : !$("sheet").classList.contains("hidden"))) M.onOrders?.();
   }, () => {}));
 }
 // عدّاد «ما انستلم» لكل عميل (يظهر للمحل جنب الطلب)
@@ -308,6 +308,7 @@ function openPay(kind) {
 
 /** طلبات المحل */
 let ordersOpen = false;
+export const storeItems = () => M.items; // أصناف المحل (شاشة الموظف: نفد اليوم)
 // مجموعات الطلبات عند المحل: اللي فيها شغل مفتوحة، والمنتهية والملغية مطوية
 const ORDER_GROUPS = [
   { k: "new", t: "🆕 الجديدة", st: ["sent"], open: true },
@@ -318,21 +319,27 @@ const ORDER_GROUPS = [
 ];
 const groupOpen = new Map();
 const REMIND_MIN = 30; // تذكير المحل لو الطلب جاهز وما انستلم
-function openStoreOrders() {
+/** شاشة طلبات المحل. opts.el = ترسمها داخل عنصر (شاشة الموظف) بدل النافذة */
+export function openStoreOrders(opts = {}) {
   ordersOpen = true;
+  const target = opts.el || null;
+  const box = () => target || $("sheetBody");
+  const visible = () => target ? document.body.contains(target) : !$("sheet").classList.contains("hidden");
+  M.ordersVisible = visible; M.ordersTarget = target;
+  const showMain = (html) => { if (target) target.innerHTML = html; else showSheet(html); };
   const draw = () => {
     if (!ordersOpen) return;
     const list = M.orders;
-    const scroll = $("sheetBody").scrollTop;
-    showSheet(`<div class="pad"><div class="section-title">🧾 الطلبات (${list.length})</div>
+    const scroll = target ? null : $("sheetBody").scrollTop;
+    showMain(`<div class="pad"><div class="section-title">🧾 الطلبات (${list.length})</div>
       ${list.length ? ORDER_GROUPS.map((g) => {
         const os = list.filter((o) => g.st.includes(o.status)).slice(0, 100);
         if (!os.length) return "";
         const open = groupOpen.has(g.k) ? groupOpen.get(g.k) : g.open;
         return `<details class="ogrp g-${g.k}" data-g="${g.k}"${open ? " open" : ""}><summary>${g.t} <span class="cnt">${os.length}</span></summary>${os.map((o) => orderCard(o, true)).join("")}</details>`;
       }).join("") : `<div class="empty-inline">ما وصلتك طلبات للحين</div>`}</div>`);
-    $("sheetBody").scrollTop = scroll;
-    const b = $("sheetBody");
+    if (scroll != null) $("sheetBody").scrollTop = scroll;
+    const b = box();
     b.querySelectorAll("details[data-g]").forEach((d) => d.addEventListener("toggle", () => groupOpen.set(d.dataset.g, d.open)));
     b.querySelectorAll("[data-os]").forEach((x) => x.onclick = () => {
       const o = M.orders.find((y) => y.id === x.dataset.oid), st = x.dataset.os;
@@ -348,12 +355,12 @@ function openStoreOrders() {
     });
   };
   const setStatus = async (o, st, extra = {}) => {
-    try { await updateDoc(doc(db, "orders", o.id), { status: st, updatedAt: serverTimestamp(), ...extra }); Object.assign(o, { status: st }, extra); ordersOpen = true; draw(); }
-    catch (e) { console.error(e); toast("تعذّر التحديث"); ordersOpen = true; draw(); }
+    try { await updateDoc(doc(db, "orders", o.id), { status: st, updatedAt: serverTimestamp(), ...extra }); Object.assign(o, { status: st }, extra); if (target) hideSheet(); ordersOpen = true; draw(); }
+    catch (e) { console.error(e); toast("تعذّر التحديث"); if (target) hideSheet(); ordersOpen = true; draw(); }
   };
   // استلام الطلب: المحل يختار وقت تقريبي للتجهيز
   const pickEta = (o) => {
-    ordersOpen = false;
+    if (!target) ordersOpen = false;
     showSheet(`<div class="pad"><div class="section-title">👍 استلام الطلب #${esc(o.code)}</div>
       <p class="desc tr">${o.mode === "delivery" ? "متى يطلع للتوصيل تقريباً؟" : "متى يكون جاهز للاستلام تقريباً؟"}</p>
       <div class="chips wrap">${[10, 15, 20, 30, 45, 60].map((m) => `<button class="chip" data-eta="${m}">${m} دقيقة</button>`).join("")}</div>
@@ -363,7 +370,7 @@ function openStoreOrders() {
   };
   // إلغاء من المحل: سبب من القائمة (يوصل للعميل)
   const storeCancel = (o) => {
-    ordersOpen = false; let reason = "";
+    if (!target) ordersOpen = false; let reason = "";
     const d = () => {
       showSheet(`<div class="pad form"><div class="section-title">✕ إلغاء الطلب #${esc(o.code)}</div>
         <p class="desc tr">اختر السبب — يوصل للعميل في «طلباتي».</p>
@@ -372,7 +379,7 @@ function openStoreOrders() {
         <button class="btn danger big" id="crGo">✕ ألغِ الطلب</button><button class="btn ghost" id="crBack">‹ رجوع</button></div>`);
       $("sheetBody").querySelectorAll("[data-r]").forEach((x) => x.onclick = () => { reason = x.dataset.r; d(); });
       $("crTxt").oninput = (e) => { reason = e.target.value; };
-      $("crBack").onclick = () => { ordersOpen = true; draw(); };
+      $("crBack").onclick = () => { if (target) hideSheet(); ordersOpen = true; draw(); };
       $("crGo").onclick = () => { if (!reason.trim()) return toast("اختر سبب الإلغاء"); setStatus(o, "cancelled", { cancelBy: "store", cancelReason: reason.trim().slice(0, 120) }); };
     };
     d();
@@ -399,7 +406,7 @@ function openStoreOrders() {
   M.onOrders = draw; // تتحدّث لحظياً لو وصل طلب جديد
   draw();
   // تذكير «جاهز من X دقيقة» يتحدّث كل دقيقة والشاشة مفتوحة
-  clearInterval(M.tick); M.tick = setInterval(() => { if (!ordersOpen || $("sheet").classList.contains("hidden")) { clearInterval(M.tick); return; } if (M.orders.some((o) => o.status === "ready")) draw(); }, 60000);
+  clearInterval(M.tick); M.tick = setInterval(() => { if (!ordersOpen || !visible()) { clearInterval(M.tick); return; } if (M.orders.some((o) => o.status === "ready")) draw(); }, 60000);
 }
 const etaText = (o) => { const t = X.ms(o.etaAt); if (!t || !["received"].includes(o.status)) return ""; const m = Math.round((t - Date.now()) / 60000);
   return m > 0 ? `⏱️ ${o.mode === "delivery" ? "يطلع للتوصيل" : "جاهز"} خلال ~${m} دقيقة` : `⏱️ ${o.mode === "delivery" ? "بيطلع" : "بيكون جاهز"} قريب`; };
@@ -415,7 +422,7 @@ const minsSince = (t) => Math.floor((Date.now() - (X.ms(t) || 0)) / 60000);
 function orderCard(o, asStore) {
   const st = ORDER_STATUS[o.status] || ORDER_STATUS.sent, when = X.ms(o.createdAt), del = o.mode === "delivery", curb = o.mode === "curbside";
   const live = ["sent", "received", "ready", "delivering"].includes(o.status);
-  const ns = F("noshow");
+  const ns = F("noshow") && !state.staff; // «ما انستلم» لصاحب المحل بس
   const next = asStore ? ({
     sent: [["received", "👍 استلمته"], ["cancelled", "✕ إلغاء"]],
     received: [[del ? "delivering" : "ready", del ? "🚚 طلع للتوصيل" : "🛍️ جاهز للاستلام"], ["cancelled", "✕ إلغاء"], ...(ns ? [["noshow", "🚫 ما انستلم"]] : [])],
@@ -671,7 +678,7 @@ function editCurb(o) {
     MY.open = true; drawMyOrders(); refreshMyOrders();
   };
 }
-export const myOrdersClosed = () => { MY.open = false; ordersOpen = false; };
+export const myOrdersClosed = () => { MY.open = false; if (!M.ordersTarget) ordersOpen = false; }; // شاشة الموظف تبقى شغّالة
 
 function rateOrder(o) {
   let stars = 5; MY.open = false;
