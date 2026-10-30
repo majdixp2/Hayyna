@@ -498,6 +498,11 @@ class RestaurantOfferRepository(
         ).await()
     }
 
+    /** يعيد الاتصال بقاعدة البيانات (تحديث يدوي من الشعار). */
+    suspend fun reconnect() {
+        runCatching { db.disableNetwork().await(); db.enableNetwork().await() }
+    }
+
     // ---------------- 📷 عروض من إعلانات (الأدمن وفريق الإعلانات) ----------------
 
     /** المالك، أو موظف فعّال عنده صلاحية scout. */

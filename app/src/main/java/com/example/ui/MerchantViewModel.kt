@@ -1392,6 +1392,33 @@ class MerchantViewModel(
     }
 
     fun requestLocationUpdates() = locationManager.requestLocationUpdates()
+    // ---------------- شعار لكوفر: تحديث + عروض جديدة ----------------
+    /** العروض اللي نزلت بعد هذا الوقت تُحسب «جديدة» (نقطة ذهبية على الشعار). */
+    val seenAt = MutableStateFlow(System.currentTimeMillis())
+    val isRefreshing = MutableStateFlow(false)
+    /** قائمة الفريق: اختيار محل من Google لرفع عرض من إعلان. */
+    val adPickerOpen = MutableStateFlow(false)
+
+    fun refreshOffers(newCount: Int) {
+        if (isRefreshing.value) return
+        viewModelScope.launch {
+            isRefreshing.value = true
+            repository.reconnect()
+            requestLocationUpdates()
+            delay(900)
+            seenAt.value = System.currentTimeMillis()
+            isRefreshing.value = false
+            toast(if (newCount > 0) "🆕 ${if (newCount == 1) "عرض جديد" else "$newCount عروض جديدة"} حولك" else "✅ العروض محدّثة")
+        }
+    }
+
+    fun pickShopForAd(f: com.example.data.PlacesLookup.Found) {
+        googleShops.value = null
+        adPickerOpen.value = false
+        openAdUpload(com.google.android.gms.maps.model.PointOfInterest(
+            com.google.android.gms.maps.model.LatLng(f.lat, f.lng), f.placeId, f.name))
+    }
+
     // ---------------- 🔎 البحث عن محل في Google (مسجّل أو لا) ----------------
     val googleShops = MutableStateFlow<List<com.example.data.PlacesLookup.Found>?>(null)
     val searchingShops = MutableStateFlow(false)
