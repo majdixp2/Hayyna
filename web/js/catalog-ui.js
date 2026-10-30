@@ -1,6 +1,6 @@
 // واجهة المنتجات/الخدمات/المنيو: إدارة التاجر + عرضها في صفحة المتجر + السلة والطلب على واتساب + سجل الطلبات.
 import {
-  collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getDocsFromServer, serverTimestamp, Timestamp, writeBatch,
+  collection, doc, onSnapshot, query, where, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getDocsFromServer, getDocFromServer, increment, serverTimestamp, Timestamp, writeBatch,
   disableNetwork, enableNetwork
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openStore } from "./app.js";
@@ -731,6 +731,7 @@ function syncCart(sid) {
   const { items, D } = storeCache[sid], cart = cartOf(sid);
   Object.keys(cart).forEach((id) => {
     const pk = D.packs.find((x) => x.id === id);
+    if (pk && pk.available === false) { delete cart[id]; return; } // نفد اليوم
     if (pk) { Object.assign(cart[id], { name: pk.name, price: pk.price, was: pk.was || 0 }); return; }
     const it = items.find((x) => x.id === id && x.available !== false);
     if (!it) { delete cart[id]; return; }
@@ -768,7 +769,7 @@ function drawStoreItems(sid) {
     + (packs.length ? `<div class="kind-sec deal-sec"><div class="ks-title">🎁 عروض تقدر تطلبها <small>(${packs.length})</small></div>${packs.map((p) => `<div class="icard deal">
         ${p.imageUrl ? `<img src="${esc(cld(p.imageUrl, 240))}" data-full="${esc(cld(p.imageUrl, 1400))}" alt="">` : `<div class="iph">🎁</div>`}
         <div class="ic-main"><b>${esc(p.name)}</b>${p.desc ? `<small>${esc(p.desc)}</small>` : ""}<div class="ic-price">${fmt(p.price)} ر.س${p.was ? ` <s>${fmt(p.was)}</s>` : ""}</div></div>
-        ${qtyBtns(p.id, cart[p.id]?.qty || 0)}</div>`).join("")}</div>` : "")
+        ${p.available === false ? `<div class="sold-col"><span class="pill closed">❌ نفد اليوم</span>${restockBtn(p.offerId)}</div>` : qtyBtns(p.id, cart[p.id]?.qty || 0)}</div>`).join("")}</div>` : "")
     + kindOrder(base).map((k) => {
     const list = items.filter((x) => x.kind === k);
     if (!list.length) return "";
@@ -790,18 +791,54 @@ function drawStoreItems(sid) {
   box.querySelectorAll("[data-dec]").forEach((b) => b.onclick = () => { const l = cart[b.dataset.dec]; if (l) { l.qty--; if (l.qty <= 0) delete cart[b.dataset.dec]; } saveCarts(); drawStoreItems(sid); });
   box.querySelectorAll("img[data-full]").forEach((im) => im.onclick = () => { $("viewerImg").src = im.dataset.full; $("viewer").classList.remove("hidden"); });
   $("cartGo")?.addEventListener("click", () => openCheckout(sid));
+  bindRestock(box, () => drawStoreItems(sid));
 }
 
 function addToCart(sid, id, n = 1) {
   const { items, D } = storeCache[sid], cart = cartOf(sid);
   const pk = D.packs.find((x) => x.id === id), it = pk ? null : items.find((x) => x.id === id);
   if (!pk && !it) return;
+  if (pk && pk.available === false) return toast("❌ هذا العرض نفد اليوم");
   const dp = it ? dealPrice(it, D) : { price: pk.price, was: pk.was || 0 };
   const l = cart[id] || (cart[id] = { id, name: (pk || it).name, kind: pk ? "deal" : it.kind, price: dp.price, was: dp.was, qty: 0 });
   Object.assign(l, { price: dp.price, was: dp.was }); l.qty = Math.min(99, l.qty + n); saveCarts();
 }
 /** 🛒 اطلب من شاشة العرض: لو المتجر عنده منيو مفتوح نضيفه للسلة ونروح للمتجر، وإلا نطلبه مباشرة */
+// ---------------- 🔔 ذكّرني لما يتوفر (العرض نفد اليوم) ----------------
+const RS_KEY = "hayyna_restock";
+export const restockList = () => { try { return JSON.parse(localStorage.getItem(RS_KEY) || "[]"); } catch { return []; } };
+const saveRs = (l) => { try { localStorage.setItem(RS_KEY, JSON.stringify(l.slice(-50))); } catch {} };
+export const restockBtn = (offerId) => restockList().some((x) => x.id === offerId)
+  ? `<button class="chip on" data-rs="${esc(offerId)}">🔔 بنذكّرك ✓</button>` : `<button class="chip" data-rs="${esc(offerId)}">🔔 ذكّرني لما يتوفر</button>`;
+export function bindRestock(root, redraw) { root?.querySelectorAll("[data-rs]").forEach((b) => b.onclick = () => toggleRestock(b.dataset.rs, redraw)); }
+export function toggleRestock(id, redraw) {
+  const l = restockList(), i = l.findIndex((x) => x.id === id);
+  if (i >= 0) { l.splice(i, 1); saveRs(l); toast("لغينا التذكير"); }
+  else {
+    const o = state.offers.find((x) => x.id === id);
+    l.push({ id, t: o?.offerTitle || "", at: Date.now() }); saveRs(l);
+    toast("🔔 بنذكّرك أول ما يرجع متوفر", true);
+    updateDoc(doc(db, "offers", id), { notifyCount: increment(1) }).catch(() => {}); // المحل يشوف كم واحد ينتظر
+    try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {}); } catch {}
+  }
+  redraw?.();
+}
+/** نتأكد لما تتحدّث العروض: لو رجع متوفر ننبّه ونشيله من القائمة */
+export function checkRestock() {
+  const l = restockList(); if (!l.length || !state.loaded) return;
+  const now = Date.now(), keep = [];
+  for (const r of l) {
+    const o = state.offers.find((x) => x.id === r.id);
+    if (!o || X.isExpired(o, now)) continue;
+    if (X.isSoldOut(o, now)) { keep.push(r); continue; }
+    toast(`🔔 «${o.offerTitle}» رجع متوفر — اطلبه الحين`, true); navigator.vibrate?.([80, 60, 80]);
+    try { if ("Notification" in window && Notification.permission === "granted") new Notification("لكوفر 🔔", { body: `«${o.offerTitle}» رجع متوفر`, icon: "/img/icon-192.png" }); } catch {}
+  }
+  if (keep.length !== l.length) saveRs(keep);
+}
+
 export async function orderFromOffer(o) {
+  if (X.isSoldOut(o)) return toast("❌ هذا العرض نفد اليوم");
   const sid = o.merchantId, s = state.stores.find((x) => x.uid === sid), d = o.deal || {};
   if (!s) return toast("صفحة المتجر مو جاهزة");
   const c = cat();
@@ -901,6 +938,18 @@ function openCheckout(sid) {
       const br = branches.find((x) => x.id === f.branch) || branches[0] || {};
       const to = X.waDigits(br.phone || s.phone || "");
       if (!to) return $("coErr").textContent = "المحل ما عنده رقم واتساب.";
+      // ❌ تأكد من السيرفر إن العروض اللي في السلة ما نفدت (يمكن الموظف علّمها الحين)
+      const dealIds = Object.keys(cart).filter((id) => id.startsWith("deal_")).map((id) => id.slice(5));
+      for (const oid of dealIds) {
+        try {
+          const od = await getDocFromServer(doc(db, "offers", oid));
+          if (od.exists() && X.isSoldOut(od.data())) {
+            const nm = cart["deal_" + oid]?.name || "العرض"; delete cart["deal_" + oid]; saveCarts();
+            toast(`❌ «${nm}» نفد اليوم — شلناه من سلتك`, true);
+            return Object.keys(cart).length ? draw() : openStore(sid, false);
+          }
+        } catch (e) { console.warn("soldout check", e); }
+      }
       const ref = doc(collection(db, "orders"));
       const o = { id: ref.id, code: orderCode(), storeId: sid, storeName: s.name, branchId: br.id || "", branchName: branches.length > 1 ? (br.name || X.districtLabel(br.district) || "") : "",
         customerUid: state.user?.uid || "", customerName: f.name.trim().slice(0, 60), customerPhone: phoneOk,

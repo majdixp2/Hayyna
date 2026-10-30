@@ -290,7 +290,7 @@ async function drawStock() {
   const offers = S.offers.filter((o) => o.isApproved && !o.draft && !X.isExpired(o, now)).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt));
   box.innerHTML = `<div class="pad"><div class="section-title">🍽️ نفد اليوم</div><p class="desc tr">اضغط على اللي خلص — يتعلّم «نفد» وما ينطلب لين ترجّعه (العروض ترجع لحالها بكرة).</p>
     ${offers.length ? `<div class="sf-sec">🔥 العروض</div>${offers.map((o) => { const out = X.isSoldOut(o, now); return `<button class="sf-item${out ? " out" : ""}" data-of="${esc(o.id)}">
-      <img src="${esc(X.thumb(o))}" alt=""><span class="nm"><b>${esc(o.offerTitle)}</b><small>${esc(X.priceLabel(o))}</small></span>
+      <img src="${esc(X.thumb(o))}" alt=""><span class="nm"><b>${esc(o.offerTitle)}</b><small>${esc(X.priceLabel(o))}${out && o.notifyCount ? ` • 🔔 ${o.notifyCount} ينتظرون` : ""}</small></span>
       <span class="st">${out ? "❌ نفد اليوم" : "✅ متوفر"}</span></button>`; }).join("")}` : ""}
     ${items.length ? `<div class="sf-sec">📋 المنيو</div>` : ""}
     ${items.length ? items.map((it) => `<button class="sf-item${it.available === false ? " out" : ""}" data-it="${esc(it.id)}">
@@ -301,7 +301,7 @@ async function drawStock() {
     const o = S.offers.find((x) => x.id === b.dataset.of); if (!o) return;
     const out = X.isSoldOut(o); b.disabled = true;
     const midnight = new Date(); midnight.setHours(24, 0, 0, 0);
-    try { await updateDoc(doc(db, "offers", o.id), { soldOutUntil: out ? null : Timestamp.fromDate(midnight) }); toast(out ? `✅ «${o.offerTitle}» رجع متوفر` : `❌ «${o.offerTitle}» نفد اليوم`); }
+    try { await updateDoc(doc(db, "offers", o.id), out ? { soldOutUntil: null, notifyCount: 0 } : { soldOutUntil: Timestamp.fromDate(midnight) }); toast(out ? `✅ «${o.offerTitle}» رجع متوفر` : `❌ «${o.offerTitle}» نفد اليوم`); }
     catch (e) { console.error(e); toast("تعذّر التحديث"); b.disabled = false; }
   });
   box.querySelectorAll("[data-it]").forEach((b) => b.onclick = async () => {

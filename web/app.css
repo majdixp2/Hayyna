@@ -830,3 +830,7 @@ body.staff-mode .bottomnav, body.staff-mode .top, body.staff-mode .install { dis
 .sf-item.out { border-color: #FCA5A5; background: #FEF2F2; } .sf-item.out .st { color: #B91C1C; } .sf-item.out .nm b { text-decoration: line-through; }
 .staff-off { margin: auto; text-align: center; padding: 30px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .sf-sec { font-weight: 800; font-size: 14px; margin: 14px 2px 8px; color: var(--ink); }
+.sold-box { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 10px 12px; border-radius: 14px; background: #FEF2F2; border: 1px solid #FCA5A5; }
+.sold-box > div { flex: 1; display: flex; flex-direction: column; } .sold-box b { color: #B91C1C; } .sold-box small { color: var(--muted); }
+.sold-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+[data-theme="dark"] .sold-box { background: rgba(185,28,28,.15); }

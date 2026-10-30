@@ -918,8 +918,15 @@ class RestaurantOfferRepository(
     }
     /** ❌ نفد اليوم للعرض (null = رجع متوفر) */
     suspend fun setOfferSoldOut(id: String, untilMillis: Long?) {
-        db.collection("offers").document(id).update("soldOutUntil", untilMillis?.let { Timestamp(java.util.Date(it)) }).await()
+        db.collection("offers").document(id).update(
+            if (untilMillis == null) mapOf("soldOutUntil" to null, "notifyCount" to 0) else mapOf("soldOutUntil" to Timestamp(java.util.Date(untilMillis)))
+        ).await()
     }
+    /** العرض من السيرفر مباشرة (نتأكد قبل الطلب إنه ما نفد) */
+    suspend fun offerSoldOutNow(id: String): Boolean = runCatching {
+        val d = db.collection("offers").document(id).get(com.google.firebase.firestore.Source.SERVER).await()
+        (d.getTimestamp("soldOutUntil")?.toDate()?.time ?: 0L) > System.currentTimeMillis()
+    }.getOrDefault(false)
     /** 👥 موظف «نفد اليوم»: يغيّر التوفر بس */
     suspend fun setItemAvailable(id: String, available: Boolean) {
         db.collection("items").document(id).update(mapOf("available" to available, "updatedAt" to FieldValue.serverTimestamp())).await()
@@ -1174,7 +1181,7 @@ class RestaurantOfferRepository(
 
     /** يزيد عدّاد إحصائية واحدة (viewsCount / directionsCount / whatsappCount) بمقدار 1. */
     suspend fun incrementCounter(id: String, field: String) {
-        require(field in setOf("viewsCount", "directionsCount", "whatsappCount", "reportsCount"))
+        require(field in setOf("viewsCount", "directionsCount", "whatsappCount", "reportsCount", "notifyCount"))
         offersCollection.document(id).update(field, FieldValue.increment(1)).await()
     }
 

@@ -94,6 +94,8 @@ data class RestaurantOffer(
     val scoutedBy: String = "",
     // ❌ نفد اليوم: لين هالوقت (منتصف الليل) — يعلّمه المحل أو موظفه
     val soldOutUntil: Timestamp? = null,
+    // 🔔 كم زبون طلب «ذكّرني لما يتوفر»
+    val notifyCount: Int = 0,
     @ServerTimestamp
     val createdAt: Timestamp? = null,
     // محلي فقط (ما ينحفظ): الفرع اللي اختاره المستخدم أو الأقرب له

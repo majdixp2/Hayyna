@@ -149,7 +149,7 @@ fun StaffHomeScreen(vm: MerchantViewModel) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text(o.offerTitle, fontWeight = FontWeight.Bold, textDecoration = if (out) TextDecoration.LineThrough else null)
-                                        Text(o.priceLabel(now), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(o.priceLabel(now) + if (out && o.notifyCount > 0) " • 🔔 ${o.notifyCount} ينتظرون" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Text(if (out) "❌ نفد اليوم" else "✅ متوفر", fontWeight = FontWeight.Bold, color = if (out) Color(0xFFB91C1C) else Color(0xFF15803D))
                                 }

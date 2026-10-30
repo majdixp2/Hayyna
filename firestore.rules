@@ -110,7 +110,8 @@ service cloud.firestore {
       return incrementsOnly('viewsCount')
         || incrementsOnly('directionsCount')
         || incrementsOnly('whatsappCount')
-        || incrementsOnly('reportsCount');
+        || incrementsOnly('reportsCount')
+        || incrementsOnly('notifyCount'); // 🔔 ذكّرني لما يتوفر
     }
 
     // ---------- حالة التاجر (يكتبها الأدمن فقط) ----------
@@ -794,7 +795,8 @@ service cloud.firestore {
         || can('review')
         // 👥 موظف «نفد اليوم»: يعلّم العرض نفد لين آخر اليوم (أو يرجّعه)
         || (isStoreStaff(resource.data.merchantId, 'stock')
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soldOutUntil'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soldOutUntil', 'notifyCount'])
+          && request.resource.data.get('notifyCount', 0) in [0, resource.data.get('notifyCount', 0)]
           && (request.resource.data.soldOutUntil == null
             || (request.resource.data.soldOutUntil is timestamp && request.resource.data.soldOutUntil <= request.time + duration.value(2, 'd'))))
         // الفريق يعدّل عروض الإعلانات (بدون ما يغيّر صاحبها أو العدّادات)

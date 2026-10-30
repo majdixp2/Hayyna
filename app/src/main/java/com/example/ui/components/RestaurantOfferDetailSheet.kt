@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import com.example.data.model.effectiveBranches
 import com.example.data.model.priceLabel
+import com.example.data.model.isSoldOut
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
@@ -80,7 +81,10 @@ fun RestaurantOfferDetailSheet(
     orderLabel: String? = null,
     onOrder: () -> Unit = {},
     // 📷 عرض من إعلان: «أنا صاحب المحل»
-    onClaimAd: (() -> Unit)? = null
+    onClaimAd: (() -> Unit)? = null,
+    // 🔔 ذكّرني لما يتوفر (العرض نفد اليوم)
+    restockOn: Boolean = false,
+    onRestock: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val orderScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -277,6 +281,18 @@ fun RestaurantOfferDetailSheet(
             Spacer(modifier = Modifier.height(6.dp))
 
             if (offer.source == "ad") AdSourceBanner(onClaim = if (isOwner) null else onClaimAd)
+            if (offer.isSoldOut()) Surface(
+                shape = RoundedCornerShape(14.dp), color = Color(0xFFFEF2F2), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            ) {
+                androidx.compose.foundation.layout.Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("❌ هذا العرض نفد اليوم", color = Color(0xFFB91C1C), fontWeight = FontWeight.Bold)
+                        Text("يرجع غالباً بكرة — نذكّرك أول ما يتوفر", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (onRestock != null && !isOwner) androidx.compose.material3.OutlinedButton(onClick = onRestock) { Text(if (restockOn) "🔔 بنذكّرك ✓" else "🔔 ذكّرني", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                }
+            }
 
             // Offer Title
             Text(
