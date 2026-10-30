@@ -377,7 +377,7 @@ function storeMatches() {
 function renderStoreHits() {
   const el = $("storeHits"); if (!el) return;
   const q = state.q.trim(), hits = storeMatches();
-  const google = q.length >= 2 && map?.kind === "google";
+  const google = q.length >= 2; // يحمّل خرائط Google لحاله لو الخريطة احتياطية
   if (!hits.length && !google) { el.classList.add("hidden"); el.innerHTML = ""; return; }
   el.innerHTML = hits.map(({ s, d }, i) => `<button class="sh" data-sh="${i}">${s.logoUrl ? `<img src="${esc(cld(s.logoUrl, 80))}" alt="">` : "🏪"} <span>${esc(s.name)}</span>${d != null ? `<small>${esc(distText(d))}</small>` : ""}</button>`).join("")
     + (google ? `<button class="sh g" data-shg="1">🔎 «${esc(q.slice(0, 20))}» في محلات Google</button>` : "");
