@@ -36,6 +36,7 @@ export const FEATURES = {
   freeHint: "💡 تلميح التوصيل المجاني", eta: "⏱️ الوقت التقريبي للتجهيز", superGlow: "🚀 لمعة صفحة عرض سوبر", crop: "✂️ قص الصور بيد التاجر",
   noshow: "🚫 «ما انستلم» + إيقاف العميل المتكرر", sounds: "🔔 أصوات الطلبات عند المحل",
   dealDiscount: "🔥 عرض: خصم على المنيو", dealBundle: "🎁 عرض: باقة", dealBogo: "➕ عرض: اشترِ واحصل", dealPromo: "📣 عرض: إعلان قابل للطلب", quickDeal: "⚡ الخصم السريع من المنيو",
+  staff: "👥 موظفين المتجر (دخول برقم ورمز سري)", staffQr: "📱 QR لدخول الموظفين",
 };
 export const feat = (config, k) => (config?.catalog?.features || {})[k] !== false;
 export const vatOf = (config) => ({ enabled: config?.vat?.enabled ?? true, rate: Number(config?.vat?.rate ?? 15) });

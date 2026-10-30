@@ -135,6 +135,11 @@ fun MerchantStoreScreen(
     val editingOffer by viewModel.editingOffer.collectAsStateWithLifecycle()
     val reports by viewModel.reports.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    // 👨‍🍳 حساب موظف: شاشة الطلبات (و«نفد اليوم») بس — بدون لوحة التحكم
+    val isStaffAccount by viewModel.isStaffAccount.collectAsStateWithLifecycle()
+    if (isStaffAccount) { com.example.ui.components.StaffHomeScreen(viewModel); return }
+    var showStaffLogin by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (showStaffLogin) com.example.ui.components.StaffLoginDialog(viewModel) { showStaffLogin = false }
 
     val selectedOfferOnMap by viewModel.selectedOfferOnMap.collectAsStateWithLifecycle()
     val activeDetailOffer by viewModel.activeDetailOffer.collectAsStateWithLifecycle()
@@ -722,6 +727,7 @@ fun MerchantStoreScreen(
                                         viewModel.signInWithGoogle(activity, asMerchant = false)
                                     }
                                 },
+                                onStaffLogin = if (catalogCfg.feat("staff")) ({ showStaffLogin = true }) else null,
                                 isMerchantAccount = isAdmin || userRole == MerchantViewModel.ROLE_MERCHANT,
                                 userName = userName,
                                 userPhone = userPhone,
@@ -763,7 +769,12 @@ fun MerchantStoreScreen(
                                     onBoost = { viewModel.openBoost(it) }
                                 ) else null,
                                 catalogCard = if (catalogCfg.enabled && isMerchantLoggedIn) {
-                                    { com.example.ui.components.MerchantCatalogCard(viewModel, merchantProfile?.cuisineType.orEmpty(), if (isAdmin) 999_999L else (walletBal ?: 0L).coerceAtLeast(0L)) }
+                                    {
+                                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            com.example.ui.components.MerchantCatalogCard(viewModel, merchantProfile?.cuisineType.orEmpty(), if (isAdmin) 999_999L else (walletBal ?: 0L).coerceAtLeast(0L))
+                                            if (catalogCfg.orderEnabled) com.example.ui.components.StaffCard(viewModel, merchantProfile?.restaurantName.orEmpty())
+                                        }
+                                    }
                                 } else null,
                                 onMyOrders = if (catalogCfg.enabled && catalogCfg.orderEnabled && isMerchantLoggedIn) ({ showMyOrders = true }) else null,
                                 modifier = Modifier.fillMaxSize()

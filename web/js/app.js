@@ -884,14 +884,19 @@ export function renderAccount() {
   if (!u) {
     el.innerHTML = `<div class="acc-hero"><img src="/img/icon-192.png" alt=""><h1>أهلاً بك في لكوفر</h1><p>سجّل دخولك عشان تحفظ مفضلتك، أو تنشر عروض محلك</p></div>
       <div class="pad">
-        <button class="role-card" data-login="customer"><div class="rc-ico">🏡</div><div><b>أنا من أهل الحي</b><br><small>أدوّر عروض المحلات حولي، وأحفظ اللي يعجبني</small></div></button>
-        <button class="role-card" data-login="merchant"><div class="rc-ico">🏪</div><div><b>أنا صاحب محل</b><br><small>انشر عروضك مجاناً وخلّ أهل الحي يوصلون لك</small></div></button>
+        <button class="btn dir big login-main" data-login="customer">تسجيل الدخول</button>
+        <small class="hint" style="text-align:center;display:block">احفظ المفضلة، واطلب من المحلات، وتابع طلباتك</small>
+        <div class="biz-sec"><div class="biz-t">لأصحاب المحلات وموظفيها</div>
+          <button class="role-card small" data-login="merchant"><div class="rc-ico">🏪</div><div><b>أنا صاحب محل</b><br><small>سجّل محلك وانشر عروضك</small></div></button>
+          ${(state.config?.catalog?.features || {}).staff !== false ? `<button class="role-card small" id="staffLogin"><div class="rc-ico">👨‍🍳</div><div><b>دخول موظف</b><br><small>برقم المتجر ورقمك ورمزك السري</small></div></button>` : ""}
+        </div>
         <button class="btn call" id="contactBtn">💬 تواصل معنا</button>
         <button class="btn call" id="settingsBtn">⚙️ الإعدادات</button>
         ${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت لكوفر على جوالك</button>` : ""}
         <div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div>
       </div>`;
     el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => openLogin(b.dataset.login));
+    $("staffLogin")?.addEventListener("click", async () => (await import("./staff.js")).openStaffLogin());
     $("contactBtn").onclick = openContact;
     $("settingsBtn").onclick = openSettings;
     if ($("installAcc")) $("installAcc").onclick = doInstall;
@@ -996,7 +1001,8 @@ function confirmDeleteAccount() {
 function openLogin(role) {
   state.pendingRole = role;
   try { sessionStorage.setItem("hayyna_pending_role", role); } catch {}
-  showSheet(`<div class="pad"><div class="section-title">${role === "merchant" ? "🏪 دخول صاحب المحل" : "🏡 دخول أهل الحي"}</div>
+  showSheet(`<div class="pad"><div class="section-title">${role === "merchant" ? "🏪 دخول صاحب المحل" : "👋 تسجيل الدخول"}</div>
+    ${role === "merchant" ? `<div class="hint warn">هذا لأصحاب المحلات بس. تبي تتصفح العروض وتطلب؟ <button class="link" id="lgAsCust">ادخل كزبون</button></div>` : ""}
     <button class="btn login google" id="lgGoogle"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt=""> المتابعة بحساب Google</button>
     ${APPLE_ENABLED ? `<button class="btn login apple" id="lgApple"> المتابعة بحساب Apple</button>` : ""}
     <div class="or"><span>أو بالإيميل</span></div>
@@ -1004,6 +1010,7 @@ function openLogin(role) {
     <button class="btn call" id="lgEmailBtn">✉️ أرسل لي رابط الدخول</button>
     <small class="hint">بنرسل لك رابط على إيميلك، تضغطه وتدخل مباشرة بدون كلمة سر.</small></div>`);
   $("lgGoogle").onclick = () => loginWith(new GoogleAuthProvider());
+  $("lgAsCust")?.addEventListener("click", () => openLogin("customer"));
   if (APPLE_ENABLED) $("lgApple").onclick = () => {
     const p = new OAuthProvider("apple.com"); p.addScope("email"); p.addScope("name"); p.setCustomParameters({ locale: "ar" }); loginWith(p);
   };
@@ -1272,6 +1279,9 @@ let refUnsub = null;
 onAuthStateChanged(auth, async (u) => {
   state.user = u;
   refUnsub?.(); refUnsub = null; state.referrals = [];
+  // 👨‍🍳 حساب موظف (رقم + رمز سري): شاشة الطلبات بس
+  if (u && String(u.email || "").endsWith("@staff.lacover.app")) { state.role = "staff"; (await import("./staff.js")).enterStaffMode(u); return; }
+  if (document.body.classList.contains("staff-mode")) (await import("./staff.js")).leaveStaffMode();
   state.scout = false;
   if (!u) { state.role = null; state.profile = null; renderAll(); return; }
   canScout(db, u, ADMIN_EMAILS).then((v) => { state.scout = v; }); // فريق الإعلانات: يرفع عروض لمحلات غير مسجّلة
@@ -1306,8 +1316,20 @@ onAuthStateChanged(auth, async (u) => {
   renderAll();
 });
 
+// رابط QR دخول الموظف: /?staff=48213-2 (الأدمن يقدر يوقفه)
+let staffLinkDone = false;
+function staffLink() {
+  if (staffLinkDone) return; staffLinkDone = true;
+  let v = null; try { const u = new URL(location.href); v = u.searchParams.get("staff"); if (v) { u.searchParams.delete("staff"); history.replaceState(history.state, "", u.pathname + (u.search || "") + u.hash); } } catch {}
+  if (!v || !/^[1-9][0-9]{4}-[0-9]{1,2}$/.test(v)) return;
+  const f = state.config?.catalog?.features || {};
+  if (f.staff === false || f.staffQr === false) return toast("دخول الموظفين بالـ QR موقف حالياً");
+  if (state.user) return toast("أنت مسجّل دخول — سجّل خروج أول عشان تدخل كموظف");
+  import("./staff.js").then((m) => { setTab("account"); m.openStaffLogin(v); });
+}
+
 // ---------------- البيانات ----------------
-onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); if (state.loaded) renderAll(); }, () => {});
+onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; staffLink(); renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); if (state.loaded) renderAll(); }, () => {});
 onSnapshot(query(collection(db, "boosts"), where("endsAt", ">", Timestamp.now())), (snap) => {
   state.boosts = snap.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.loaded) renderAll();
 }, () => {});
