@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -62,7 +63,14 @@ private val Gold = Color(0xFFF4B400)
 
 /** دبوس لكوفر (أبيض) بدون علامة % — العلامة تنرسم فوقه عشان تلف وقت التحديث. */
 @Composable
-private fun PinShape(modifier: Modifier) {
+private fun PinShape(modifier: Modifier, angle: Float = 0f) {
+    val paint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD)
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+    }
     Canvas(modifier) {
         // نفس أبعاد الشعار: صندوق 100×120
         val s = minOf(size.width / 100f, size.height / 120f)
@@ -73,6 +81,15 @@ private fun PinShape(modifier: Modifier) {
         drawPath(Path().apply { moveTo(p(27f, 86f).x, p(27f, 86f).y); lineTo(p(50f, 120f).x, p(50f, 120f).y); lineTo(p(73f, 86f).x, p(73f, 86f).y); close() }, Color.White)
         drawCircle(Navy, 33f * s, p(50f, 50f))
         drawPath(Path().apply { moveTo(p(77.4f, 64.6f).x, p(77.4f, 64.6f).y); lineTo(p(80.7f, 82.9f).x, p(80.7f, 82.9f).y); lineTo(p(69.1f, 74.4f).x, p(69.1f, 74.4f).y); close() }, Navy)
+        // علامة % في وسط الدائرة بالضبط (نوسّطها على حدود الرسم نفسه، مو على سطر النص)
+        val c = p(50f, 50f)
+        paint.textSize = 40f * s
+        val b = android.graphics.Rect(); paint.getTextBounds("%", 0, 1, b)
+        drawContext.canvas.nativeCanvas.apply {
+            save(); rotate(angle, c.x, c.y)
+            drawText("%", c.x, c.y - b.exactCenterY(), paint)
+            restore()
+        }
     }
 }
 
@@ -107,12 +124,7 @@ fun BrandMenuButton(
             contentAlignment = Alignment.Center
         ) {
             Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-                PinShape(Modifier.size(34.dp))
-                // % في وسط الدائرة (الدائرة فوق نص الارتفاع شوي)
-                Text(
-                    "%", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp,
-                    modifier = Modifier.offset(y = (-2.5).dp).rotate(if (refreshing) angle else 0f)
-                )
+                PinShape(Modifier.size(34.dp), if (refreshing) angle else 0f)
             }
         }
         if (newCount > 0 && !refreshing) Box(

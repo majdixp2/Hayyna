@@ -141,7 +141,7 @@ window.gm_authFailure = () => { googleFailed = true; googleFailHandlers.forEach(
 function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
   const map = new g.Map(el, {
     center: { lat: center[0], lng: center[1] }, zoom, styles: styleFor(showShops, document.documentElement.dataset.theme === "dark"),
-    disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: !!(showShops && onPoiClick), backgroundColor: "#F5F3EF",
+    disableDefaultUI: true, keyboardShortcuts: false, gestureHandling: "greedy", clickableIcons: !!(showShops && onPoiClick), backgroundColor: "#F5F3EF",
   });
   class Html extends g.OverlayView {
     constructor(pos, node, z) { super(); this.pos = new g.LatLng(pos.lat, pos.lng); this.node = node; this.z = z || 0; }

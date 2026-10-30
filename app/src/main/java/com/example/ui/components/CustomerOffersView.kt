@@ -147,7 +147,7 @@ fun CustomerOffersView(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = onSearchQueryChange,
-                            placeholder = { Text("ابحث عن متجر، عرض، منتج...", fontSize = 12.sp) },
+                            placeholder = { Text("ابحث: محل، عرض، منتج", fontSize = 13.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                             leadingIcon = {
                                 Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                             },
