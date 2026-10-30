@@ -71,6 +71,7 @@ export function graceEnd(o, credits) {
 /** هل العرض ظاهر؟ (لما يكون الرصيد مفعّل: لازم نشر مدفوع، أو فترة سماح للعروض القديمة) */
 export function isPaidUp(o, boosts, credits, now = Date.now()) {
   if (!credits.enabled) return true;
+  if (o.source === "ad") return true; // عروض الإعلانات (محل غير مسجّل) ما عليها رصيد نشر
   if (graceEnd(o, credits) > now) return true;
   return activeEffects(boosts, o.id, now).publishUntil > now;
 }

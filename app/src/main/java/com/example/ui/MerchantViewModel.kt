@@ -1066,7 +1066,7 @@ class MerchantViewModel(
                 val bs = byOffer[o.id].orEmpty()
                 val created = o.createdAt?.toDate()?.time ?: 0L
                 val inGrace = cr.enabledAtMillis > 0L && created < cr.enabledAtMillis && now < cr.graceUntilMillis
-                val paidUp = !cr.enabled || cr.enabledAtMillis == 0L || inGrace ||
+                val paidUp = !cr.enabled || cr.enabledAtMillis == 0L || inGrace || o.source == "ad" ||
                     bs.any { it.effect == "publish" && it.endsAt > now }
                 if (!paidUp) return@mapNotNull null
                 val active = bs.filter { it.startsAt <= now && now < it.endsAt }
