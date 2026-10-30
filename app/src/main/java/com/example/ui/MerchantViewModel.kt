@@ -19,6 +19,7 @@ import com.example.data.UserLocationManager
 import com.example.data.model.MediaType
 import com.example.data.model.OfferTime
 import com.example.data.model.RestaurantOffer
+import com.example.data.model.isSoldOut
 import com.example.data.model.atBranch
 import com.example.data.model.effectiveBranches
 import com.example.data.repository.RestaurantOfferRepository
@@ -166,6 +167,16 @@ class MerchantViewModel(
     }
     fun setStaffActive(m: com.example.data.model.StoreStaff, active: Boolean) = launchSafely("تعذّر") {
         repository.updateStaff(m.uid, mapOf("active" to active)); toast(if (active) "▶️ رجع يشتغل" else "⏸️ انوقف — ما يقدر يدخل الحين")
+    }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val staffOffers: StateFlow<List<RestaurantOffer>> = storeIdFlow { it.canStock }
+        .flatMapLatest { id -> if (id == null || !com.example.data.model.StoreStaff.isStaffEmail(currentUser.value?.email)) flowOf(emptyList()) else repository.storeOffers(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun toggleOfferSoldOut(o: RestaurantOffer) = launchSafely("تعذّر التحديث") {
+        val out = o.isSoldOut()
+        val midnight = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 1); set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis
+        repository.setOfferSoldOut(o.id, if (out) null else midnight)
+        toast(if (out) "✅ «${o.offerTitle}» رجع متوفر" else "❌ «${o.offerTitle}» نفد اليوم")
     }
     fun deleteStaff(m: com.example.data.model.StoreStaff) = launchSafely("تعذّر الحذف") { repository.deleteStaff(m); toast("انحذف") }
 
@@ -1036,6 +1047,7 @@ class MerchantViewModel(
     }
     /** نص زر «🛒 اطلب» في شاشة العرض (null = العرض ما ينطلب) */
     fun offerOrderLabel(o: RestaurantOffer): String? {
+        if (o.isSoldOut()) return null // ❌ نفد اليوم
         val cfg = catalogConfig.value
         val d = com.example.data.model.OfferDeal.from(o.deal) ?: return null
         val t = com.example.data.model.DealType.of(d.type) ?: return null

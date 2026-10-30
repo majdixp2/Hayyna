@@ -909,6 +909,17 @@ class RestaurantOfferRepository(
         else ref.update(data).await()
     }
     suspend fun deleteItem(id: String) { db.collection("items").document(id).delete().await() }
+    /** عروض المتجر كلها (شاشة الموظف: نفد اليوم) */
+    fun storeOffers(storeId: String): Flow<List<RestaurantOffer>> = callbackFlow {
+        val l = db.collection("offers").whereEqualTo("merchantId", storeId).addSnapshotListener { s, _ ->
+            trySend(s?.documents.orEmpty().mapNotNull { d -> runCatching { d.toObject(RestaurantOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = d.id) }.getOrNull() })
+        }
+        awaitClose { l.remove() }
+    }
+    /** ❌ نفد اليوم للعرض (null = رجع متوفر) */
+    suspend fun setOfferSoldOut(id: String, untilMillis: Long?) {
+        db.collection("offers").document(id).update("soldOutUntil", untilMillis?.let { Timestamp(java.util.Date(it)) }).await()
+    }
     /** 👥 موظف «نفد اليوم»: يغيّر التوفر بس */
     suspend fun setItemAvailable(id: String, available: Boolean) {
         db.collection("items").document(id).update(mapOf("available" to available, "updatedAt" to FieldValue.serverTimestamp())).await()

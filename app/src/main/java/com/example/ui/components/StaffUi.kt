@@ -72,6 +72,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.StoreStaff
+import com.example.data.model.isSoldOut
+import com.example.data.model.priceLabel
 import com.example.ui.MerchantViewModel
 import kotlinx.coroutines.delay
 
@@ -85,6 +87,7 @@ fun StaffHomeScreen(vm: MerchantViewModel) {
     val cfg by vm.catalogConfig.collectAsStateWithLifecycle()
     val orders by vm.storeOrders.collectAsStateWithLifecycle()
     val items by vm.myItems.collectAsStateWithLifecycle()
+    val offers by vm.staffOffers.collectAsStateWithLifecycle()
     var waited by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { delay(5000); waited = true }
     var tab by remember { mutableStateOf(0) }
@@ -131,8 +134,29 @@ fun StaffHomeScreen(vm: MerchantViewModel) {
                 else {
                     val sorted = items.sortedWith(compareBy({ it.section }, { it.slot }))
                     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item { Text("اضغط على الصنف اللي خلص — يختفي من الطلب لين ترجّعه.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 10.dp)) }
-                        if (sorted.isEmpty()) item { Text("ما فيه أصناف في المنيو", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        item { Text("اضغط على اللي خلص — يتعلّم «نفد» وما ينطلب لين ترجّعه (العروض ترجع لحالها بكرة).", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 10.dp)) }
+                        val now = System.currentTimeMillis()
+                        val live = offers.filter { it.isApproved && !it.draft && (it.expiresAt?.toDate()?.time ?: Long.MAX_VALUE) > now }
+                            .sortedByDescending { it.createdAt?.toDate()?.time ?: 0L }
+                        if (live.isNotEmpty()) item { Text("🔥 العروض", fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 4.dp)) }
+                        items(live, key = { "o_" + it.id }) { o ->
+                            val out = o.isSoldOut(now)
+                            Surface(
+                                shape = RoundedCornerShape(14.dp), color = if (out) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.5.dp, if (out) Color(0xFFFCA5A5) else MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier.fillMaxWidth().clickable { vm.toggleOfferSoldOut(o) }
+                            ) {
+                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(o.offerTitle, fontWeight = FontWeight.Bold, textDecoration = if (out) TextDecoration.LineThrough else null)
+                                        Text(o.priceLabel(now), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Text(if (out) "❌ نفد اليوم" else "✅ متوفر", fontWeight = FontWeight.Bold, color = if (out) Color(0xFFB91C1C) else Color(0xFF15803D))
+                                }
+                            }
+                        }
+                        if (sorted.isNotEmpty()) item { Text("📋 المنيو", fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 8.dp)) }
+                        if (sorted.isEmpty() && live.isEmpty()) item { Text("ما فيه عروض ولا أصناف", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         items(sorted, key = { it.id }) { it ->
                             val out = !it.available
                             Surface(

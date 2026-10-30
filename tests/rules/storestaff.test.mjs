@@ -26,6 +26,8 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "orders/o1"), { storeId: "own", customerUid: "c1", status: "sent", items: [], total: 10 });
   await setDoc(doc(db, "orders/o2"), { storeId: "oth", customerUid: "c1", status: "sent", items: [], total: 10 });
   await setDoc(doc(db, "orders/o3"), { storeId: "own", customerUid: "c1", status: "received", items: [], total: 10 });
+  await setDoc(doc(db, "offers/of1"), { merchantId: "own", isApproved: true, offerTitle: "عرض", viewsCount: 0 });
+  await setDoc(doc(db, "offers/of2"), { merchantId: "own", isApproved: false, offerTitle: "مراجعة" });
   await setDoc(doc(db, "items/own_menu_0"), { merchantId: "own", available: true, approved: false, price: 5, name: "x", updatedAt: new Date() });
 });
 
@@ -60,6 +62,15 @@ console.log("نفد اليوم");
 await t("الكاشير يعلّم الصنف نفد", () => assertSucceeds(updateDoc(doc(CASH(), "items/own_menu_0"), { available: false, updatedAt: serverTimestamp() })));
 await t("الكاشير ما يغيّر السعر", () => assertFails(updateDoc(doc(CASH(), "items/own_menu_0"), { price: 1, updatedAt: serverTimestamp() })));
 await t("المطبخ بدون صلاحية نفد", () => assertFails(updateDoc(doc(KIT(), "items/own_menu_0"), { available: true, updatedAt: serverTimestamp() })));
+
+console.log("نفد اليوم للعروض");
+const tmr = () => { const d = new Date(); d.setHours(24, 0, 0, 0); return d; };
+await t("الكاشير يشوف عروض محله (حتى اللي بالمراجعة)", () => assertSucceeds(getDocs(query(collection(CASH(), "offers"), where("merchantId", "==", "own")))));
+await t("الكاشير يعلّم العرض نفد", () => assertSucceeds(updateDoc(doc(CASH(), "offers/of1"), { soldOutUntil: tmr() })));
+await t("الكاشير يرجّع العرض", () => assertSucceeds(updateDoc(doc(CASH(), "offers/of1"), { soldOutUntil: null })));
+await t("الكاشير ما يعدّل عنوان العرض", () => assertFails(updateDoc(doc(CASH(), "offers/of1"), { offerTitle: "x" })));
+await t("المطبخ ما يعلّم العرض نفد", () => assertFails(updateDoc(doc(KIT(), "offers/of1"), { soldOutUntil: tmr() })));
+await t("ما يقفل العرض أيام طويلة", () => assertFails(updateDoc(doc(CASH(), "offers/of1"), { soldOutUntil: new Date(Date.now() + 5 * 864e5) })));
 
 console.log("إيقاف الميزة من الأدمن");
 await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), "config/app"), { catalog: { orderEnabled: true, features: { staff: false } } }); });

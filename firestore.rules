@@ -752,7 +752,8 @@ service cloud.firestore {
       allow read: if resource.data.isApproved == true
         || (isAuthenticated() && resource.data.merchantId == request.auth.uid)
         || can('review')
-        || (resource.data.get('source', '') == 'ad' && can('scout'));
+        || (resource.data.get('source', '') == 'ad' && can('scout'))
+        || isStoreStaff(resource.data.merchantId, 'stock');
 
       // التاجر المسجّل ينشر عرض باسمه، بدون "مميز" وبعدّادات صفر
       allow create: if isAuthenticated()
@@ -791,6 +792,11 @@ service cloud.firestore {
           && approvalAllowed(request.auth.uid)
           && isValidOffer(request.resource.data))
         || can('review')
+        // 👥 موظف «نفد اليوم»: يعلّم العرض نفد لين آخر اليوم (أو يرجّعه)
+        || (isStoreStaff(resource.data.merchantId, 'stock')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soldOutUntil'])
+          && (request.resource.data.soldOutUntil == null
+            || (request.resource.data.soldOutUntil is timestamp && request.resource.data.soldOutUntil <= request.time + duration.value(2, 'd'))))
         // الفريق يعدّل عروض الإعلانات (بدون ما يغيّر صاحبها أو العدّادات)
         || (resource.data.get('source', '') == 'ad' && keepsProtectedFields()
           && isScoutOffer(request.resource.data) && isValidOffer(request.resource.data))

@@ -829,3 +829,4 @@ body.staff-mode .bottomnav, body.staff-mode .top, body.staff-mode .install { dis
 .sf-item .st { font-weight: 700; font-size: 13px; color: #15803D; }
 .sf-item.out { border-color: #FCA5A5; background: #FEF2F2; } .sf-item.out .st { color: #B91C1C; } .sf-item.out .nm b { text-decoration: line-through; }
 .staff-off { margin: auto; text-align: center; padding: 30px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.sf-sec { font-weight: 800; font-size: 14px; margin: 14px 2px 8px; color: var(--ink); }

@@ -273,7 +273,7 @@ function carouselCard({ o, b, d }) {
       <div class="title">${esc(o.offerTitle)}</div>
       <div class="price">${esc(priceLabel(o))}${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)}</s>` : ""}</div>
       <div class="meta">${esc(meta)}</div>
-      <div class="pills">${spotPill(o)}${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+      <div class="pills">${X.isSoldOut(o) ? '<span class="pill closed">❌ نفد اليوم</span>' : ""}${spotPill(o)}${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
     </div></div>`;
 }
 function listCard(o) {
@@ -286,7 +286,7 @@ function listCard(o) {
       <div class="title">${esc(o.offerTitle)}</div>
       <div class="price">${esc(priceLabel(o, true))}${!isPercentOnly(o) && o.originalPrice > o.price ? `<s>${money(o.originalPrice)}</s>` : ""}</div>
       <div class="meta">${esc([districtLabel(b.district || o.district), distText(d), deliveryText(o) || ""].filter(Boolean).join(" • "))}</div>
-      <div class="pills">${spotPill(o)}${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+      <div class="pills">${X.isSoldOut(o) ? '<span class="pill closed">❌ نفد اليوم</span>' : ""}${spotPill(o)}${exclBadge(o)}${op === true ? '<span class="pill open">● مفتوح</span>' : op === false ? '<span class="pill closed">● مغلق</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
     </div></div>`;
 }
 function scrollCardIntoView(id) {
@@ -514,7 +514,7 @@ export function openOffer(id, push) {
         </div>
         ${o.source === "ad" ? `<div class="ad-src">📷 <div><b>من إعلان المحل</b><small>المحل مو مسجّل في لكوفر — تأكد من العرض مع المحل قبل ما تروح</small></div>${isOwner ? "" : `<button class="btn-soft" data-act="adclaim">أنا صاحب المحل</button>`}</div>` : ""}
         <h1 class="title">${esc(o.offerTitle)}</h1>
-        <div class="pills">${exclBadge(o)}${o.deal?.type === "bundle" ? '<span class="pill">🎁 باقة</span>' : o.deal?.type === "bogo" ? `<span class="pill urgent">➕ ${o.deal.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"}</span>` : ""}${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
+        <div class="pills">${X.isSoldOut(o) ? '<span class="pill closed">❌ نفد اليوم — يرجع بكرة</span>' : ""}${exclBadge(o)}${o.deal?.type === "bundle" ? '<span class="pill">🎁 باقة</span>' : o.deal?.type === "bogo" ? `<span class="pill urgent">➕ ${o.deal.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"}</span>` : ""}${o.grandOpening ? '<span class="pill">🎉 افتتاح</span>' : ""}${op === true ? '<span class="pill open">● مفتوح الآن</span>' : op === false ? '<span class="pill closed">● مغلق الآن</span>' : ""}${rem ? `<span class="pill ${rem.cls}">${esc(rem.t)}</span>` : ""}</div>
         <div class="${isOwner ? "row3" : "row2"}">
           <button class="btn-out" data-act="fav">${heartSvg(fav)} ${fav ? "محفوظ" : "حفظ"}</button>
           <button class="btn-out" data-act="share">↗︎ مشاركة</button>
