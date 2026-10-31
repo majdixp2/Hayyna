@@ -53,8 +53,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -704,7 +704,7 @@ fun AddRestaurantOfferSheet(
                         catalogItems.forEach { it ->
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Checkbox(checked = it.id in packIds, onCheckedChange = { c -> if (c) packIds.add(it.id) else packIds.remove(it.id) })
-                                Text(it.name, fontSize = 13.sp, modifier = Modifier.weight(1f)); Text(formatPrice(it.price), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                androidx.compose.material3.Text(it.name, fontSize = 13.sp, modifier = Modifier.weight(1f)); Text(formatPrice(it.price), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         val sum = catalogItems.filter { it.id in packIds }.sumOf { it.price }
@@ -793,7 +793,7 @@ fun AddRestaurantOfferSheet(
                                                 onCheckedChange = { checked -> if (checked) selectedIds.add(b.id) else selectedIds.remove(b.id) }
                                             )
                                             Column {
-                                                Text(b.displayName, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                androidx.compose.material3.Text(b.displayName, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                 Text(b.region, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                                             }
                                         }
@@ -1081,7 +1081,7 @@ fun DealScopePicker(
     if (scope == "items") items.forEach { it ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Checkbox(checked = it.id in picked, onCheckedChange = { c -> if (c) picked.add(it.id) else picked.remove(it.id) })
-            Text(it.name, fontSize = 13.sp, modifier = Modifier.weight(1f)); Text(formatPrice(it.price), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.material3.Text(it.name, fontSize = 13.sp, modifier = Modifier.weight(1f)); Text(formatPrice(it.price), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

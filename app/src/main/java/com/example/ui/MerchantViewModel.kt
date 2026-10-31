@@ -2127,7 +2127,7 @@ class MerchantViewModel(
         name.trim().removePrefix("حي ").trim()
 
     private fun toast(message: String) {
-        Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+        Toast.makeText(getApplication(), com.example.ui.i18n.I18n.tr(message), Toast.LENGTH_LONG).show()
     }
 
     /** ينفّذ عملية على Firestore ويلتقط أي خطأ بدل انهيار التطبيق. */

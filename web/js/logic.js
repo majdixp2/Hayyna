@@ -123,6 +123,8 @@ export const toLocalPhone = (p) => { const d = String(p || "").replace(/\D/g, ""
 export const menuLabel = (cat) => /مطاعم|مقاهي/.test(cat || "") ? "المنيو" : /خياط|حلاقة|خدمات/.test(cat || "") ? "الخدمات والأسعار" : "المنتجات والأسعار";
 export const minuteOptions = () => Array.from({ length: 48 }, (_, i) => i * 30);
 
+// لغة التواريخ: مثل لغة الموقع (أرقام لاتينية)
+export const LOC = (() => { try { return localStorage.getItem("hayyna_lang") === "en" ? "en-GB" : "ar-SA-u-ca-gregory-nu-latn"; } catch { return "ar-SA-u-ca-gregory-nu-latn"; } })();
 // ===== 📅 اطلب مسبقاً =====
 export const PRE_DEF = { on: false, maxDays: 0, prepMin: 30, pickup: true, delivery: true, delFrom: -1, delTo: -1, slotMin: 60, slotCap: 1 };
 export const preCfg = (c) => ({ ...PRE_DEF, ...(c || {}) });
@@ -142,7 +144,7 @@ export const dayLabel = (t, now = Date.now()) => {
   if (diff === 0) return "اليوم";
   if (diff === 1) return "بكرة";
   const d = new Date(t);
-  return `${d.toLocaleDateString("ar-SA-u-ca-gregory", { weekday: "long" })} ${d.getDate()}/${d.getMonth() + 1}`;
+  return `${d.toLocaleDateString(LOC, { weekday: "long" })} ${d.getDate()}/${d.getMonth() + 1}`;
 };
 /** الأوقات المتاحة ليوم: التوصيل فترات (طولها slotMin) داخل نافذة المحل، والاستلام كل ربع ساعة داخل الدوام */
 export function preTimes(cfg, branch, mode, day, now = Date.now()) {

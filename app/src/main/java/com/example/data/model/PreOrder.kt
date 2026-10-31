@@ -37,7 +37,7 @@ object PreOrder {
         if (diff == 0) return "اليوم"
         if (diff == 1) return "بكرة"
         val c = cal(t)
-        return "${java.text.SimpleDateFormat("EEEE", Locale("ar")).format(c.time)} ${c.get(Calendar.DAY_OF_MONTH)}/${c.get(Calendar.MONTH) + 1}"
+        return "${java.text.SimpleDateFormat("EEEE", if (com.example.ui.i18n.I18n.isEn) Locale.ENGLISH else Locale("ar")).format(c.time)} ${c.get(Calendar.DAY_OF_MONTH)}/${c.get(Calendar.MONTH) + 1}"
     }
     /** التوصيل: فترات داخل نافذة المحل. الاستلام: كل ربع ساعة داخل الدوام */
     fun times(c: PreorderCfg, branch: Branch?, mode: String, day: Long, now: Long = System.currentTimeMillis()): List<PreSlot> {

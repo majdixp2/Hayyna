@@ -43,11 +43,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import com.example.ui.i18n.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -148,7 +148,7 @@ fun StaffHomeScreen(vm: MerchantViewModel) {
                             ) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(o.offerTitle, fontWeight = FontWeight.Bold, textDecoration = if (out) TextDecoration.LineThrough else null)
+                                        androidx.compose.material3.Text(o.offerTitle, fontWeight = FontWeight.Bold, textDecoration = if (out) TextDecoration.LineThrough else null)
                                         Text(o.priceLabel(now) + if (out && o.notifyCount > 0) " • 🔔 ${o.notifyCount} ينتظرون" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Text(if (out) "❌ نفد اليوم" else "✅ متوفر", fontWeight = FontWeight.Bold, color = if (out) Color(0xFFB91C1C) else Color(0xFF15803D))
@@ -166,8 +166,8 @@ fun StaffHomeScreen(vm: MerchantViewModel) {
                             ) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(it.name, fontWeight = FontWeight.Bold, textDecoration = if (out) TextDecoration.LineThrough else null)
-                                        if (it.section.isNotBlank()) Text(it.section, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        androidx.compose.material3.Text(it.name, fontWeight = FontWeight.Bold, textDecoration = if (out) TextDecoration.LineThrough else null)
+                                        if (it.section.isNotBlank()) androidx.compose.material3.Text(it.section, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Text(if (out) "❌ نفد" else "✅ متوفر", fontWeight = FontWeight.Bold, color = if (out) Color(0xFFB91C1C) else Color(0xFF15803D))
                                 }
@@ -179,7 +179,7 @@ fun StaffHomeScreen(vm: MerchantViewModel) {
             }
         }
     }
-    if (pinDialog) PinChangeDialog(onDismiss = { pinDialog = false }) { pin -> vm.changeStaffPin(pin) { msg -> android.widget.Toast.makeText(vm.getApplication<android.app.Application>(), msg, android.widget.Toast.LENGTH_LONG).show() }; pinDialog = false }
+    if (pinDialog) PinChangeDialog(onDismiss = { pinDialog = false }) { pin -> vm.changeStaffPin(pin) { msg -> android.widget.Toast.makeText(vm.getApplication<android.app.Application>(), com.example.ui.i18n.I18n.tr(msg), android.widget.Toast.LENGTH_LONG).show() }; pinDialog = false }
 }
 
 @Composable
@@ -298,7 +298,7 @@ private fun StaffManagerDialog(vm: MerchantViewModel, storeName: String, onDismi
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(36.dp).background(Navy.copy(alpha = 0.1f), CircleShape), contentAlignment = Alignment.Center) { Text("${m.n}", color = Navy, fontWeight = FontWeight.ExtraBold) }
                                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                    Text(m.displayName, fontWeight = FontWeight.Bold, color = if (m.active) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    androidx.compose.material3.Text(m.displayName, fontWeight = FontWeight.Bold, color = if (m.active) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant)
                                     Text(m.roleLabel + " • " + m.perms.joinToString(" • ") { if (it == "orders") "🧾 الطلبات" else "🍽️ نفد اليوم" } + if (m.active) "" else " • ⏸️ موقوف",
                                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -407,7 +407,7 @@ private fun StaffCredsDialog(code: String, m: StoreStaff, qr: Boolean, onDismiss
             TextButton(onClick = {
                 val txt = "دخول موظف في لكوفر 👨‍🍳\nرقم المتجر: $code\nرقم الموظف: ${m.n}\n" + if (qr) link else com.example.data.OfferSharer.WEB_BASE
                 (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.setPrimaryClip(ClipData.newPlainText("staff", txt))
-                android.widget.Toast.makeText(ctx, "انسخت ✅", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(ctx, com.example.ui.i18n.I18n.tr("انسخت ✅"), android.widget.Toast.LENGTH_SHORT).show()
             }) { Text("📋 انسخ البيانات") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("تم") } })

@@ -46,8 +46,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -243,7 +243,7 @@ fun SelectedRestaurantOfferCard(
                         ) {
                             StoreLogo(logoUrl = offer.logoUrl, size = 22.dp)
                             if (offer.logoUrl.startsWith("http")) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
+                            androidx.compose.material3.Text(
                                 text = offer.restaurantName,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 14.sp,
@@ -271,7 +271,7 @@ fun SelectedRestaurantOfferCard(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    Text(
+                    androidx.compose.material3.Text(
                         text = offer.offerTitle,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -473,7 +473,7 @@ fun SelectedRestaurantOfferCard(
                                 border = BorderStroke(1.dp, Color(0xFFE2DDD5)),
                                 modifier = Modifier.clickable { onSelectOtherOffer(other) }
                             ) {
-                                Text(
+                                androidx.compose.material3.Text(
                                     text = other.restaurantName,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Medium,

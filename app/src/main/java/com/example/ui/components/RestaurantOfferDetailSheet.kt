@@ -42,8 +42,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -246,7 +246,7 @@ fun RestaurantOfferDetailSheet(
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
+                androidx.compose.material3.Text(
                     text = offer.restaurantName,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
@@ -295,7 +295,7 @@ fun RestaurantOfferDetailSheet(
             }
 
             // Offer Title
-            Text(
+            androidx.compose.material3.Text(
                 text = offer.offerTitle,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.ExtraBold,
@@ -381,7 +381,7 @@ fun RestaurantOfferDetailSheet(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Description
-            Text(
+            androidx.compose.material3.Text(
                 text = offer.description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -415,7 +415,7 @@ fun RestaurantOfferDetailSheet(
                             Icon(Icons.Default.LocationOn, contentDescription = null, tint = CalmSagePrimary, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                                androidx.compose.material3.Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                                 Text(
                                     text = listOfNotNull(
                                         distanceText(b),

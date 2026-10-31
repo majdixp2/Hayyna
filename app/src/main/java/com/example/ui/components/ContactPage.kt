@@ -41,8 +41,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -253,7 +253,7 @@ private fun MyMessageCard(f: Feedback) {
                     )
                 }
             }
-            Text(f.message, fontSize = 13.sp, maxLines = 4)
+            androidx.compose.material3.Text(f.message, fontSize = 13.sp, maxLines = 4)
             if (f.reply.isNotBlank()) {
                 Surface(
                     shape = RoundedCornerShape(10.dp),
@@ -262,7 +262,7 @@ private fun MyMessageCard(f: Feedback) {
                 ) {
                     Column(Modifier.padding(10.dp)) {
                         Text("رد إدارة لكوفر:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CalmSagePrimary)
-                        Text(f.reply, fontSize = 13.sp)
+                        androidx.compose.material3.Text(f.reply, fontSize = 13.sp)
                     }
                 }
             }

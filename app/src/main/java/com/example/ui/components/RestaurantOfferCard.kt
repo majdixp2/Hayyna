@@ -32,8 +32,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -149,7 +149,7 @@ fun RestaurantOfferCard(
                             )
                         }
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(
+                        androidx.compose.material3.Text(
                             text = offer.restaurantName,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
@@ -189,7 +189,7 @@ fun RestaurantOfferCard(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // Offer Title
-                Text(
+                androidx.compose.material3.Text(
                     text = offer.offerTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,

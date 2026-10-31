@@ -18,8 +18,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -245,7 +245,7 @@ fun BoostDialog(
                         color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(item.name, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                            androidx.compose.material3.Text(item.name, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
                             Text(effectHint(item.effect), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (isSpot) Text(
                                 if (full) "⛔ الأماكن في ${offer.district.ifBlank { "حيّك" }} ممتلئة ($spotUsed/$spotMax)، جرّب بعد كم يوم"

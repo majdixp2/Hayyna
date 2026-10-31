@@ -16,8 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -66,7 +66,7 @@ fun ShopSearchSection(vm: MerchantViewModel, query: String, stores: List<StorePr
                         if (st.logoUrl.isNotBlank()) AsyncImage(model = st.logoUrl, contentDescription = null, contentScale = ContentScale.Crop,
                             modifier = Modifier.size(24.dp).clip(CircleShape)) else Text("🏪")
                         Spacer(Modifier.width(6.dp))
-                        Text(st.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                        androidx.compose.material3.Text(st.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                     }
                 }
             }
@@ -93,8 +93,8 @@ fun ShopSearchSection(vm: MerchantViewModel, query: String, stores: List<StorePr
                         ) {
                             Text("📍", fontSize = 16.sp)
                             Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                                Text(f.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
-                                if (f.address.isNotBlank()) Text(f.address, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                androidx.compose.material3.Text(f.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                                if (f.address.isNotBlank()) androidx.compose.material3.Text(f.address, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
                             Text("›", fontSize = 18.sp, color = Navy)
                         }

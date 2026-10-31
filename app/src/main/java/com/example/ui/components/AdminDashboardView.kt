@@ -34,9 +34,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
+import com.example.ui.i18n.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -305,7 +305,7 @@ fun AdminDashboardView(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(Modifier.padding(12.dp)) {
-                                    Text(first.offerTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2)
+                                    androidx.compose.material3.Text(first.offerTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2)
                                     Text("${first.restaurantName} • ${list.size} بلاغ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     list.take(5).forEach { r ->
                                         Text("• ${r.reason}", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
@@ -344,7 +344,7 @@ fun AdminDashboardView(
                     items(trusted, key = { "t_" + it.uid }) { st ->
                         Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                             Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(st.name.ifBlank { st.uid.take(8) }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                androidx.compose.material3.Text(st.name.ifBlank { st.uid.take(8) }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                                 androidx.compose.material3.TextButton(onClick = { onUntrust(st) }) { Text("إلغاء التوثيق") }
                                 androidx.compose.material3.TextButton(onClick = { onSuspendMerchant(st.uid, st.name) }) {
                                     Text("إيقاف", color = MaterialTheme.colorScheme.error)
@@ -393,7 +393,7 @@ fun AdminDashboardView(
                     items(suspended, key = { "s_" + it.uid }) { st ->
                         Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                             Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(st.name.ifBlank { st.uid.take(8) }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                androidx.compose.material3.Text(st.name.ifBlank { st.uid.take(8) }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                                 androidx.compose.material3.TextButton(onClick = { onUnsuspend(st) }) { Text("إلغاء الإيقاف") }
                             }
                         }
@@ -516,11 +516,11 @@ private fun PendingStoreCard(st: com.example.data.model.StoreProfile, onApprove:
                 StoreLogo(logoUrl = st.logoUrl, size = 40.dp)
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(st.name, fontWeight = FontWeight.Bold)
+                    androidx.compose.material3.Text(st.name, fontWeight = FontWeight.Bold)
                     Text(st.category, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (st.about.isNotBlank()) Text(st.about, fontSize = 12.sp, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
+            if (st.about.isNotBlank()) androidx.compose.material3.Text(st.about, fontSize = 12.sp, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
             val pics = listOf(st.coverUrl).filter { it.isNotBlank() } + st.menuImages
             if (pics.isNotEmpty()) {
                 androidx.compose.foundation.lazy.LazyRow(
@@ -571,8 +571,8 @@ private fun AdminOfferRow(
                 ProductMediaViewer(mediaUri = offer.mediaUri, mediaType = offer.mediaType, modifier = Modifier.size(56.dp))
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(offer.restaurantName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CalmSagePrimary, maxLines = 1)
-                    Text(offer.offerTitle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    androidx.compose.material3.Text(offer.restaurantName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CalmSagePrimary, maxLines = 1)
+                    androidx.compose.material3.Text(offer.offerTitle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         "${offer.district} • ${offer.priceLabel()} • 👁 ${offer.viewsCount}",
                         fontSize = 11.sp,
@@ -669,15 +669,15 @@ private fun ReviewCard(
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(offer.restaurantName, fontWeight = FontWeight.Bold, color = CalmSagePrimary, fontSize = 14.sp)
-                    Text(offer.offerTitle, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    androidx.compose.material3.Text(offer.restaurantName, fontWeight = FontWeight.Bold, color = CalmSagePrimary, fontSize = 14.sp)
+                    androidx.compose.material3.Text(offer.offerTitle, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
                         "${offer.priceLabel()} • ${offer.district}",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (offer.description.isNotBlank()) {
-                        Text(
+                        androidx.compose.material3.Text(
                             offer.description,
                             fontSize = 11.sp,
                             maxLines = 2,
@@ -688,7 +688,7 @@ private fun ReviewCard(
                 }
             }
             if (note != null) {
-                Text(note, fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
+                androidx.compose.material3.Text(note, fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -761,7 +761,7 @@ private fun FeedbackCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Text(f.message, fontSize = 14.sp)
+            androidx.compose.material3.Text(f.message, fontSize = 14.sp)
             if (f.screenshotUrl.isNotBlank()) {
                 coil.compose.AsyncImage(
                     model = com.example.data.CloudinaryUrls.image(f.screenshotUrl, 400),
@@ -1046,7 +1046,7 @@ private fun VerificationCard(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(r.storeName.ifBlank { r.uid.take(8) }, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = CalmSagePrimary)
+            androidx.compose.material3.Text(r.storeName.ifBlank { r.uid.take(8) }, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = CalmSagePrimary)
             if (r.docNumber.isNotBlank()) {
                 androidx.compose.foundation.text.selection.SelectionContainer {
                     Text("${com.example.data.model.VerificationRequest.docLabel(r.docType)}: ${r.docNumber}", fontSize = 14.sp, fontWeight = FontWeight.Bold)

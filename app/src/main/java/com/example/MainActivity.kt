@@ -28,7 +28,12 @@ import com.example.ui.MerchantViewModel
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
+    // 🌐 الخريطة وأسماء الأماكن تتبع لغة التطبيق
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.example.ui.i18n.I18n.wrap(newBase))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.example.ui.i18n.I18n.init(applicationContext)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {

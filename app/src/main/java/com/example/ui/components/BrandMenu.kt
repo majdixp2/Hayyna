@@ -34,7 +34,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -140,6 +140,8 @@ fun BrandMenuButton(
                 val text = "لكوفر 📍 كل عروض المحلات اللي حولك على خريطة وحدة\n" + com.example.data.OfferSharer.WEB_BASE
                 ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }, "شارك لكوفر"))
             }
+            BrandItem("🌐", if (com.example.ui.i18n.I18n.isEn) "العربية" else "English") { close(); com.example.ui.i18n.switchLang(ctx) }
+            BrandItem(com.example.ui.i18n.themeLabel().take(2), com.example.ui.i18n.themeLabel().drop(3)) { com.example.ui.i18n.nextTheme(ctx) }
             if (isScout || isAdmin) {
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 Text("للفريق", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp))
@@ -194,8 +196,8 @@ fun AdShopPickerSheet(vm: MerchantViewModel) {
                     ) {
                         Text("📍", fontSize = 18.sp)
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                            Text(f.name, fontWeight = FontWeight.Bold, maxLines = 1)
-                            if (f.address.isNotBlank()) Text(f.address, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            androidx.compose.material3.Text(f.name, fontWeight = FontWeight.Bold, maxLines = 1)
+                            if (f.address.isNotBlank()) androidx.compose.material3.Text(f.address, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         }
                         Text("ارفع ›", color = Navy, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }

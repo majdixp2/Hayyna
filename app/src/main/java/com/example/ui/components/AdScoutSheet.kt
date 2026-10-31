@@ -29,8 +29,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -155,7 +155,7 @@ fun AdScoutSheet(poi: PointOfInterest, vm: MerchantViewModel) {
                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("📍", fontSize = 22.sp)
                     Column(Modifier.padding(start = 10.dp)) {
-                        Text(place?.name?.ifBlank { null } ?: poi.name.replace("\n", " "), fontWeight = FontWeight.Bold)
+                        androidx.compose.material3.Text(place?.name?.ifBlank { null } ?: poi.name.replace("\n", " "), fontWeight = FontWeight.Bold)
                         val addr = place?.address?.ifBlank { null } ?: listOfNotNull(place?.district?.ifBlank { null }, place?.city?.ifBlank { null }).joinToString("، ")
                         if (addr.isNotBlank()) Text(addr, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }

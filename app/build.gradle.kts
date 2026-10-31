@@ -79,6 +79,8 @@ android {
     compose = true
     buildConfig = true
   }
+  // 🌐 قاموس الترجمة مشترك مع الويب: web/i18n/en.json يدخل التطبيق كـ asset (en.json)
+  sourceSets { getByName("main") { assets.srcDir("../web/i18n") } }
   testOptions { unitTests { isIncludeAndroidResources = true } }
   dependenciesInfo {
     includeInApk = false

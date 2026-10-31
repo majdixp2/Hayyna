@@ -43,8 +43,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -781,7 +781,7 @@ private fun MerchantOfferRow(
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
+                    androidx.compose.material3.Text(
                         text = offer.offerTitle,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
@@ -908,6 +908,8 @@ fun AccountSettingsSection(onPrivacy: () -> Unit, onDelete: () -> Unit, modifier
                 Text(if (open) "▴" else "▾", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (open) {
+                HorizontalDivider()
+                com.example.ui.i18n.LangThemeRows()
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth().clickable { onPrivacy() }.padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Text("🔒 سياسة الخصوصية", fontSize = 14.sp, modifier = Modifier.weight(1f)); Text("›", fontSize = 18.sp)
