@@ -610,7 +610,6 @@ service cloud.firestore {
     // ===== 📅 اطلب مسبقاً =====
     function prePath(store) { return /databases/$(database)/documents/preorderCfg/$(store); }
     function slotPath(id) { return /databases/$(database)/documents/slotCounts/$(id); }
-    function orderPath(id) { return /databases/$(database)/documents/orders/$(id); }
     function preOrderOk(orderId, d) {
       return featureOn('preorder') && exists(prePath(d.storeId)) && get(prePath(d.storeId)).data.on == true
         && d.scheduledAt is timestamp && d.scheduledAt > request.time && d.scheduledAt < request.time + duration.value(15, 'd')
