@@ -1,0 +1,59 @@
+name: Quality scan (Android Lint + web checks)
+# فحص شامل: أخطاء كود أندرويد (Lint)، أخطاء JavaScript (ESLint)، وفتح صفحات الموقع الحي بمتصفح آلي وتسجيل أي خطأ
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"   # كل يوم 5 الفجر بتوقيت الرياض
+
+jobs:
+  android-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '9.3.1' }
+      - name: Android Lint
+        run: |
+          set -o pipefail
+          gradle :app:lintDebug -Dlint.abortOnError=false 2>&1 | tee lint.log || true
+      - name: Summarize lint
+        run: |
+          f=$(ls app/build/reports/lint-results-debug.xml 2>/dev/null || true)
+          if [ -z "$f" ]; then echo "::warning::no lint report"; tail -30 lint.log | sed 's/^/::warning::/'; exit 0; fi
+          python3 - "$f" <<'PY'
+          import sys, xml.etree.ElementTree as ET, collections
+          r = ET.parse(sys.argv[1]).getroot(); issues = r.findall('issue')
+          by = collections.Counter((i.get('severity'), i.get('id')) for i in issues)
+          print(f"::notice title=lint::{len(issues)} issues")
+          for (sev, iid), n in by.most_common(40): print(f"::notice title=lint {sev}::{iid} x{n}")
+          for i in issues:
+              if i.get('severity') in ('Error', 'Fatal'):
+                  loc = i.find('location'); f = (loc.get('file') if loc is not None else '').split('/app/')[-1]
+                  print(f"::error file=app/{f},line={loc.get('line') if loc is not None else 1},title={i.get('id')}::{i.get('message')[:300]}")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: android-lint-report, path: app/build/reports/lint-results-debug.* }
+
+  web-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install tools
+        working-directory: tests/web
+        run: npm install --no-audit --no-fund > install.log 2>&1 && npx playwright install --with-deps chromium > pw.log 2>&1
+      - name: ESLint (JavaScript errors)
+        working-directory: tests/web
+        run: npx eslint -c eslint.config.mjs "../../web/**/*.js" -f json -o eslint.json || true; node report-eslint.mjs
+      - name: Open live pages and record errors
+        working-directory: tests/web
+        run: node smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: web-check-screens, path: tests/web/shots }
