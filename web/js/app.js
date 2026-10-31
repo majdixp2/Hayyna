@@ -21,7 +21,7 @@ const { esc, cld, thumb, priceLabel, isPercentOnly, effectivePercent, branchesOf
 
 export const fbApp = initializeApp(firebaseConfig);
 export const auth = getAuth(fbApp);
-auth.languageCode = "ar"; // رسائل الدخول بالإيميل تطلع بالعربي
+auth.languageCode = (() => { try { return localStorage.getItem("hayyna_lang") === "en" ? "en" : "ar"; } catch { return "ar"; } })(); // رسائل الدخول بالإيميل تطلع بالعربي
 // يكتشف لحاله لو شبكة الجوال تقطع الاتصال المباشر ويحوّل لطريقة تشتغل (عشان تحديثات الطلبات توصل بدون تحديث الصفحة)
 export const db = (() => { try { return initializeFirestore(fbApp, { experimentalAutoDetectLongPolling: true }, FIRESTORE_DB_ID); } catch { return getFirestore(fbApp, FIRESTORE_DB_ID); } })();
 export const $ = (id) => document.getElementById(id);
@@ -752,7 +752,9 @@ function openPlaces() {
 
 // ---------------- الإعدادات: المظهر واللغة والحساب ----------------
 export const prefs = {
-  get theme() { try { return localStorage.getItem("hayyna_theme") || "auto"; } catch { return "auto"; } },
+  get theme() { try { return localStorage.getItem("hayyna_theme") || "light"; } catch { return "light"; } },
+  // لغة الخريطة: افتراضياً تتبع لغة الموقع
+  get mapLang() { try { return localStorage.getItem("hayyna_mapLang") || "app"; } catch { return "app"; } },
   get lang() { try { return localStorage.getItem("hayyna_lang") || "ar"; } catch { return "ar"; } },
 };
 const darkMQ = matchMedia("(prefers-color-scheme: dark)");
@@ -772,6 +774,8 @@ function openSettings() {
     ${seg("theme", prefs.theme, [["auto", "تلقائي"], ["light", "☀️ فاتح"], ["dark", "🌙 داكن"]])}
     <div class="set-label">🌐 اللغة</div>
     ${seg("lang", prefs.lang, [["ar", "العربية"], ["en", "English"]])}
+    <div class="set-label">🗺️ لغة الخريطة</div>
+    ${seg("mapLang", prefs.mapLang, [["app", "مثل الموقع"], ["ar", "العربية"], ["en", "English"]])}
     ${state.user ? `<div class="set-label">👤 الحساب</div>
       <button class="btn ghost danger-text" id="setDelete">🗑️ حذف الحساب نهائياً</button>
       <small class="hint">يحذف بياناتك ومفضلتك${state.role === "merchant" ? " وصفحة متجرك وعروضك" : ""}، وما يمكن استرجاعها.</small>` : ""}
@@ -783,6 +787,7 @@ function openSettings() {
     try { localStorage.setItem("hayyna_" + name, v); } catch {}
     b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
     if (name === "theme") applyTheme();
+    if (name === "mapLang") { toast("نطبّق لغة الخريطة…"); setTimeout(() => location.reload(), 350); }
     if (name === "lang") { toast(v === "en" ? "Switching to English…" : "جاري التحويل للعربية…"); setTimeout(() => location.replace("/"), 350); }
   });
   $("setDelete")?.addEventListener("click", () => { hideSheet(); confirmDeleteAccount(); });
@@ -1014,7 +1019,7 @@ function openLogin(role) {
   $("lgGoogle").onclick = () => loginWith(new GoogleAuthProvider());
   $("lgAsCust")?.addEventListener("click", () => openLogin("customer"));
   if (APPLE_ENABLED) $("lgApple").onclick = () => {
-    const p = new OAuthProvider("apple.com"); p.addScope("email"); p.addScope("name"); p.setCustomParameters({ locale: "ar" }); loginWith(p);
+    const p = new OAuthProvider("apple.com"); p.addScope("email"); p.addScope("name"); p.setCustomParameters({ locale: auth.languageCode }); loginWith(p);
   };
   $("lgEmailBtn").onclick = async () => {
     const email = $("lgEmail").value.trim();

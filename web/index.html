@@ -23,7 +23,7 @@
   <script>
     // المظهر واللغة قبل الرسم (بدون وميض)
     try {
-      var t = localStorage.getItem("hayyna_theme") || "auto", l = localStorage.getItem("hayyna_lang") || "ar";
+      var t = localStorage.getItem("hayyna_theme") || "light", l = localStorage.getItem("hayyna_lang") || "ar";
       var d = t === "dark" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.dataset.theme = d ? "dark" : "light";
       if (l === "en") { document.documentElement.lang = "en"; document.documentElement.dir = "ltr"; }

@@ -54,8 +54,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -213,7 +213,7 @@ fun MerchantStoreScreen(
     }
 
     // Full RTL Arabic Experience
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+    CompositionLocalProvider(LocalLayoutDirection provides if (com.example.ui.i18n.I18n.isEn) LayoutDirection.Ltr else LayoutDirection.Rtl) {
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
             containerColor = SoftCreamBackground
@@ -374,7 +374,7 @@ fun MerchantStoreScreen(
                                                         )
                                                         Spacer(modifier = Modifier.width(8.dp))
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text(place.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                                            androidx.compose.material3.Text(place.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                                                             if (place.subtitle.isNotBlank()) {
                                                                 Text(
                                                                     place.subtitle,

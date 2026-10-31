@@ -1,3 +1,5 @@
+// 🗺️ لغة الخريطة: افتراضياً مثل لغة الموقع، والمستخدم يقدر يغيّرها من الإعدادات
+const mapLang = () => { try { const m = localStorage.getItem("hayyna_mapLang") || "app"; return m === "app" ? (localStorage.getItem("hayyna_lang") || "ar") : m; } catch { return "ar"; } };
 // الخريطة: خرائط قوقل بنفس ستايل التطبيق (لو فيه مفتاح)، وإلا OpenStreetMap كاحتياط.
 // كل الخرائط تستخدم نفس الواجهة: setMarkers / setDots / panTo / fitBounds / setMe / onClick.
 
@@ -47,7 +49,7 @@ function loadGoogle(key) {
     window.__hayynaMapsReady = () => resolve(window.google.maps);
     if (googleFailed) return reject(new Error("maps auth failed"));
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=ar&region=SA&callback=__hayynaMapsReady&loading=async`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=${mapLang()}&region=SA&callback=__hayynaMapsReady&loading=async`;
     s.async = true; s.onerror = () => reject(new Error("maps load failed"));
     document.head.appendChild(s);
     setTimeout(() => reject(new Error("maps timeout")), 15000);
@@ -179,7 +181,7 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
     placeInfo: async (placeId) => {
       try {
         const { Place } = await g.importLibrary("places");
-        const p = new Place({ id: placeId, requestedLanguage: "ar" });
+        const p = new Place({ id: placeId, requestedLanguage: mapLang() });
         await Promise.race([p.fetchFields({ fields: ["displayName", "nationalPhoneNumber", "internationalPhoneNumber"] }), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000))]);
         return { name: p.displayName || "", phone: p.internationalPhoneNumber || p.nationalPhoneNumber || "" };
       } catch (e) { console.warn("places", e); return { name: "", phone: "" }; }
@@ -258,7 +260,7 @@ const withTimeout = (p, ms = 8000) => Promise.race([p, new Promise((_, rej) => s
 export async function searchPlaces(key, text, near) {
   const g = await loadGoogle(key);
   const { Place } = await g.importLibrary("places");
-  const req = { textQuery: text, fields: PLACE_FIELDS, language: "ar", region: "sa", maxResultCount: 6 };
+  const req = { textQuery: text, fields: PLACE_FIELDS, language: mapLang(), region: "sa", maxResultCount: 6 };
   if (near?.lat != null) req.locationBias = { center: { lat: near.lat, lng: near.lng }, radius: 30000 };
   const { places } = await withTimeout(Place.searchByText(req));
   return (places || []).map(placeOut).filter((p) => p.lat != null);
@@ -267,7 +269,7 @@ export async function searchPlaces(key, text, near) {
 export async function placeDetails(key, placeId) {
   const g = await loadGoogle(key);
   const { Place } = await g.importLibrary("places");
-  const p = new Place({ id: placeId, requestedLanguage: "ar" });
+  const p = new Place({ id: placeId, requestedLanguage: mapLang() });
   await withTimeout(p.fetchFields({ fields: PLACE_FIELDS.filter((f) => f !== "id") }));
   return placeOut(p);
 }

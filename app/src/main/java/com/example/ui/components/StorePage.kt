@@ -47,8 +47,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -160,7 +160,7 @@ fun StorePage(
 
                     Column(Modifier.offset(y = (-28).dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(store.name, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f, fill = false))
+                            androidx.compose.material3.Text(store.name, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f, fill = false))
                             if (store.verified) {
                                 Spacer(Modifier.width(8.dp))
                                 VerifiedBadge()
@@ -192,7 +192,7 @@ fun StorePage(
                         }
                         deliveryText(store.delivery, store.deliveryFee, store.deliveryMinOrder, store.deliveryFreeOver)?.let { InfoPill(it) }
                         if (store.about.isNotBlank()) {
-                            Text(store.about, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            androidx.compose.material3.Text(store.about, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
                         // تواصل سريع
@@ -240,7 +240,7 @@ fun StorePage(
                                                 modifier = Modifier.fillMaxWidth().height(100.dp)
                                             )
                                             Column(Modifier.padding(8.dp)) {
-                                                Text(o.offerTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                                androidx.compose.material3.Text(o.offerTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                 Text(
                                                     (if (com.example.data.model.OfferPricing.isPercentOnly(o)) "" else "${formatStorePrice(o.price)} ر.س ") + o.displayBadge,
                                                     fontSize = 12.sp,
@@ -314,7 +314,7 @@ private fun BranchRow(branch: Branch, onDirections: () -> Unit) {
             Icon(Icons.Default.LocationOn, contentDescription = null, tint = CalmSagePrimary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f)) {
-                Text(branch.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                androidx.compose.material3.Text(branch.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                 val hours = if (branch.openMinute in 0..1439) {
                     if (branch.openMinute == branch.closeMinute) "24 ساعة"
                     else "${OfferTime.formatMinute(branch.openMinute)} – ${OfferTime.formatMinute(branch.closeMinute)}"

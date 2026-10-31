@@ -38,9 +38,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import com.example.ui.i18n.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -143,8 +143,8 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(p.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (p.desc.isNotBlank()) Text(p.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        androidx.compose.material3.Text(p.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (p.desc.isNotBlank()) androidx.compose.material3.Text(p.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         PriceLine(p.price, p.was, 0, "", Color(0xFFB45309))
                     }
                     if (!p.available) Column(horizontalAlignment = Alignment.End) {
@@ -178,8 +178,8 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(it.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            if (it.desc.isNotBlank()) Text(it.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            androidx.compose.material3.Text(it.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (it.desc.isNotBlank()) androidx.compose.material3.Text(it.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             val (dp, was, pct) = deals.price(it)
                             PriceLine(dp, was, pct, deals.bogo[it.id]?.second.orEmpty(), k.color)
                         }
@@ -292,7 +292,7 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(l.name, fontSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
+                            androidx.compose.material3.Text(l.name, fontSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
                             if (l.was > l.price) Text("  " + money(l.was), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
                         }
                         if (l.bogo.isNotBlank()) Text("${l.bogo}" + if (l.off > 0) " −${money(l.off)}" else " (أضف واحد ثاني)", fontSize = 11.sp, color = Color(0xFF6D28D9), fontWeight = FontWeight.Bold)
@@ -922,7 +922,7 @@ private fun CatalogManagerDialog(vm: MerchantViewModel, base: ItemKind, balance:
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(it.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            androidx.compose.material3.Text(it.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("${money(it.price)} ر.س" + if (it.section.isNotBlank()) " • ${it.section}" else "", fontSize = 12.sp, color = kind.color, fontWeight = FontWeight.Bold)
                             Text(status, fontSize = 11.sp, color = if (it.adminNote.isNotBlank()) Color(0xFFB42318) else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (it.adminNote.isNotBlank()) FontWeight.Bold else FontWeight.Normal)
                         }

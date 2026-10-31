@@ -16,7 +16,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -67,7 +67,7 @@ fun PoiInviteSheet(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text((name ?: poi.name).replace("\n", " "), fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
+            androidx.compose.material3.Text((name ?: poi.name).replace("\n", " "), fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
             Text(
                 "هذا المحل مو مسجّل في لكوفر للحين. ادعه ينضم وينشر عروضه لأهل الحي 👇",
                 fontSize = 14.sp,

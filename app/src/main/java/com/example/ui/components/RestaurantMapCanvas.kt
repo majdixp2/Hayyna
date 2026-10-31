@@ -45,8 +45,8 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -598,7 +598,7 @@ fun OfferCircleMarker(
                 shadowElevation = 6.dp,
                 border = BorderStroke(1.5.dp, if (isSelected) Color.White else Color(0xFFFFD166))
             ) {
-                Text(
+                androidx.compose.material3.Text(
                     text = if (!isSelected) "🚀 ${offer.restaurantName}" else offer.restaurantName,
                     color = if (isSelected) Color.White else Color(0xFFFFD166),
                     fontSize = 11.sp,

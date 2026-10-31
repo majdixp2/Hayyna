@@ -135,7 +135,7 @@ async function openQuickDeal() {
   const f = { pct: on ? String(cur.pct) : "", scope: on ? cur.scope || "all" : "all", kind: on ? cur.kind || "" : "", section: on ? cur.section || "" : "", itemIds: on ? cur.itemIds || [] : [], days: 1 };
   const draw = () => {
     showSheet(`<div class="pad form"><div class="section-title">⚡ خصم سريع على ${KINDS[baseKindOf(state.config, M.ctx.category())].title}</div>
-      ${on ? `<div class="banner green" style="margin:0 0 8px">شغّال الحين: ${cur.pct}% لين ${new Date(X.ms(cur.endsAt)).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" })}</div>` : ""}
+      ${on ? `<div class="banner green" style="margin:0 0 8px">شغّال الحين: ${cur.pct}% لين ${new Date(X.ms(cur.endsAt)).toLocaleString(X.LOC, { dateStyle: "short", timeStyle: "short" })}</div>` : ""}
       <p class="desc tr">الخصم ينطبق لحاله على أسعار المنيو في صفحة متجرك، والزبون يشوف السعر القديم مشطوب.</p>
       <label class="label">نسبة الخصم %</label>
       <div class="chips wrap">${[10, 15, 20, 25, 30, 40, 50].map((n) => `<button class="chip${+f.pct === n ? " on" : ""}" data-qp="${n}">${n}%</button>`).join("")}</div>
@@ -555,7 +555,7 @@ function orderCard(o, asStore) {
   const custWa = asStore ? X.waDigits(o.customerPhone || "") : "";
   const pendingReq = o.cancelReq && !o.cancelReqAns && live;
   return `<div class="ocard s-${esc(o.status || "sent")}${["sent"].includes(o.status) && asStore ? " new" : ""}"><div class="oc-top"><b>#${esc(o.code)}</b><span class="pill ${st.cls}">${asStore ? st.t : statusText(o)}</span></div>
-    <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</div>
+    <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString(X.LOC, { dateStyle: "short", timeStyle: "short" }) : ""}</div>
     ${nsc ? `<div class="oc-warn">⚠️ هذا العميل عنده ${nsc === 1 ? "طلب" : nsc + " طلبات"} ما استلمها</div>` : ""}
     ${X.ms(o.scheduledAt) && live ? `<div class="oc-sched${asStore && !isAhead(o) && ["sent", "received"].includes(o.status) ? " due" : ""}">📅 ${asStore ? "الموعد" : "موعد طلبك"}: <b>${esc(X.preWhen(X.ms(o.scheduledAt)))}</b></div>` : ""}
     ${asStore && o.readyNote && o.status === "ready" ? `<div class="oc-note">📍 ${esc(o.readyNote)}</div>` : ""}
@@ -733,7 +733,7 @@ function loadMyStats() {
   if (!state.user || !F("noshow")) return;
   getDoc(doc(db, "custStats", state.user.uid)).then((d) => { MY.stats = d.exists() ? d.data() : null; }).catch(() => {});
 }
-function stampMy() { const el = $("myStamp"); if (el) el.textContent = MY.at ? `آخر تحديث ${new Date(MY.at).toLocaleTimeString("ar-SA-u-ca-gregory", { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : ""; }
+function stampMy() { const el = $("myStamp"); if (el) el.textContent = MY.at ? `آخر تحديث ${new Date(MY.at).toLocaleTimeString(X.LOC, { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : ""; }
 function drawMyOrders() {
   const who = state.user?.email || X.toLocalPhone(state.profile?.phone || "") || "";
   const list = MY.list;
@@ -1109,7 +1109,7 @@ function openCheckout(sid) {
         ${vatNo ? `<div><span>المبلغ قبل الضريبة</span><b>${fmt(net)}</b></div><div><span>ضريبة القيمة المضافة ${vat.rate}%</span><b>${fmt(vatAmt)}</b></div>` : ""}
         <div class="tot"><span>💰 الإجمالي${vatNo ? " (شامل الضريبة)" : ""}</span><b>${fmt(total)} ر.س</b></div></div>
       ${!minOk ? `<div class="err">أقل طلب للتوصيل ${fmt(s.deliveryMinOrder)} ر.س — أضف ${fmt(s.deliveryMinOrder - sub)} ر.س أو اختر الاستلام</div>` : ""}
-      ${blockedUntil(myStats, state.config) ? `<div class="err">🚫 الطلب موقف عن حسابك مؤقتاً لين ${new Date(blockedUntil(myStats, state.config)).toLocaleDateString("ar-SA-u-ca-gregory")} بسبب طلبات سابقة ما انستلمت. لو فيه خطأ تواصل معنا.</div>` : ""}
+      ${blockedUntil(myStats, state.config) ? `<div class="err">🚫 الطلب موقف عن حسابك مؤقتاً لين ${new Date(blockedUntil(myStats, state.config)).toLocaleDateString(X.LOC)} بسبب طلبات سابقة ما انستلمت. لو فيه خطأ تواصل معنا.</div>` : ""}
       ${!state.user ? `<small class="hint">💡 سجّل دخولك عشان تنحفظ طلباتك وتقدر تعيدها بضغطة.</small>` : ""}
       ${blocked ? `<div class="closed-bar">${esc(blk)}</div>` : closedNow ? `<div class="hint-box">🌙 المحل مغلق الحين — طلبك يوصله ويتجهّز على موعدك</div>` : ""}
       <div id="coErr" class="err"></div>

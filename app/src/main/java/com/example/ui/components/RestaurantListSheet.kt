@@ -32,8 +32,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -196,7 +196,7 @@ fun RestaurantListSheet(
                                     ) {
                                         StoreLogo(logoUrl = offer.logoUrl, size = 20.dp)
                                         if (offer.logoUrl.startsWith("http")) Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
+                                        androidx.compose.material3.Text(
                                             text = offer.restaurantName,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.sp,
@@ -221,7 +221,7 @@ fun RestaurantListSheet(
 
                                     Spacer(modifier = Modifier.height(2.dp))
 
-                                    Text(
+                                    androidx.compose.material3.Text(
                                         text = offer.offerTitle,
                                         fontSize = 12.sp,
                                         color = Color(0xFF333333),

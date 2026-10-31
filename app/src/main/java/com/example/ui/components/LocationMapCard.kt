@@ -42,8 +42,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Surface
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -248,7 +248,7 @@ fun LocationMapCard(
                         color = Color(0xFF0F172A),
                         shadowElevation = 4.dp
                     ) {
-                        Text(
+                        androidx.compose.material3.Text(
                             text = district,
                             color = Color.White,
                             fontSize = 11.sp,

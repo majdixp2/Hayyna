@@ -15,7 +15,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import com.example.ui.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -78,8 +78,8 @@ fun SpotlightWelcome(offers: List<RestaurantOffer>, hasLocation: Boolean, onOpen
                     modifier = Modifier.fillMaxWidth().height(200.dp)
                 )
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(o.restaurantName, color = CalmSagePrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text(o.offerTitle, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 2)
+                    androidx.compose.material3.Text(o.restaurantName, color = CalmSagePrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    androidx.compose.material3.Text(o.offerTitle, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 2)
                     Text(o.priceLabel(withScope = true), color = CalmSagePrimary, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     Text(listOf(o.district, "%.1f كم".format(o.distanceKm)).filter { it.isNotBlank() }.joinToString(" • "), fontSize = 12.sp, color = Color(0xFF6B7280))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
