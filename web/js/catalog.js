@@ -1,4 +1,4 @@
-import { currentPercent } from "./logic.js";
+import { currentPercent, preWhen } from "./logic.js";
 // المنتجات والخدمات والمنيو + الطلب كملخص على واتساب + الضريبة.
 // كل الإعدادات من لوحة الأدمن (config/app.catalog و config/app.vat و config/app.categoryTypes).
 // إذا الخدمة مطفية (catalog.enabled = false) ما يظهر شي — والبيانات تبقى محفوظة.
@@ -33,7 +33,7 @@ export function catalogOf(config) {
 /** مزايا الطلب (مفاتيح من الأدمن، كلها شغّالة افتراضياً) */
 export const FEATURES = {
   ratings: "⭐ التقييمات بعد الطلب", curbside: "🚗 الاستلام من السيارة", payChoice: "💳 اختيار طريقة الدفع عند الاستلام",
-  freeHint: "💡 تلميح التوصيل المجاني", eta: "⏱️ الوقت التقريبي للتجهيز", superGlow: "🚀 لمعة صفحة عرض سوبر", crop: "✂️ قص الصور بيد التاجر",
+  preorder: "📅 اطلب مسبقاً (طلب بموعد لاحق)", freeHint: "💡 تلميح التوصيل المجاني", eta: "⏱️ الوقت التقريبي للتجهيز", superGlow: "🚀 لمعة صفحة عرض سوبر", crop: "✂️ قص الصور بيد التاجر",
   noshow: "🚫 «ما انستلم» + إيقاف العميل المتكرر", sounds: "🔔 أصوات الطلبات عند المحل",
   dealDiscount: "🔥 عرض: خصم على المنيو", dealBundle: "🎁 عرض: باقة", dealBogo: "➕ عرض: اشترِ واحصل", dealPromo: "📣 عرض: إعلان قابل للطلب", quickDeal: "⚡ الخصم السريع من المنيو",
   staff: "👥 موظفين المتجر (دخول برقم ورمز سري)", staffQr: "📱 QR لدخول الموظفين",
@@ -105,6 +105,8 @@ export function orderText(o) {
   const L = [];
   L.push(`🧾 ملخص طلب من لكوفر — رقم #${o.code}`);
   L.push(`🏪 ${o.storeName}${o.branchName ? " — " + o.branchName : ""}`);
+  const sch = o.scheduledAt?.toMillis ? o.scheduledAt.toMillis() : o.scheduledAt;
+  if (sch) L.push(`📅 طلب مسبق — الموعد: ${preWhen(sch)}`);
   L.push("━━━━━━━━━━━━");
   for (const it of o.items) {
     L.push(`${it.qty} × ${it.name} ........ ${fmt(it.price * it.qty)} ر.س${it.was > it.price ? ` (بدل ${fmt(it.was * it.qty)})` : ""}`);
@@ -156,7 +158,7 @@ export const MODES = { pickup: "🏃 استلام من المحل", delivery: "�
 export function statusText(o) {
   const del = o.mode === "delivery", car = o.mode === "curbside";
   return ({ sent: "📨 أُرسل — بانتظار المحل", received: "👍 المحل استلم طلبك ويجهّزه",
-    ready: car ? (o.arrivedAt ? "🚗 جاهز — المحل جاي لسيارتك" : "🚗 جاهز — تعال واضغط «وصلت»") : "🛍️ جاهز للاستلام", delivering: "🚚 جاري التوصيل",
+    ready: (car ? (o.arrivedAt ? "🚗 جاهز — المحل جاي لسيارتك" : "🚗 جاهز — تعال واضغط «وصلت»") : "🛍️ جاهز للاستلام") + (o.readyNote ? ` — ${o.readyNote}` : ""), delivering: "🚚 جاري التوصيل",
     done: del ? "✅ تم التوصيل" : car ? "✅ تم التسليم" : "✅ تم الاستلام",
     cancelled: o.cancelBy === "store" ? "✕ ألغاه المحل" : "✕ ملغي", noshow: "🚫 ما انستلم" })[o.status] || o.status;
 }
