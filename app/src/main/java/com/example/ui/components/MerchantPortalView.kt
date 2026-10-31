@@ -86,6 +86,7 @@ fun MerchantPortalView(
     onEditOffer: (RestaurantOffer) -> Unit = {},
     onDeleteAccount: () -> Unit = {},
     branchesCount: Int = 0,
+    dupPhones: Boolean = false,
     onManageBranches: () -> Unit = {},
     isSuspended: Boolean = false,
     isTrusted: Boolean = true,
@@ -174,6 +175,7 @@ fun MerchantPortalView(
             onEditOffer = onEditOffer,
             onDeleteAccount = onDeleteAccount,
             branchesCount = branchesCount,
+            dupPhones = dupPhones,
             onManageBranches = onManageBranches,
             isSuspended = isSuspended,
             isTrusted = isTrusted,
@@ -489,6 +491,7 @@ private fun MerchantDashboard(
     onEditOffer: (RestaurantOffer) -> Unit,
     onDeleteAccount: () -> Unit,
     branchesCount: Int,
+    dupPhones: Boolean = false,
     onManageBranches: () -> Unit,
     isSuspended: Boolean,
     isTrusted: Boolean,
@@ -614,6 +617,11 @@ private fun MerchantDashboard(
             }
         }
 
+        if (dupPhones) item {
+            Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFDE8E6), modifier = Modifier.fillMaxWidth()) {
+                Text("📞 عندك فروع بنفس الرقم — طلبات كل فرع لازم تروح لرقمه. افتح «صفحة متجري» وعدّل أرقام الفروع", fontSize = 13.sp, color = Color(0xFFB42318), modifier = Modifier.padding(12.dp))
+            }
+        }
         // ٢. المنيو والطلبات
         if (catalogCard != null) item { catalogCard() }
 

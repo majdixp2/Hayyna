@@ -340,6 +340,9 @@ private fun StaffFormDialog(vm: MerchantViewModel, old: StoreStaff?, withPin: Bo
     var pin by remember { mutableStateOf("") }
     var pin2 by remember { mutableStateOf("") }
     val pinOnly = old != null && withPin
+    // 📍 فرعه (فاضي = كل الفروع)
+    val storeBranches = remember { vm.merchantProfile.value?.branches.orEmpty().filter { it.id.isNotBlank() } }
+    var brs by remember { mutableStateOf(old?.branchIds.orEmpty().toSet()) }
     AlertDialog(onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(when { old == null -> "➕ موظف جديد"; pinOnly -> "🔁 رمز سري جديد — ${old.displayName}"; else -> "✎ تعديل ${old.displayName}" }) },
         text = {
@@ -357,13 +360,27 @@ private fun StaffFormDialog(vm: MerchantViewModel, old: StoreStaff?, withPin: Bo
                             Switch(checked = k in perms, onCheckedChange = { perms = if (it) perms + k else perms - k })
                         }
                     }
+                    if (storeBranches.size > 1) {
+                        Text("📍 فرعه", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("كل الفروع", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Switch(checked = brs.isEmpty(), onCheckedChange = { brs = if (it) emptySet() else setOf(storeBranches.first().id) })
+                        }
+                        if (brs.isNotEmpty()) storeBranches.forEach { b ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Text(b.name.ifBlank { b.district.ifBlank { "الفرع" } }, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Switch(checked = b.id in brs, onCheckedChange = { on -> brs = if (on) brs + b.id else (brs - b.id) })
+                            }
+                        }
+                        Text("الموظف يشوف طلبات فرعه بس، ويوقف استقبال طلبات فرعه بس.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 } else Text("الرمز القديم يتقفل فوراً، والموظف يدخل بالرمز الجديد (نفس رقمه).", fontSize = 13.sp)
                 if (withPin) PinFields(pin, { pin = it }, pin2, { pin2 = it })
             }
         },
         confirmButton = {
             Button(
-                onClick = { vm.saveStaff(old, name, role, perms.toList(), if (withPin) pin else "", storeName, onDismiss) },
+                onClick = { vm.saveStaff(old, name, role, perms.toList(), if (withPin) pin else "", storeName, onDismiss, brs.toList()) },
                 enabled = !saving && (!withPin || (pin.length == 6 && pin == pin2)) && perms.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(containerColor = Navy)
             ) { if (saving) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp) else Text(if (old == null) "إضافة" else "حفظ", fontWeight = FontWeight.Bold) }

@@ -156,6 +156,9 @@ function googleMap(g, el, { center, zoom, showShops, onMapClick, onPoiClick }) {
     onRemove() { this.node.remove(); }
     setPos(pos) { this.pos = new g.LatLng(pos.lat, pos.lng); this.draw(); }
   }
+  // مستوى التكبير: الخريطة المصغّرة تاخذ class «zfar» (نخفي فيها عروض الإعلانات لو الأدمن فعّلها)
+  const zf = () => el.classList.toggle("zfar", (map.getZoom() || 0) < 14);
+  map.addListener("zoom_changed", zf); zf();
   const layers = { markers: [], dots: [] };
   let shopsOn = showShops, dark = document.documentElement.dataset.theme === "dark";
   let me = null, pin = null, circle = null;
@@ -216,6 +219,8 @@ function leafletMap(L, el, { center, zoom, onMapClick }) {
   map.attributionControl.setPrefix(false);
   el.classList.add("osm");
   const layers = { markers: L.layerGroup().addTo(map), dots: L.layerGroup().addTo(map) };
+  const zf = () => el.classList.toggle("zfar", map.getZoom() < 14);
+  map.on("zoomend", zf); zf();
   let me = null, pin = null, circle = null;
   const put = (layer, items, cls) => {
     layers[layer].clearLayers();

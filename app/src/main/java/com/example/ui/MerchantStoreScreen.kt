@@ -108,6 +108,13 @@ fun MerchantStoreScreen(
     val creditPrompt by viewModel.creditPrompt.collectAsStateWithLifecycle()
     val boostTarget by viewModel.boostTarget.collectAsStateWithLifecycle()
     val catalogCfg by viewModel.catalogConfig.collectAsStateWithLifecycle()
+    // 📣 إعلانات لكوفر
+    val announcements by viewModel.announcements.collectAsStateWithLifecycle()
+    val mapAnn by viewModel.mapAnnouncement.collectAsStateWithLifecycle()
+    var annExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val annGo: (com.example.data.repository.Announcement) -> Unit = { a ->
+        viewModel.annClick(a)?.let { u -> runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u))) } }
+    }
     var showMyOrders by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val allOffers by viewModel.allOffers.collectAsStateWithLifecycle()
     val filteredCustomerOffers by viewModel.filteredCustomerOffers.collectAsStateWithLifecycle()
@@ -256,6 +263,7 @@ fun MerchantStoreScreen(
                                 } else emptyList(),
                                 onStoreClick = { viewModel.openStorePage(it) },
                                 showGooglePoi = poiConfig.showGooglePoi,
+                                hideAdFar = poiConfig.hideAdFar,
                                 onPoiClick = { viewModel.onPoiClick(it) },
                                 onMyLocationClick = { viewModel.clearBrowse() },
                                 scope = scope,
@@ -596,6 +604,13 @@ fun MerchantStoreScreen(
                                             }
                                         }
                                     }
+                                    mapAnn?.let { a ->
+                                        com.example.ui.components.AnnouncementStrip(
+                                            a = a, expanded = annExpanded, onToggle = { annExpanded = !annExpanded },
+                                            onClose = { annExpanded = false; viewModel.hideAnnouncementToday(a.id) },
+                                            onView = { viewModel.annViewed(it) }, onClick = annGo
+                                        )
+                                    }
                                 }
                             }
 
@@ -710,6 +725,11 @@ fun MerchantStoreScreen(
                                 }
                             }
 
+                            // 📣 إعلانات لكوفر في «حسابي» (ثابتة بدون إغلاق)
+                            announcements.filter { it.onAccount }.take(2).forEach { a ->
+                                com.example.ui.components.AnnouncementCard(a, onView = { viewModel.annViewed(it) }, onClick = annGo,
+                                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
+                            }
                             MerchantPortalView(
                                 isLoggedIn = isMerchantLoggedIn,
                                 merchantEmail = merchantEmail,
@@ -759,6 +779,7 @@ fun MerchantStoreScreen(
                                 onEditOffer = { viewModel.startEditOffer(it) },
                                 onDeleteAccount = { viewModel.deleteAccount() },
                                 branchesCount = merchantProfile?.branches?.size ?: 0,
+                                dupPhones = merchantProfile?.branches.orEmpty().mapNotNull { com.example.ui.components.normalizeSaudiPhone(it.phone) }.let { it.size != it.toSet().size },
                                 onManageBranches = { viewModel.openBranchesPage() },
                                 isSuspended = myStatus?.suspended == true,
                                 isTrusted = isAdmin || (myStatus?.trusted == true && myStatus?.suspended != true),
@@ -878,6 +899,7 @@ fun MerchantStoreScreen(
                 isVerified = approvedStores.firstOrNull { it.uid == offer.merchantId }?.verified == true,
                 orderLabel = viewModel.offerOrderLabel(offer),
                 onOrder = { viewModel.orderFromOffer(offer) },
+                onOrderBranch = { id -> if (id.isNotBlank()) viewModel.branchPick.value = offer.merchantId to id },
                 onClaimAd = { viewModel.closeOfferDetail(); viewModel.claimAdOffer(offer) },
                 restockOn = offer.id in restockIds,
                 onRestock = { viewModel.toggleRestock(offer) }
@@ -997,14 +1019,15 @@ fun MerchantStoreScreen(
         boostTarget?.let { o ->
             val spotHere = boostsAll.any { it.offerId == o.id && it.effect == "spotlight" && it.startsAt <= nowMillis && nowMillis < it.endsAt }
             com.example.ui.components.BoostDialog(
-                offer = o,
+                offer = o.copy(spotlight = spotHere),
                 balance = if (isAdmin) 999_999L else (walletBal ?: 0L).coerceAtLeast(0L),
                 items = creditsCfg.items.values.filter { it.active }.sortedBy { it.order },
-                priceOf = { id, d -> viewModel.priceFor(id, d, o.exclusive).let { p -> (p?.full ?: 0L) to (p?.cost ?: 0L) } },
-                spotUsed = viewModel.spotlightsInDistrict(o.district),
+                priceOf = { id, d, nb -> viewModel.priceFor(id, d, o.exclusive, nb).let { p ->
+                    Triple(p?.full ?: 0L, p?.cost ?: 0L, p?.takeIf { it.promo > 0 }?.let { pr -> (pr.reason.ifBlank { "خصم ${pr.promo}%" }) + " • " + promoLeft(pr.promoEnds) }) } },
+                spotUsedAt = { d -> viewModel.spotlightsInDistrict(d) },
                 spotMax = creditsCfg.spotlightMax,
-                spotActiveHere = spotHere,
-                onBuy = { id, d -> viewModel.buyBoost(o, id, d) },
+                spotBranches = viewModel.spotBranchesOf(o.id),
+                onBuy = { id, d, ids -> viewModel.buyBoost(o, id, d, ids) },
                 onDismiss = { viewModel.closeBoost() }
             )
         }
@@ -1147,3 +1170,8 @@ fun RoleTabButton(
     }
 }
 
+/** «ينتهي خلال 3 أيام» / «ينتهي بكرة» / «آخر يوم» */
+fun promoLeft(end: Long, now: Long = System.currentTimeMillis()): String {
+    val d = Math.ceil((end - now) / 86_400_000.0).toInt()
+    return when { d <= 1 && com.example.data.model.PreOrder.dayStart(end) == com.example.data.model.PreOrder.dayStart(now) -> "آخر يوم"; d <= 1 -> "ينتهي بكرة"; else -> "ينتهي خلال $d أيام" }
+}

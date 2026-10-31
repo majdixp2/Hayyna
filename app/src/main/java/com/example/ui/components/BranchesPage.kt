@@ -152,6 +152,7 @@ fun BranchesPage(
         BranchEditor(
             branch = currentEditing,
             isNew = branches.none { it.id == currentEditing.id },
+            others = branches.filter { it.id != currentEditing.id },
             onDone = { updated ->
                 val i = branches.indexOfFirst { it.id == updated.id }
                 if (i >= 0) branches[i] = updated else branches.add(updated)
@@ -362,7 +363,7 @@ fun BranchesPage(
                                 val last = branches.lastOrNull()
                                 editing = Branch(
                                     id = UUID.randomUUID().toString().take(12),
-                                    phone = last?.phone.orEmpty(),
+                                    phone = "", // كل فرع له رقمه
                                     openMinute = last?.openMinute ?: -1,
                                     closeMinute = last?.closeMinute ?: -1
                                 )
@@ -426,6 +427,8 @@ fun BranchesPage(
                                     restaurantName.isBlank() -> error = "اكتب اسم المتجر."
                                     category.isBlank() -> error = "اختر تصنيف المتجر."
                                     branches.isEmpty() -> error = "أضف فرع واحد على الأقل."
+                                    branches.mapNotNull { normalizeSaudiPhone(it.phone) }.let { it.size != it.toSet().size } ->
+                                        error = "فيه فرعين بنفس الرقم — كل فرع لازم يكون له رقمه."
                                     else -> onSave(
                                         profile.copy(
                                             restaurantName = restaurantName.trim(),
@@ -487,6 +490,7 @@ data class StoreMediaEdits(val newLogo: String?, val newCover: String?)
 private fun BranchEditor(
     branch: Branch,
     isNew: Boolean,
+    others: List<Branch> = emptyList(),
     onDone: (Branch) -> Unit,
     onCancel: () -> Unit
 ) {
@@ -578,6 +582,8 @@ private fun BranchEditor(
                                 when {
                                     district.isBlank() -> error = "حدد موقع الفرع واكتب الحي."
                                     normalized == null -> error = "اكتب رقم جوال صحيح مثل 05xxxxxxxx."
+                                    others.any { normalizeSaudiPhone(it.phone) == normalized } ->
+                                        error = "الرقم هذا مسجّل لفرع ${others.first { normalizeSaudiPhone(it.phone) == normalized }.let { b -> b.name.ifBlank { b.district.ifBlank { "ثاني" } } }}، أدخل رقم ثاني."
                                     else -> onDone(
                                         branch.copy(
                                             name = name.trim(),

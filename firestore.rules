@@ -348,19 +348,32 @@ service cloud.firestore {
         && d.cost * 100 >= base * (100 - pct)
         && (d.cost - 1) * 100 < base * (100 - pct);
     }
+    // 🏷️ عرض لكوفر على سعر خدمة (credits.items[item].promo): نسبة لفترة، السعر مقرّب لفوق
+    function promoOk(it, d, base) {
+      let p = it.get('promo', null);
+      return p != null && p.get('pct', 0) is int && p.pct >= 1 && p.pct <= 100
+        && p.get('startsAt', null) is timestamp && p.get('endsAt', null) is timestamp
+        && request.time >= p.startsAt && request.time < p.endsAt
+        && d.get('promo', 0) == p.pct && !('disc' in d)
+        && d.cost * 100 >= base * (100 - p.pct)
+        && (d.cost - 1) * 100 < base * (100 - p.pct);
+    }
     function exclRewardOn() {
       return exclCfg().get('reward', {}).get('enabled', false) == true;
     }
     // خدمات مدفوعة (نشر / تمييز / إعلان بارز): السعر من إعدادات الأدمن، والخصم من المحفظة بنفس العملية
     function boostOk(d) {
       let it = creditsCfg().get('items', {}).get(d.item, null);
-      let base = it == null ? 0 : (it.unit == 'day' ? it.price * d.days : it.price);
+      // 🚀 السوبر لكل فرع: السعر × عدد الفروع المختارة
+      let nb = d.effect == 'spotlight' && 'branchIds' in d ? d.branchIds.size() : 1;
+      let base = it == null ? 0 : (it.unit == 'day' ? it.price * d.days : it.price) * nb;
       return it != null && it.get('active', false) == true
         && d.effect == it.effect
         && d.days is int && d.days >= 1 && d.days <= 90
         && (it.unit == 'day' || d.days == it.days)
         && d.cost is int && d.cost >= 0
-        && ((d.cost == base && d.cost > 0 && !('disc' in d)) || exclDiscountOk(it, d, base))
+        && (!('branchIds' in d) || (d.effect == 'spotlight' && d.branchIds is list && d.branchIds.size() >= 1 && d.branchIds.size() <= 50))
+        && ((d.cost == base && d.cost > 0 && !('disc' in d) && !('promo' in d)) || (exclDiscountOk(it, d, base) && !('promo' in d)) || promoOk(it, d, base))
         && d.createdAt == request.time
         && d.startsAt is timestamp && d.endsAt is timestamp
         && d.startsAt >= request.time - duration.value(1, 'h')
@@ -375,7 +388,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAdmin()
         || (isAuthenticated()
-          && request.resource.data.keys().hasOnly(['id', 'merchantId', 'offerId', 'item', 'effect', 'days', 'cost', 'disc', 'createdAt', 'startsAt', 'endsAt'])
+          && request.resource.data.keys().hasOnly(['id', 'merchantId', 'offerId', 'item', 'effect', 'days', 'cost', 'disc', 'promo', 'branchIds', 'createdAt', 'startsAt', 'endsAt'])
           && request.resource.data.id == boostId
           && request.resource.data.merchantId == request.auth.uid
           && request.resource.data.offerId is string
@@ -421,9 +434,24 @@ service cloud.firestore {
     }
     // ===== 👥 موظفين المتجر: دخول برقم المتجر + رقم الموظف + رمز سري (حساب داخلي بدون إيميل حقيقي) =====
     function staffPath() { return /databases/$(database)/documents/storeStaff/$(request.auth.uid); }
-    function storePaused(store) {
+    // ⏸️ المحل كله موقف، أو هذا الفرع موقف
+    function storePaused(store, branchId) {
       return exists(/databases/$(database)/documents/storeStatus/$(store))
-        && get(/databases/$(database)/documents/storeStatus/$(store)).data.paused == true;
+        && (get(/databases/$(database)/documents/storeStatus/$(store)).data.paused == true
+          || branchId in get(/databases/$(database)/documents/storeStatus/$(store)).data.get('pausedBranches', []));
+    }
+    // 👥 الموظف المخصص لفروع: يتعامل مع طلبات فروعه بس (بدون فروع = كل الفروع)
+    function staffBranchOk(branchId) {
+      return get(staffPath()).data.get('branchIds', []).size() == 0 || branchId == ''
+        || branchId in get(staffPath()).data.get('branchIds', []);
+    }
+    function staffPauseOk(storeUid) {
+      let mine = get(staffPath()).data.get('branchIds', []);
+      let old = resource == null ? [] : resource.data.get('pausedBranches', []);
+      let now = request.resource.data.get('pausedBranches', []);
+      return mine.size() == 0
+        || (request.resource.data.paused == (resource == null ? false : resource.data.paused)
+          && now.toSet().difference(old.toSet()).union(old.toSet().difference(now.toSet())).hasOnly(mine));
     }
     function isStoreStaff(store, perm) {
       return isAuthenticated() && featureOn('staff')
@@ -434,7 +462,8 @@ service cloud.firestore {
     }
     function codeOwner(code) { return get(/databases/$(database)/documents/storeCodes/$(code)).data.uid; }
     function staffOk(staffUid, d) {
-      return d.keys().hasOnly(['storeId', 'storeName', 'code', 'n', 'name', 'role', 'perms', 'active', 'createdAt', 'email'])
+      return d.keys().hasOnly(['storeId', 'storeName', 'code', 'n', 'name', 'role', 'perms', 'active', 'createdAt', 'email', 'branchIds'])
+        && (!('branchIds' in d) || (d.branchIds is list && d.branchIds.size() <= 50))
         && d.storeId == request.auth.uid && staffUid != request.auth.uid
         && d.code is string && codeOwner(d.code) == request.auth.uid
         && d.n is int && d.n >= 1 && d.n <= 50
@@ -479,12 +508,24 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (resource.data.storeId == request.auth.uid || isAdmin());
     }
 
+    // 📣 إعلانات لكوفر: الأدمن ينشرها، وأي أحد يزيد عدّاد المشاهدة أو الضغط بواحد
+    match /announcements/{id} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views'])
+          && request.resource.data.views == resource.data.get('views', 0) + 1)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clicks'])
+          && request.resource.data.clicks == resource.data.get('clicks', 0) + 1);
+    }
+
     // ⏸️ إيقاف استقبال الطلبات: صاحب المحل أو موظف الطلبات
     match /storeStatus/{storeUid} {
       allow read: if true;
-      allow write: if (isAuthenticated() && (request.auth.uid == storeUid || isStoreStaff(storeUid, 'orders')))
-        && request.resource.data.keys().hasOnly(['paused', 'pausedAt', 'by'])
+      allow write: if (isAuthenticated() && (request.auth.uid == storeUid || (isStoreStaff(storeUid, 'orders') && staffPauseOk(storeUid))))
+        && request.resource.data.keys().hasOnly(['paused', 'pausedAt', 'by', 'pausedBranches'])
         && request.resource.data.paused is bool
+        && (!('pausedBranches' in request.resource.data) || (request.resource.data.pausedBranches is list && request.resource.data.pausedBranches.size() <= 50))
         && request.resource.data.pausedAt == request.time
         && request.resource.data.by is string && request.resource.data.by.size() <= 60;
     }
@@ -562,16 +603,16 @@ service cloud.firestore {
         && (request.resource.data.mode != 'curbside' || featureOn('curbside'))
         && request.resource.data.status == 'sent'
         && request.resource.data.createdAt == request.time
-        && !storePaused(request.resource.data.storeId)
+        && !storePaused(request.resource.data.storeId, request.resource.data.get('branchId', ''))
         && !noshowBlocked(request.auth.uid);
       allow read: if can('merchants')
         || (isAuthenticated() && (resource.data.customerUid == request.auth.uid || resource.data.storeId == request.auth.uid))
-        || isStoreStaff(resource.data.storeId, 'orders');
+        || (isStoreStaff(resource.data.storeId, 'orders') && staffBranchOk(resource.data.get('branchId', '')));
       // المحل يحدّث الحالة (ما يرجع طلب انتهى)، ويلغي بسبب، ويرد على طلب الإلغاء
       allow update: if can('merchants')
         || (isAuthenticated() && (resource.data.storeId == request.auth.uid
               // 👥 موظف الطلبات: نفس صلاحية المحل ما عدا «ما انستلم» (لصاحب المحل)
-              || (isStoreStaff(resource.data.storeId, 'orders') && request.resource.data.status != 'noshow'))
+              || (isStoreStaff(resource.data.storeId, 'orders') && staffBranchOk(resource.data.get('branchId', '')) && request.resource.data.status != 'noshow'))
           && resource.data.status in ['sent', 'received', 'ready', 'delivering']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'etaAt', 'readyAt', 'cancelReason', 'cancelReqAns', 'cancelBy', 'readyNote'])
           && (!('readyNote' in request.resource.data) || (request.resource.data.readyNote is string && request.resource.data.readyNote.size() <= 80))
@@ -615,14 +656,14 @@ service cloud.firestore {
       return featureOn('preorder') && exists(prePath(d.storeId)) && get(prePath(d.storeId)).data.on == true
         && d.scheduledAt is timestamp && d.scheduledAt > request.time && d.scheduledAt < request.time + duration.value(15, 'd')
         && ((d.mode == 'delivery' && get(prePath(d.storeId)).data.delivery == true
-              && d.slotKey is string && d.slotKey.size() == 13
+              && d.slotKey is string && d.slotKey.size() >= 13 && d.slotKey.size() <= 60
               && getAfter(slotPath(d.storeId + '_' + d.slotKey)).data.last == orderId)
           || (d.mode != 'delivery' && get(prePath(d.storeId)).data.pickup == true && d.get('slotKey', '') == ''));
     }
     function slotDocOk(id) {
       let d = request.resource.data;
       return d.keys().hasOnly(['storeId', 'slotKey', 'n', 'last'])
-        && d.storeId is string && d.slotKey is string && d.slotKey.size() == 13 && id == d.storeId + '_' + d.slotKey
+        && d.storeId is string && d.slotKey is string && d.slotKey.size() >= 13 && d.slotKey.size() <= 60 && id == d.storeId + '_' + d.slotKey
         && d.n is int && d.last is string && d.last.size() > 0;
     }
     // حجز: العدد يزيد واحد مع طلب جديد لنفس الفترة في نفس العملية، وما يتعدى الحد

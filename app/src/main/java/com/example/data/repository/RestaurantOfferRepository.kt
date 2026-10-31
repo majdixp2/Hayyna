@@ -411,7 +411,10 @@ class RestaurantOfferRepository(
                     id = id, name = (m["name"] as? String ?: id).let { n -> if (Regex("إبراز|مُبرز").containsMatchIn(n)) n.replace(Regex("🚀\\s*"), "").replace(Regex("الإبراز|إبراز|مُبرز"), "🚀 عرض سوبر") else n }, effect = m["effect"] as? String ?: "",
                     unit = m["unit"] as? String ?: "fixed", price = (m["price"] as? Number)?.toLong() ?: 0L,
                     days = (m["days"] as? Number)?.toInt() ?: 1, active = m["active"] as? Boolean ?: false,
-                    order = (m["order"] as? Number)?.toInt() ?: 0
+                    order = (m["order"] as? Number)?.toInt() ?: 0,
+                    promo = (m["promo"] as? Map<*, *>)?.let { p -> CreditPromo(
+                        (p["pct"] as? Number)?.toInt() ?: 0, p["reason"] as? String ?: "",
+                        (p["startsAt"] as? Timestamp)?.toDate()?.time ?: 0L, (p["endsAt"] as? Timestamp)?.toDate()?.time ?: 0L, (p["newDays"] as? Number)?.toInt() ?: 0) }
                 )
             }?.associateBy { it.id } ?: CreditItem.DEFAULTS
             trySend(
@@ -426,11 +429,39 @@ class RestaurantOfferRepository(
                     graceUntilMillis = (cr["graceUntil"] as? Timestamp)?.toDate()?.time ?: Long.MAX_VALUE,
                     exclusiveEnabled = ex["enabled"] as? Boolean ?: true,
                     exclusiveLabel = (ex["label"] as? String)?.takeIf { it.isNotBlank() } ?: "حصري في لكوفر",
-                    exclusiveIcon = (ex["icon"] as? String)?.takeIf { it.isNotBlank() } ?: "💎"
+                    exclusiveIcon = (ex["icon"] as? String)?.takeIf { it.isNotBlank() } ?: "💎",
+                    storeUrl = cr["storeUrl"] as? String ?: "",
+                    promoStoreUrl = cr["promoStoreUrl"] as? String ?: ""
                 )
             )
         }
         awaitClose { listener.remove() }
+    }
+
+    /** 📣 إعلانات لكوفر (الأدمن يتحكم فيها) */
+    val announcements: Flow<List<Announcement>> = callbackFlow {
+        val listener = db.collection("announcements").whereGreaterThan("endsAt", Timestamp.now())
+            .addSnapshotListener { snap, _ ->
+                trySend(snap?.documents.orEmpty().map { d ->
+                    @Suppress("UNCHECKED_CAST")
+                    val pl = d.get("places") as? Map<String, Any?> ?: emptyMap()
+                    Announcement(
+                        id = d.id, title = d.getString("title").orEmpty(), sub = d.getString("sub").orEmpty(), cta = d.getString("cta").orEmpty(),
+                        titleEn = d.getString("titleEn").orEmpty(), subEn = d.getString("subEn").orEmpty(), ctaEn = d.getString("ctaEn").orEmpty(),
+                        badge = d.getString("badge").orEmpty(), color = d.getString("color") ?: "navy", action = d.getString("action") ?: "none",
+                        value = d.getString("value").orEmpty(), audience = d.getString("audience") ?: "all",
+                        onMap = pl["map"] as? Boolean ?: false, onAccount = pl["account"] as? Boolean ?: false,
+                        startsAt = d.getTimestamp("startsAt")?.toDate()?.time ?: 0L, endsAt = d.getTimestamp("endsAt")?.toDate()?.time ?: 0L,
+                        active = d.getBoolean("active") ?: true, createdAt = d.getTimestamp("createdAt")?.toDate()?.time ?: 0L
+                    )
+                }.sortedByDescending { it.createdAt })
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun bumpAnnouncement(id: String, field: String) {
+        if (field != "views" && field != "clicks") return
+        db.collection("announcements").document(id).update(field, FieldValue.increment(1)).await()
     }
 
     /** الخدمات المدفوعة النشطة (نشر / تمييز / إعلان بارز). */
@@ -443,7 +474,8 @@ class RestaurantOfferRepository(
                         offerId = d.getString("offerId").orEmpty(),
                         effect = d.getString("effect").orEmpty(),
                         startsAt = d.getTimestamp("startsAt")?.toDate()?.time ?: 0L,
-                        endsAt = d.getTimestamp("endsAt")?.toDate()?.time ?: 0L
+                        endsAt = d.getTimestamp("endsAt")?.toDate()?.time ?: 0L,
+                        branchIds = (d.get("branchIds") as? List<*>)?.mapNotNull { it as? String }.orEmpty()
                     )
                 })
             }
@@ -458,7 +490,8 @@ class RestaurantOfferRepository(
                     showGooglePoi = snap?.getBoolean("showGooglePoi") ?: true,
                     inviteEnabled = snap?.getBoolean("poiInviteEnabled") ?: true,
                     inviteMessage = snap?.getString("inviteMessage")?.takeIf { it.isNotBlank() } ?: PoiConfig.DEFAULT_MESSAGE,
-                    appLink = snap?.getString("appLink").orEmpty()
+                    appLink = snap?.getString("appLink").orEmpty(),
+                    hideAdFar = snap?.getBoolean("hideAdFar") == true
                 )
             )
         }
@@ -811,7 +844,8 @@ class RestaurantOfferRepository(
      */
     suspend fun spendOnOffer(
         uid: String, balance: Long, charge: Boolean, offerId: String, item: CreditItem, days: Int, cost: Long, disc: Int,
-        startMillis: Long, note: String, offer: RestaurantOffer? = null, offerUpdate: Map<String, Any?>? = null
+        startMillis: Long, note: String, offer: RestaurantOffer? = null, offerUpdate: Map<String, Any?>? = null,
+        promo: Int = 0, branchIds: List<String> = emptyList()
     ): String {
         val b = db.batch()
         val offerRef = if (offerId.isNotBlank()) offersCollection.document(offerId) else offersCollection.document()
@@ -825,6 +859,8 @@ class RestaurantOfferRepository(
             "startsAt" to Timestamp(java.util.Date(start)), "endsAt" to Timestamp(java.util.Date(start + days * 86_400_000L))
         )
         if (disc > 0) boost["disc"] = disc.toLong()
+        if (promo > 0) boost["promo"] = promo.toLong()
+        if (branchIds.isNotEmpty() && item.effect == "spotlight") boost["branchIds"] = branchIds.take(50)
         b.set(boostRef, boost)
         if (charge && cost > 0) {
             val w = db.collection("wallets").document(uid)
@@ -928,20 +964,22 @@ class RestaurantOfferRepository(
         (d.getTimestamp("soldOutUntil")?.toDate()?.time ?: 0L) > System.currentTimeMillis()
     }.getOrDefault(false)
     // ⏸️ إيقاف استقبال الطلبات (storeStatus/{storeUid})
-    suspend fun storePausedNow(storeId: String): Boolean = runCatching {
-        db.collection("storeStatus").document(storeId).get(com.google.firebase.firestore.Source.SERVER).await().getBoolean("paused") == true
+    /** ⏸️ (المحل كله موقف، الفروع الموقفة) */
+    private fun pauseOf(d: DocumentSnapshot?) = (d?.getBoolean("paused") == true) to (d?.get("pausedBranches") as? List<*>)?.mapNotNull { it as? String }.orEmpty().toSet()
+    suspend fun storePausedNow(storeId: String): Pair<Boolean, Set<String>> = runCatching {
+        pauseOf(db.collection("storeStatus").document(storeId).get(com.google.firebase.firestore.Source.SERVER).await())
     }.recoverCatching {
-        db.collection("storeStatus").document(storeId).get().await().getBoolean("paused") == true
-    }.getOrDefault(false)
-    fun storePaused(storeId: String): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.callbackFlow {
+        pauseOf(db.collection("storeStatus").document(storeId).get().await())
+    }.getOrDefault(false to emptySet())
+    fun storePaused(storeId: String): kotlinx.coroutines.flow.Flow<Pair<Boolean, Set<String>>> = kotlinx.coroutines.flow.callbackFlow {
         val reg = db.collection("storeStatus").document(storeId).addSnapshotListener { d, e ->
             if (e != null) { Log.w("Repo", "storeStatus: ${e.message}"); return@addSnapshotListener }
-            trySend(d?.getBoolean("paused") == true)
+            trySend(pauseOf(d))
         }
         awaitClose { reg.remove() }
     }
-    suspend fun setStorePaused(storeId: String, paused: Boolean, by: String) {
-        db.collection("storeStatus").document(storeId).set(mapOf("paused" to paused, "pausedAt" to FieldValue.serverTimestamp(), "by" to by.take(60))).await()
+    suspend fun setStorePaused(storeId: String, paused: Boolean, by: String, branches: Set<String> = emptySet()) {
+        db.collection("storeStatus").document(storeId).set(mapOf("paused" to paused, "pausedAt" to FieldValue.serverTimestamp(), "by" to by.take(60), "pausedBranches" to branches.toList().take(50))).await()
     }
     /** 👥 موظف «نفد اليوم»: يغيّر التوفر بس */
     suspend fun setItemAvailable(id: String, available: Boolean) {
@@ -953,7 +991,8 @@ class RestaurantOfferRepository(
         uid = d.id, storeId = d.getString("storeId").orEmpty(), storeName = d.getString("storeName").orEmpty(),
         code = d.getString("code").orEmpty(), n = (d.getLong("n") ?: 0L).toInt(), name = d.getString("name").orEmpty(),
         role = d.getString("role") ?: "cashier", perms = (d.get("perms") as? List<*>)?.mapNotNull { it as? String }.orEmpty(),
-        active = d.getBoolean("active") ?: false, email = d.getString("email").orEmpty()
+        active = d.getBoolean("active") ?: false, email = d.getString("email").orEmpty(),
+        branchIds = (d.get("branchIds") as? List<*>)?.mapNotNull { it as? String }.orEmpty()
     )
     /** ملف الموظف نفسه (null = انحذف) */
     fun staffSelf(uid: String): Flow<com.example.data.model.StoreStaff?> = callbackFlow {
@@ -997,7 +1036,7 @@ class RestaurantOfferRepository(
         } finally { runCatching { app2.delete() } }
     }
     suspend fun addStaff(context: Context, ownerUid: String, storeName: String, code: String, n: Int, name: String, role: String, perms: List<String>, pin: String,
-                         replace: com.example.data.model.StoreStaff? = null) {
+                         replace: com.example.data.model.StoreStaff? = null, branchIds: List<String> = emptyList()) {
         val rnd = (1..6).map { "abcdefghijklmnopqrstuvwxyz0123456789".random() }.joinToString("")
         val email = "$code-$n-$rnd@${com.example.data.model.StoreStaff.DOMAIN}"
         val uid = createStaffAccount(context, email, pin)
@@ -1005,7 +1044,8 @@ class RestaurantOfferRepository(
         if (replace != null) wb.delete(db.collection("storeStaff").document(replace.uid))
         wb.set(db.collection("storeStaff").document(uid), hashMapOf(
             "storeId" to ownerUid, "storeName" to storeName.take(100), "code" to code, "n" to n.toLong(), "name" to name.take(40),
-            "role" to role, "perms" to perms, "active" to (replace?.active ?: true), "createdAt" to FieldValue.serverTimestamp(), "email" to email))
+            "role" to role, "perms" to perms, "active" to (replace?.active ?: true), "createdAt" to FieldValue.serverTimestamp(), "email" to email,
+            "branchIds" to (replace?.branchIds ?: branchIds).take(50)))
         wb.set(db.collection("staffLogin").document("$code-$n"), hashMapOf("email" to email, "storeId" to ownerUid, "n" to n.toLong()))
         wb.commit().await()
     }
@@ -1054,7 +1094,8 @@ class RestaurantOfferRepository(
         cancelReq = d.getString("cancelReq").orEmpty(), cancelReqAns = d.getString("cancelReqAns").orEmpty(),
         cancelBy = d.getString("cancelBy").orEmpty(), cancelReason = d.getString("cancelReason").orEmpty(),
         lat = (d.get("location") as? Map<String, Any?>)?.get("lat") as? Double, lng = (d.get("location") as? Map<String, Any?>)?.get("lng") as? Double,
-        scheduledAtMillis = d.getTimestamp("scheduledAt")?.toDate()?.time ?: 0L, slotKey = d.getString("slotKey").orEmpty(), readyNote = d.getString("readyNote").orEmpty()
+        scheduledAtMillis = d.getTimestamp("scheduledAt")?.toDate()?.time ?: 0L, slotKey = d.getString("slotKey").orEmpty(), readyNote = d.getString("readyNote").orEmpty(),
+        branchId = d.getString("branchId").orEmpty()
     )
     fun myOrdersFlow(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
         val l = db.collection("orders").whereEqualTo("customerUid", uid).addSnapshotListener { s, e ->
@@ -1075,8 +1116,10 @@ class RestaurantOfferRepository(
             .map { Triple((it.getLong("stars") ?: 0L).toInt(), it.getString("name").orEmpty(), it.getString("text").orEmpty()) }
     }.getOrDefault(emptyList())
     /** طلبات المحل + هل الدفعة من الكاش (أول دفعة من السيرفر هي «الأساس» عشان ما نحسب القديمة «جديدة») */
-    fun storeOrders(uid: String): Flow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>> = callbackFlow {
-        val l = db.collection("orders").whereEqualTo("storeId", uid).addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { s, _ ->
+    fun storeOrders(uid: String, branchIds: List<String> = emptyList()): Flow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>> = callbackFlow {
+        // 👥 موظف مخصص لفروع: طلبات فروعه بس (والطلبات اللي ما لها فرع)
+        val q = db.collection("orders").whereEqualTo("storeId", uid).let { if (branchIds.isEmpty()) it else it.whereIn("branchId", branchIds.take(29) + "") }
+        val l = q.addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { s, _ ->
             if (s != null) trySend(s.documents.map { parseOrder(it) }.sortedByDescending { it.createdAtMillis } to s.metadata.isFromCache)
         }
         awaitClose { l.remove() }
@@ -1410,15 +1453,30 @@ data class CreditsConfig(
     val graceUntilMillis: Long = Long.MAX_VALUE,
     val exclusiveEnabled: Boolean = true,
     val exclusiveLabel: String = "حصري في لكوفر",
-    val exclusiveIcon: String = "💎"
+    val exclusiveIcon: String = "💎",
+    val storeUrl: String = "",
+    val promoStoreUrl: String = ""
 )
 
-data class Boost(val offerId: String, val effect: String, val startsAt: Long, val endsAt: Long, val merchantId: String = "")
+/** 📣 إعلان لكوفر: فوق الخريطة (سطر يتوسع) و/أو في «حسابي» (ثابت) */
+data class Announcement(
+    val id: String, val title: String, val sub: String = "", val cta: String = "",
+    val titleEn: String = "", val subEn: String = "", val ctaEn: String = "",
+    val badge: String = "", val color: String = "navy", val action: String = "none", val value: String = "",
+    val audience: String = "all", val onMap: Boolean = false, val onAccount: Boolean = false,
+    val startsAt: Long = 0L, val endsAt: Long = 0L, val active: Boolean = true, val createdAt: Long = 0L
+)
+
+data class Boost(val offerId: String, val effect: String, val startsAt: Long, val endsAt: Long, val merchantId: String = "", val branchIds: List<String> = emptyList())
+/** 🏷️ عرض لكوفر على سعر خدمة */
+data class CreditPromo(val pct: Int, val reason: String, val startsAt: Long, val endsAt: Long, val newDays: Int = 0) {
+    fun activeFor(now: Long, joinedAt: Long) = pct in 1..100 && now in startsAt until endsAt && (newDays <= 0 || (joinedAt > 0 && now - joinedAt <= newDays * 86_400_000L))
+}
 
 /** خدمة مدفوعة (من إعدادات الأدمن): effect = publish / feature / listTop / spotlight */
 data class CreditItem(
     val id: String, val name: String, val effect: String, val unit: String, val price: Long, val days: Int,
-    val active: Boolean, val order: Int = 0
+    val active: Boolean, val order: Int = 0, val promo: CreditPromo? = null
 ) {
     fun baseCost(d: Int): Long = if (unit == "day") price * d else price
     fun daysFor(d: Int): Int = if (unit == "day") d else days
@@ -1436,7 +1494,9 @@ data class PoiConfig(
     val showGooglePoi: Boolean = true,
     val inviteEnabled: Boolean = true,
     val inviteMessage: String = DEFAULT_MESSAGE,
-    val appLink: String = ""
+    val appLink: String = "",
+    /** 📷 إخفاء عروض الإعلانات لما الخريطة مصغّرة */
+    val hideAdFar: Boolean = false
 ) {
     companion object {
         const val DEFAULT_MESSAGE =

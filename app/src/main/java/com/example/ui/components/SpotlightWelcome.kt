@@ -52,8 +52,8 @@ fun SpotlightWelcome(offers: List<RestaurantOffer>, hasLocation: Boolean, onOpen
         val prefs = context.getSharedPreferences("hayyna", android.content.Context.MODE_PRIVATE)
         val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
         if (prefs.getString("spot_day", "") == today) return@LaunchedEffect
-        prefs.edit().putString("spot_day", today).apply()
         kotlinx.coroutines.delay(1200)
+        prefs.edit().putString("spot_day", today).apply() // تنحسب «طلعت» لما تطلع فعلاً
         shown = near.random()
     }
     val o = shown ?: return

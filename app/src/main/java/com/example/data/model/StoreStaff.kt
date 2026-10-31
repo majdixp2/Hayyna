@@ -11,7 +11,9 @@ data class StoreStaff(
     val role: String = "cashier",
     val perms: List<String> = emptyList(),
     val active: Boolean = true,
-    val email: String = ""
+    val email: String = "",
+    /** 📍 فروعه (فاضي = كل الفروع) */
+    val branchIds: List<String> = emptyList()
 ) {
     val displayName: String get() = name.ifBlank { "موظف $n" }
     val canOrders: Boolean get() = active && "orders" in perms

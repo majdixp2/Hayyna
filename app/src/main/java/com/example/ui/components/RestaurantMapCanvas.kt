@@ -107,6 +107,7 @@ fun FullScreenRestaurantMap(
     onStoreClick: (com.example.data.model.StoreProfile) -> Unit = {},
     // نقاط محلات Google الباهتة (يتحكم فيها الأدمن)
     showGooglePoi: Boolean = false,
+    hideAdFar: Boolean = false,
     onPoiClick: (com.google.android.gms.maps.model.PointOfInterest) -> Unit = {},
     // نطاق العروض: all / district / near — والضغط على الشارة يتنقل بينها
     scope: String = "all",
@@ -211,7 +212,7 @@ fun FullScreenRestaurantMap(
             .values
             .map { group ->
                 group.sortedWith(
-                    compareByDescending<RestaurantOffer> { it.spotlight }.thenByDescending { it.isFeatured }
+                    compareByDescending<RestaurantOffer> { mapRank(it) }
                         .thenByDescending { com.example.data.model.OfferPricing.effectivePercent(it) }
                 )
             }
@@ -241,7 +242,9 @@ fun FullScreenRestaurantMap(
         }
     }
 
-    val clusterItems = markerGroups.map { group ->
+    // 📷 الخريطة مصغّرة + الأدمن مفعّل الإخفاء: عروض الإعلانات ما تطلع
+    val far = cameraPositionState.position.zoom < 14f
+    val clusterItems = markerGroups.filter { g -> !(hideAdFar && far && g.first().source == "ad" && g.none { it.id == selectedOffer?.id }) }.map { group ->
         val top = group.first()
         val selected = selectedOffer != null && group.any { it.id == selectedOffer.id } &&
             (selectedOffer.selectedBranchId.isBlank() || selectedOffer.selectedBranchId == top.selectedBranchId)
@@ -356,7 +359,10 @@ fun FullScreenRestaurantMap(
                     true
                 },
                 clusterContent = { cluster ->
-                    OfferClusterBubble(count = cluster.size)
+                    // الدائرة تعرض أعلى عرض فيها أولوية (سوبر ← مميز ← عادي ← إعلان) مع العدد
+                    val best = cluster.items.maxWithOrNull(compareBy<OfferClusterItem> { mapRank(it.offer) }.thenBy { com.example.data.model.OfferPricing.effectivePercent(it.offer) })
+                    if (best == null) OfferClusterBubble(count = cluster.size)
+                    else OfferCircleMarker(offer = best.offer, isSelected = false, bitmap = best.bitmap, logo = best.logo, extraCount = cluster.items.sumOf { it.groupOffers.size } - 1)
                 },
                 clusterItemContent = { item ->
                     OfferCircleMarker(
@@ -521,8 +527,11 @@ data class OfferClusterItem(
     override fun getPosition(): LatLng = LatLng(offer.latitude, offer.longitude)
     override fun getTitle(): String? = offer.restaurantName
     override fun getSnippet(): String? = offer.offerTitle
-    override fun getZIndex(): Float? = if (isSelected) 3f else if (offer.spotlight) 2f else if (offer.isFeatured) 1f else 0f
+    override fun getZIndex(): Float? = if (isSelected) 4f else mapRank(offer).toFloat()
 }
+
+/** ترتيب الأولوية على الخريطة: 🚀 سوبر ← ✨ مميز ← عادي ← 📷 عروض الإعلانات */
+fun mapRank(o: RestaurantOffer): Int = when { o.spotlight -> 3; o.isFeatured -> 2; o.source == "ad" -> 0; else -> 1 }
 
 private suspend fun loadMarkerBitmap(context: Context, url: String): ImageBitmap? = try {
     val request = ImageRequest.Builder(context)

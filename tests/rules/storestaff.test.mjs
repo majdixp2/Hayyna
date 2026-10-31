@@ -25,6 +25,9 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "storeStaff/off"), { ...staff(3, { active: false }), createdAt: new Date() });
   await setDoc(doc(db, "orders/o1"), { storeId: "own", customerUid: "c1", status: "sent", items: [], total: 10 });
   await setDoc(doc(db, "orders/o2"), { storeId: "oth", customerUid: "c1", status: "sent", items: [], total: 10 });
+  await setDoc(doc(db, "storeStaff/br1"), { ...staff(9, { perms: ["orders"], branchIds: ["b1"] }), createdAt: new Date() });
+  await setDoc(doc(db, "orders/ob1"), { storeId: "own", branchId: "b1", customerUid: "c1", status: "sent", items: [], total: 10 });
+  await setDoc(doc(db, "orders/ob2"), { storeId: "own", branchId: "b2", customerUid: "c1", status: "sent", items: [], total: 10 });
   await setDoc(doc(db, "orders/o3"), { storeId: "own", customerUid: "c1", status: "received", items: [], total: 10 });
   await setDoc(doc(db, "offers/of1"), { merchantId: "own", isApproved: true, offerTitle: "عرض", viewsCount: 0 });
   await setDoc(doc(db, "offers/of2"), { merchantId: "own", isApproved: false, offerTitle: "مراجعة" });
@@ -57,6 +60,13 @@ await t("المطبخ يجهّز الطلب", () => assertSucceeds(updateDoc(doc
 await t("الموظف ما يسجّل «ما انستلم»", () => assertFails(updateDoc(doc(CASH(), "orders/o1"), { status: "noshow", updatedAt: serverTimestamp() })));
 await t("الموظف الموقوف ما يشوف الطلبات", () => assertFails(getDoc(doc(OFF(), "orders/o1"))));
 await t("مستخدم عادي ما يشوف طلبات المحل", () => assertFails(getDoc(doc(RND(), "orders/o1"))));
+console.log("موظف فرع");
+const BR1 = () => as("br1");
+await t("موظف الفرع يشوف طلب فرعه", () => assertSucceeds(getDoc(doc(BR1(), "orders/ob1"))));
+await t("موظف الفرع ما يشوف طلب فرع ثاني", () => assertFails(getDoc(doc(BR1(), "orders/ob2"))));
+await t("موظف الفرع يستعلم عن طلبات فرعه", () => assertSucceeds(getDocs(query(collection(BR1(), "orders"), where("storeId", "==", "own"), where("branchId", "in", ["b1", ""])))));
+await t("موظف الفرع ما يغيّر طلب فرع ثاني", () => assertFails(updateDoc(doc(BR1(), "orders/ob2"), { status: "received", updatedAt: serverTimestamp() })));
+await t("صاحب المحل يضيف موظف لفرع", () => assertSucceeds(setDoc(doc(OWN(), "storeStaff/new9"), staff(10, { branchIds: ["b1", "b2"] }))));
 
 console.log("نفد اليوم");
 await t("الكاشير يعلّم الصنف نفد", () => assertSucceeds(updateDoc(doc(CASH(), "items/own_menu_0"), { available: false, updatedAt: serverTimestamp() })));

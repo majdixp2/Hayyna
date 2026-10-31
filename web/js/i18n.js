@@ -7,7 +7,7 @@ try { LANG = localStorage.getItem("hayyna_lang") || "ar"; } catch {}
 export const lang = () => LANG;
 
 // عناصر فيها محتوى التاجر: ما نترجمها
-const SKIP = ".oc-items, .co-line > span, .icard .ic-main > b, .ic-main small, .ks-sub, .otr-tx small, .sf-store b, .nt, .desc:not(.tr), .nm, .title, .store-row span, .mname, .amb-row b, .ch-main b, .au-main b, .b-name, .about, .otitle, .sname, script, style, textarea";
+const SKIP = ".oc-items, .co-line > span, .icard .ic-main > b, .ic-main small, .ks-sub, .otr-tx small, .sf-store b, .nt, .desc:not(.tr), .nm, .title, .store-row span, .mname, .amb-row b, .ch-main b, .au-main b, .b-name, .about, .otitle, .sname, .ann-h, .ann-s, .ann-cta, .ann-strip > b, script, style, textarea";
 
 // ---- القاموس والقواعد: ملف واحد مشترك مع تطبيق الأندرويد (web/i18n/en.json) ----
 // rules: [نمط, بديل] للنصوص اللي فيها أرقام. dict: النص العربي ← الإنجليزي (الأطول يتطبّق أول).

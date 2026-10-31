@@ -109,7 +109,8 @@ data class HayynaOrder(
     val customerUid: String = "", val spot: String = "", val readyAtMillis: Long = 0L,
     val cancelReq: String = "", val cancelReqAns: String = "", val cancelBy: String = "", val cancelReason: String = "",
     // 📅 طلب مسبق + 🛍️ ملاحظة الجاهزية
-    val scheduledAtMillis: Long = 0L, val slotKey: String = "", val readyNote: String = ""
+    val scheduledAtMillis: Long = 0L, val slotKey: String = "", val readyNote: String = "",
+    val branchId: String = ""
 ) {
     val isScheduled get() = scheduledAtMillis > 0
     val isLive get() = status in listOf("sent", "received", "ready", "delivering")

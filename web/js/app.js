@@ -12,6 +12,7 @@ import * as X from "./logic.js";
 import { createMap, placeDetails, searchPlaces } from "./map.js";
 import { canScout, mountAdForm } from "./scout.js";
 import { startI18n } from "./i18n.js";
+import { watchAnnouncements, renderAnnStrip, annAccountHtml, bindAnn } from "./announce.js";
 import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
 import { renderStoreItems, openMyOrders, ordersOn, watchMyOrders, myOrdersClosed, renderStoreRatings, orderFromOffer, offerOrderable, restockBtn, bindRestock, checkRestock } from "./catalog-ui.js";
 startI18n();
@@ -144,6 +145,8 @@ const isFresh = (o, now = Date.now()) => { const t = X.ms(o.startsAt) || X.ms(o.
 const isFeat = (o) => !!o.isFeatured || activeEffects(state.boosts, o.id).feature;
 const isListTop = (o) => activeEffects(state.boosts, o.id).listTop;
 const isSpot = (o) => activeEffects(state.boosts, o.id).spotlight;
+// 🚀 السوبر على هالفرع؟ (السوبر صار لكل فرع؛ القديم يشمل كل الفروع)
+const isSpotAt = (o, bid) => { const e = activeEffects(state.boosts, o.id); return e.spotlight && (e.spotAll || !bid || e.spotBranches.has(bid)); };
 const spotPill = (o) => isSpot(o) ? `<span class="pill spot">🚀 عرض سوبر</span>` : "";
 const exclBadge = (o, cls = "") => { const ex = exclusiveOf(state.config); return o.exclusive && ex.enabled ? `<span class="xbadge ${cls}" style="background:${esc(ex.color)}">${esc(ex.icon)} ${esc(ex.label)}</span>` : ""; };
 function filtered({ ignoreQuery = false } = {}) {
@@ -218,14 +221,17 @@ function renderScope(count) {
 
 // ---------------- الخريطة ----------------
 let map = null, fitted = false;
-function markerHtml(o, extra, on) {
+function markerHtml(o, extra, on, bid) {
+  const sp = bid === undefined ? isSpot(o) : isSpotAt(o, bid);
   const bd = badge(o);
   const logo = o.logoUrl ? `<img class="lg" src="${esc(cld(o.logoUrl, 80))}" alt="">` : "";
   const ex = exclusiveOf(state.config);
-  return `<div class="mk${on ? " on" : ""}${isFeat(o) ? " feat" : ""}${isSpot(o) ? " spot" : ""}${o.postType === "new" ? " isnew" : ""}">${isSpot(o) && !on ? `<span class="mk-name">🚀 ${esc(o.restaurantName)}</span>` : ""}${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
+  return `<div class="mk${on ? " on" : ""}${o.source === "ad" ? " isad" : ""}${isFeat(o) ? " feat" : ""}${sp ? " spot" : ""}${o.postType === "new" ? " isnew" : ""}">${sp && !on ? `<span class="mk-name">🚀 ${esc(o.restaurantName)}</span>` : ""}${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
     + (extra > 0 ? `<span class="more">+${extra}</span>` : "")
     + (bd ? `<span class="pct${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : "") + `</div>`;
 }
+// ترتيب الأولوية على الخريطة: 🚀 سوبر ← ✨ مميز ← عادي ← 📷 عروض الإعلانات
+const rankOf = (o, bid) => (bid === undefined ? isSpot(o) : isSpotAt(o, bid)) ? 3 : isFeat(o) ? 2 : o.source === "ad" ? 0 : 1;
 function renderMap(list) {
   if (!map) return;
   const groups = new Map();
@@ -237,10 +243,10 @@ function renderMap(list) {
   }));
   const items = [];
   groups.forEach(({ b, items: arr }) => {
-    arr.sort((x, y) => (isFeat(y) ? 1 : 0) - (isFeat(x) ? 1 : 0) || effectivePercent(y) - effectivePercent(x));
+    arr.sort((x, y) => rankOf(y, b.id) - rankOf(x, b.id) || effectivePercent(y) - effectivePercent(x));
     const top = arr[0], on = state.selected === top.id;
-    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : isSpot(top) ? 700 : isFeat(top) ? 500 : 10,
-      onClick: () => { state.selected = top.id; renderAll(); scrollCardIntoView(top.id); if (arr.length > 1) openGroup(arr); } });
+    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on, b.id), z: on ? 1000 : [5, 10, 500, 700][rankOf(top, b.id)],
+      onClick: () => { state.selected = top.id; state.branchPick = { sid: top.merchantId, id: b.id }; renderAll(); scrollCardIntoView(top.id); if (arr.length > 1) openGroup(arr); } });
   });
   map.setMarkers(items);
   const withOffers = new Set(list.map(({ o }) => o.merchantId));
@@ -299,18 +305,23 @@ let spotShown = false;
 // للتجربة: رابط فيه ?spot=1 يتجاهل قيد "مرة باليوم"
 const SPOT_TEST = new URLSearchParams(location.search).has("spot");
 function maybeSpotlight(list) {
-  if (spotShown || !state.me || !state.loaded || state.view || location.pathname !== "/" || state.tab !== "map") return;
-  if (!$("sheet").classList.contains("hidden") || !$("page").classList.contains("hidden")) return;
+  if (spotShown || !state.loaded || state.view || location.pathname !== "/" || state.tab !== "map") return;
   const today = new Date().toISOString().slice(0, 10);
   let last = ""; try { last = localStorage.getItem("hayyna_spot_day") || ""; } catch {}
   if (last === today && !SPOT_TEST) { spotShown = true; return; }
-  const near = list.filter(({ o, d }) => isSpot(o) && d != null && d <= 3);
+  // قريب منك: بالموقع (3 كم)، وإلا بالحي اللي يتصفحه أو حي حسابه
+  const ref = state.me || state.browse;
+  const dist = state.profile?.district || "";
+  const near = list.filter(({ o }) => isSpot(o) && (ref ? branchesOf(o).some((b) => isSpotAt(o, b.id) && km(ref, { lat: b.latitude, lng: b.longitude }) <= 3)
+    : dist && branchesOf(o).some((b) => isSpotAt(o, b.id) && b.district === dist)));
   if (!near.length) return;
-  spotShown = true;
-  try { localStorage.setItem("hayyna_spot_day", today); } catch {}
+  spotShown = true; // ما نعيد الاختيار في نفس الجلسة
   const { o, d } = near[Math.floor(Math.random() * near.length)];
-  setTimeout(() => {
-    if (!$("sheet").classList.contains("hidden")) return;
+  let tries = 0;
+  const show = () => {
+    // فيه نافذة مفتوحة؟ ننتظر لين تتسكّر (بدل ما تضيع البطاقة)
+    if (!$("sheet").classList.contains("hidden") || !$("page").classList.contains("hidden") || state.view || state.tab !== "map") { if (++tries < 40) setTimeout(show, 3000); return; }
+    try { localStorage.setItem("hayyna_spot_day", today); } catch {} // تنحسب «طلعت» بس لما تطلع فعلاً
     showSheet(`<div class="spot-card">
       <div class="spot-head">🚀 عرض سوبر قريب منك</div>
       <div class="spot-img"><img src="${esc(thumb(o, 700))}" alt="">${badge(o) ? `<span class="badge${badge(o).isNew ? " new" : ""}">${esc(badge(o).t)}</span>` : ""}</div>
@@ -323,13 +334,15 @@ function maybeSpotlight(list) {
       </div></div>`);
     $("spLater").onclick = hideSheet;
     $("spGo").onclick = () => { hideSheet(); setTimeout(() => openOffer(o.id, true), 60); };
-  }, 1200);
+  };
+  setTimeout(show, 1200);
 }
 
 // ---------------- الرسم ----------------
 export function renderAll() {
   window.__hayynaNoCrop = (state.config?.catalog?.features || {}).crop === false;
   watchMyOrders(); // طلباتي تتحدّث لحظياً (وتنبيه لما تتغيّر الحالة)
+  renderAnnStrip();
   const list = filtered();
   renderMap(list);
   const car = $("carousel"), sl = car.scrollLeft;
@@ -497,7 +510,10 @@ export function openOffer(id, push) {
   document.title = `${o.offerTitle} — ${o.restaurantName} | لكوفر`;
   if (!sessionStorage.getItem("v_" + id)) { sessionStorage.setItem("v_" + id, "1"); bump(id, "viewsCount"); }
   const bs = branchesOf(o);
-  let br = bs.find((b) => b.id === state.branchId) || nearestBranch(o).b;
+  // الفرع: اللي ضغطه من الخريطة (أو اختاره قبل) لنفس المحل، وإلا الأقرب
+  const pick = state.branchPick?.sid === o.merchantId ? state.branchPick.id : null;
+  let br = bs.find((b) => b.id === pick) || nearestBranch(o).b;
+  if (br) state.branchPick = { sid: o.merchantId, id: br.id };
   if (map && br) map.panTo(br.latitude, br.longitude);
   const draw = () => {
     const d = state.me ? km(state.me, { lat: br.latitude, lng: br.longitude }) : null;
@@ -539,7 +555,7 @@ export function openOffer(id, push) {
       </div>`);
     const body = $("sheetBody");
     body.querySelectorAll("[data-branch]").forEach((el) => el.onclick = () => {
-      br = bs.find((b) => b.id === el.dataset.branch) || br; state.branchId = br.id;
+      br = bs.find((b) => b.id === el.dataset.branch) || br; state.branchPick = { sid: o.merchantId, id: br.id };
       if (map) map.panTo(br.latitude, br.longitude); draw();
     });
     body.querySelector("[data-store]")?.addEventListener("click", (e) => openStore(e.currentTarget.dataset.store, true));
@@ -902,6 +918,7 @@ export function renderAccount() {
         ${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت لكوفر على جوالك</button>` : ""}
         <div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div>
       </div>`;
+    { const a = annAccountHtml(); if (a) el.querySelector(".acc-hero")?.insertAdjacentHTML("afterend", `<div class="pad" style="padding-bottom:0">${a}</div>`); bindAnn(el); }
     el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => openLogin(b.dataset.login));
     $("staffLogin")?.addEventListener("click", async () => (await import("./staff.js")).openStaffLogin());
     $("contactBtn").onclick = openContact;
@@ -920,11 +937,13 @@ export function renderAccount() {
     <button class="icon-btn" id="editProfile" aria-label="تعديل البيانات">✎</button></div>`;
   const foot = `<div class="pad acc-foot">${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت لكوفر على جوالك</button>` : ""}<button class="btn call" id="settingsBtn">⚙️ الإعدادات</button><button class="btn ghost" id="logoutBtn">تسجيل الخروج</button><div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div></div>`;
   if (state.role === "merchant" || isAdmin) {
-    el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
+    el.innerHTML = head + (annAccountHtml() ? `<div class="pad" style="padding-bottom:0">${annAccountHtml()}</div>` : "") + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
     import("./merchant.js").then((m) => m.renderMerchant($("merchantRoot"), { isAdmin, support, logout: doLogout, contact: openContact }));
   } else {
     renderCustomer(el, { name, pr, u, support, foot });
   }
+  if (state.role !== "merchant" && !isAdmin) { const a = annAccountHtml(); if (a) $("account").querySelector(".acc-user")?.insertAdjacentHTML("afterend", `<div class="pad" style="padding-bottom:0">${a}</div>`); }
+  bindAnn($("account"));
   $("editProfile").onclick = () => openProfileEdit();
   $("logoutBtn").onclick = doLogout;
   if ($("installAcc")) $("installAcc").onclick = doInstall;
@@ -1336,7 +1355,8 @@ function staffLink() {
 }
 
 // ---------------- البيانات ----------------
-onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; staffLink(); renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); if (state.loaded) renderAll(); }, () => {});
+watchAnnouncements(() => { renderAnnStrip(); if (state.tab === "account") renderAccount(); });
+onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; document.body.classList.toggle("hideAdFar", state.config.hideAdFar === true); staffLink(); renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); if (state.loaded) renderAll(); }, () => {});
 onSnapshot(query(collection(db, "boosts"), where("endsAt", ">", Timestamp.now())), (snap) => {
   state.boosts = snap.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.loaded) renderAll();
 }, () => {});

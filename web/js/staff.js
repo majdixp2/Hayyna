@@ -69,7 +69,7 @@ export async function openStaffManager(storeName) {
       <div class="st-code"><small>رقم المتجر</small><b dir="ltr">${esc(code)}</b><span>يكتبه الموظف مع رقمه ورمزه السري عند «دخول موظف»</span></div>
       ${O.list.length ? O.list.map((m) => `<div class="st-row${m.active ? "" : " off"}">
         <div class="st-n">${m.n}</div>
-        <div class="st-main"><b>${esc(m.name || "موظف " + m.n)}</b><small>${esc(ROLES[m.role]?.t || "")} • ${m.perms.map((p) => p === "orders" ? "🧾 الطلبات" : "🍽️ نفد اليوم").join(" • ")}${m.active ? "" : " • ⏸️ موقوف"}</small></div>
+        <div class="st-main"><b>${esc(m.name || "موظف " + m.n)}</b><small>${esc(ROLES[m.role]?.t || "")} • ${m.perms.map((p) => p === "orders" ? "🧾 الطلبات" : "🍽️ نفد اليوم").join(" • ")}${branchText(m.branchIds) ? " • " + esc(branchText(m.branchIds)) : ""}${m.active ? "" : " • ⏸️ موقوف"}</small></div>
         <button class="btn-soft" data-st="${esc(m.uid)}">إدارة</button></div>`).join("")
         : `<div class="empty-inline">ما أضفت موظفين للحين.<br>أضف الكاشير أو المطبخ، وكل واحد يدخل برقمه ورمزه السري.</div>`}
       <button class="btn dir big" id="stAdd">➕ إضافة موظف</button>
@@ -81,11 +81,16 @@ export async function openStaffManager(storeName) {
   draw();
 }
 
+// 📍 فروع المحل (لتخصيص الموظف)
+const myBranches = () => (state.stores.find((x) => x.uid === state.user?.uid)?.branches || []).filter((b) => b && b.id);
+const brName = (b) => b.name || X.districtLabel(b.district) || "الفرع";
+const branchText = (ids) => { const bs = myBranches(); if (!ids?.length || bs.length < 2) return ""; return "📍 " + ids.map((id) => bs.find((b) => b.id === id)).filter(Boolean).map(brName).join("، "); };
 function staffForm(m, code, storeName) {
   const used = new Set(O.list.map((x) => x.n));
   let n = m?.n || 1; while (!m && used.has(n)) n++;
   if (!m && n > 50) return toast("وصلت للحد (50 موظف)");
   let role = m?.role || "cashier", perms = new Set(m?.perms || ROLES.cashier.perms);
+  const bs = myBranches(); let brs = new Set(m?.branchIds || []); // فاضي = كل الفروع
   const draw = () => {
     showSheet(`<div class="pad form staff-form"><div class="section-title">${m ? "✎ تعديل الموظف" : "➕ موظف جديد"} <span class="pill">رقم ${n}</span></div>
       <label class="label">الاسم (اختياري)</label><input id="stName" class="input" maxlength="40" placeholder="مثال: أحمد — الكاشير" value="${esc(m?.name || $("stName")?.value || "")}">
@@ -94,6 +99,10 @@ function staffForm(m, code, storeName) {
       <small class="hint">${esc(ROLES[role].hint)}</small>
       <label class="label">الصلاحيات</label>
       ${Object.entries(PERMS).map(([k, l]) => `<label class="switch-row"><span>${l}</span><input type="checkbox" data-perm="${k}" ${perms.has(k) ? "checked" : ""}></label>`).join("")}
+      ${bs.length > 1 ? `<label class="label">📍 فرعه</label>
+        <label class="switch-row"><span><b>كل الفروع</b></span><input type="checkbox" id="stAllBr" ${!brs.size ? "checked" : ""}></label>
+        ${brs.size ? bs.map((x) => `<label class="switch-row sub"><span>${esc(brName(x))}</span><input type="checkbox" data-sbr="${esc(x.id)}" ${brs.has(x.id) ? "checked" : ""}></label>`).join("") : ""}
+        <small class="hint">الموظف يشوف طلبات فرعه بس، ويوقف استقبال طلبات فرعه بس.</small>` : ""}
       ${m ? "" : `<label class="label">الرمز السري (6 أرقام)</label>
       <input id="stPin" class="input pin" inputmode="numeric" maxlength="6" dir="ltr" autocomplete="new-password" placeholder="••••••">
       <input id="stPin2" class="input pin" inputmode="numeric" maxlength="6" dir="ltr" autocomplete="new-password" placeholder="أعد كتابة الرمز">`}
@@ -101,20 +110,22 @@ function staffForm(m, code, storeName) {
     const b = $("sheetBody");
     b.querySelectorAll("[data-role]").forEach((x) => x.onclick = () => { role = x.dataset.role; perms = new Set(ROLES[role].perms); draw(); });
     b.querySelectorAll("[data-perm]").forEach((x) => x.onchange = () => { x.checked ? perms.add(x.dataset.perm) : perms.delete(x.dataset.perm); });
+    $("stAllBr")?.addEventListener("change", (e) => { brs = e.target.checked ? new Set() : new Set([bs[0].id]); draw(); });
+    b.querySelectorAll("[data-sbr]").forEach((x) => x.onchange = () => { x.checked ? brs.add(x.dataset.sbr) : brs.delete(x.dataset.sbr); if (!brs.size) draw(); });
     $("stSave").onclick = async () => {
       const name = $("stName").value.trim().slice(0, 40);
       if (!perms.size) return toast("اختر صلاحية وحدة على الأقل");
       const btn = $("stSave"); btn.disabled = true;
       try {
         if (m) {
-          await updateDoc(doc(db, "storeStaff", m.uid), { name, role, perms: [...perms] });
+          await updateDoc(doc(db, "storeStaff", m.uid), { name, role, perms: [...perms], branchIds: [...brs] });
           toast("انحفظ ✅"); hideSheet(); return;
         }
         const pin = toEn($("stPin").value), pin2 = toEn($("stPin2").value);
         if (!PIN_RE.test(pin)) { btn.disabled = false; return toast("الرمز السري لازم 6 أرقام"); }
         if (pin !== pin2) { btn.disabled = false; return toast("الرمزين مو متطابقين"); }
         btn.textContent = "ننشئ الحساب…";
-        await addMember({ n, name, role, perms: [...perms], pin, code, storeName });
+        await addMember({ n, name, role, perms: [...perms], pin, code, storeName, branchIds: [...brs] });
         hideSheet(); showCredentials(code, n, name);
       } catch (e) {
         console.error(e); btn.disabled = false; btn.textContent = m ? "حفظ" : "إضافة الموظف";
@@ -125,13 +136,13 @@ function staffForm(m, code, storeName) {
   draw();
 }
 
-async function addMember({ n, name, role, perms, pin, code, storeName, replace }) {
+async function addMember({ n, name, role, perms, pin, code, storeName, replace, branchIds = [] }) {
   const email = `${code}-${n}-${rand()}@${STAFF_DOMAIN}`;
   const uid = await createAccount(email, pin);
   const wb = writeBatch(db);
   if (replace) wb.delete(doc(db, "storeStaff", replace.uid));
   wb.set(doc(db, "storeStaff", uid), { storeId: state.user.uid, storeName: String(storeName || "").slice(0, 100), code, n, name, role, perms,
-    active: replace ? replace.active : true, createdAt: serverTimestamp(), email });
+    active: replace ? replace.active : true, createdAt: serverTimestamp(), email, branchIds: (replace ? replace.branchIds || [] : branchIds).slice(0, 50) });
   wb.set(doc(db, "staffLogin", `${code}-${n}`), { email, storeId: state.user.uid, n });
   await wb.commit();
 }
@@ -245,7 +256,7 @@ export function enterStaffMode(user) {
     const first = !S.me; S.me = me; state.staff = me;
     if (first) {
       const cu = await import("./catalog-ui.js");
-      cu.watchMerchantCatalog(me.storeId, () => { if (S.tab === "stock") drawStock(); });
+      cu.watchMerchantCatalog(me.storeId, () => { if (S.tab === "stock") drawStock(); }, me.branchIds || []);
       S.offUnsub?.();
       if (me.perms.includes("stock")) S.offUnsub = onSnapshot(query(collection(db, "offers"), where("merchantId", "==", me.storeId)), (q) => {
         S.offers = q.docs.map((x) => ({ ...x.data(), id: x.id })); if (S.tab === "stock") drawStock();

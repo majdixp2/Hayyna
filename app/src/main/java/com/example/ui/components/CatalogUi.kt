@@ -120,8 +120,9 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
     LaunchedEffect(store.uid, cfg.orderEnabled) { if (cfg.orderEnabled) vm.refreshStorePause(store.uid) }
     val pausedMap by vm.pausedStores.collectAsStateWithLifecycle()
     val preMap by vm.preCfgs.collectAsStateWithLifecycle()
-    val closedMsg = if (cfg.orderEnabled) vm.orderBlock(store, null, pausedMap[store.uid] == true) else null
-    val pre = closedMsg != null && pausedMap[store.uid] != true && preMap[store.uid]?.active == true && vm.preOn(store.uid)
+    val pausedBr by vm.pausedBranches.collectAsStateWithLifecycle()
+    val closedMsg = if (cfg.orderEnabled) vm.orderBlock(store, null, pausedMap[store.uid] == true, pausedBr[store.uid].orEmpty()) else null
+    val pre = closedMsg != null && !closedMsg.startsWith("⏸️") && preMap[store.uid]?.active == true && vm.preOn(store.uid)
     val canOrder = cfg.orderEnabled && (closedMsg == null || pre)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         if (closedMsg != null) ClosedBanner(closedMsg + if (pre) "\n📅 تقدر تطلب الحين بموعد لاحق" else "")
@@ -247,13 +248,15 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     val pays = listOfNotNull(if (store.payCash) "cash" else null, if (store.payCard) "card" else null).ifEmpty { listOf("cash") }
     var pay by remember { mutableStateOf(pays.first()) }
     var car by remember { mutableStateOf("") }
-    var branchId by remember { mutableStateOf((store.branches.firstOrNull { com.example.data.model.OfferTime.isOpenNow(it) != false } ?: store.branches.firstOrNull())?.id.orEmpty()) }
+    var branchId by remember { mutableStateOf(vm.defaultBranch(store)?.id.orEmpty()) }
+    var pickBranch by remember { mutableStateOf(false) }
     LaunchedEffect(store.uid) { vm.refreshStorePause(store.uid); vm.loadSlotCounts(store.uid) }
     val paused by vm.pausedStores.collectAsStateWithLifecycle()
     val preMap by vm.preCfgs.collectAsStateWithLifecycle()
     val slotMap by vm.slotCounts.collectAsStateWithLifecycle()
-    val isPaused = paused[store.uid] == true
-    val closedMsg = vm.orderBlock(store, branchId.ifBlank { null }, isPaused)
+    val pausedBr by vm.pausedBranches.collectAsStateWithLifecycle()
+    val closedMsg = vm.orderBlock(store, branchId.ifBlank { null }, paused[store.uid] == true, pausedBr[store.uid].orEmpty())
+    val isPaused = closedMsg?.startsWith("⏸️") == true
     // 📅 اطلب مسبقاً
     val pc = preMap[store.uid] ?: com.example.data.model.PreorderCfg()
     val pre = !isPaused && pc.active && vm.preOn(store.uid)
@@ -279,7 +282,8 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     val preDays = if (later) com.example.data.model.PreOrder.days(pc) else emptyList()
     if (later && day !in preDays) day = preDays.firstOrNull { com.example.data.model.PreOrder.times(pc, br0, mode, it).isNotEmpty() } ?: preDays.firstOrNull() ?: 0L
     val preTimes = if (later && modeOkLater) com.example.data.model.PreOrder.times(pc, br0, mode, day) else emptyList()
-    val isFull = { x: com.example.data.model.PreSlot -> mode == "delivery" && (slotMap[store.uid]?.get(x.key) ?: 0) >= pc.slotCap }
+    val bKey = { k: String -> if (store.branches.size > 1 && branchId.isNotBlank()) "${k}_$branchId" else k } // فترات لكل فرع
+    val isFull = { x: com.example.data.model.PreSlot -> mode == "delivery" && (slotMap[store.uid]?.get(bKey(x.key)) ?: 0) >= pc.slotCap }
     if (slot != 0L && preTimes.none { it.t == slot && !isFull(it) }) slot = 0L
     val blocked = isPaused || (closedNow && !later)
     LaunchedEffect(Unit) { vm.loadMyStats() }
@@ -288,6 +292,31 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     FullDialog("🧾 طلبك من ${store.name}", onDismiss) {
       Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 📍 الفرع: واضح أول الصفحة عشان الزبون يتأكد منه
+            val brName = { b: com.example.data.model.Branch -> b.name.ifBlank { b.district.ifBlank { "الفرع" } } }
+            val brMeta = { b: com.example.data.model.Branch -> listOfNotNull(vm.branchDistanceKm(b)?.let { d -> (if (d < 1) "${(d * 1000).toInt()} متر" else String.format(java.util.Locale.US, "%.1f كم", d)) + " منك" },
+                when (com.example.data.model.OfferTime.isOpenNow(b)) { true -> "مفتوح"; false -> "مغلق"; else -> null }).joinToString(" • ") }
+            br0?.let { b ->
+                Surface(shape = RoundedCornerShape(16.dp), color = CalmSagePrimary.copy(alpha = 0.08f), border = BorderStroke(2.dp, CalmSagePrimary), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("📍 طلبك من", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row { Text("فرع ", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = CalmSagePrimary); androidx.compose.material3.Text(brName(b), fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = CalmSagePrimary) }
+                            brMeta(b).takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
+                        if (store.branches.size > 1) OutlinedButton(onClick = { pickBranch = !pickBranch }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (pickBranch) "إغلاق" else "تغيير", fontSize = 13.sp) }
+                    }
+                }
+            }
+            if (pickBranch) store.branches.forEach { b ->
+                Surface(shape = RoundedCornerShape(12.dp), border = BorderStroke(1.5.dp, if (b.id == branchId) CalmSagePrimary else MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth().clickable { branchId = b.id; vm.branchPick.value = store.uid to b.id; pickBranch = false; slot = 0L }) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Row { Text("فرع ", fontWeight = FontWeight.Bold); androidx.compose.material3.Text(brName(b), fontWeight = FontWeight.Bold) }
+                        brMeta(b).takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+            }
             lines.forEach { l ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -360,9 +389,6 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                 FilterChip(selected = pay == "cash", onClick = { pay = "cash" }, label = { Text("💵 كاش") })
                 FilterChip(selected = pay == "card", onClick = { pay = "card" }, label = { Text("💳 بطاقة / شبكة") })
             } else Text(if (pays.first() == "card") "💳 بطاقة / شبكة عند الاستلام (المحل يقبلها بس)" else "💵 كاش عند الاستلام (المحل يقبله بس)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (store.branches.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                store.branches.forEach { b -> FilterChip(selected = branchId == b.id, onClick = { branchId = b.id }, label = { Text(b.name.ifBlank { b.district.ifBlank { "فرع" } }, fontSize = 12.sp) }) }
-            }
             if (mode == "delivery") Text(if (loc != null) "📍 بنرسل موقعك الحالي للمحل" else "📍 فعّل الموقع عشان نرسل مكانك للتوصيل", fontSize = 13.sp, color = if (loc != null) CalmSagePrimary else MaterialTheme.colorScheme.error)
             OutlinedTextField(name, { name = it.take(60) }, label = { Text("اسمك") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(phone, { phone = it.filter { c -> c.isDigit() }.take(10) }, label = { Text("جوالك") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
@@ -402,7 +428,7 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                 },
                 enabled = minOk && !blocked && blockedTill == 0L, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
-            ) { Text(if (later) "📅 أرسل الطلب المسبق على واتساب" else "📨 أرسل الطلب على واتساب", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp) }
+            ) { Text((if (later) "📅 أرسل الطلب المسبق" else "📨 أرسل الطلب") + if (store.branches.size > 1 && br0 != null) " لفرع ${br0.name.ifBlank { br0.district.ifBlank { "الفرع" } }}" else " على واتساب", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp) }
           }
         }
       }
@@ -531,16 +557,52 @@ fun ClosedBanner(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** ⏸️ زر إيقاف استقبال الطلبات (صاحب المحل + موظف الطلبات) */
+/** ⏸️ زر إيقاف استقبال الطلبات (صاحب المحل + موظف الطلبات) — لكل فرع أو المحل كله */
 @Composable
 fun PauseOrdersRow(vm: MerchantViewModel) {
-    val paused by vm.myStorePaused.collectAsStateWithLifecycle()
-    Surface(shape = RoundedCornerShape(14.dp), color = if (paused) Color(0xFFFDE8E6) else Color(0xFFE7F6EC), modifier = Modifier.fillMaxWidth()) {
+    val pause by vm.myStorePause.collectAsStateWithLifecycle()
+    val staffMe by vm.staffMe.collectAsStateWithLifecycle()
+    val scope = remember(staffMe, pause) { vm.myPauseScope() }
+    val canAll = vm.canPauseAll()
+    val (all, brs) = pause
+    val off = scope.filter { it.id in brs }
+    val allOff = all || (scope.isNotEmpty() && off.size == scope.size)
+    var sheet by remember { mutableStateOf(false) }
+    val bn = { b: com.example.data.model.Branch -> b.name.ifBlank { b.district.ifBlank { "الفرع" } } }
+    Surface(shape = RoundedCornerShape(14.dp), color = if (allOff || off.isNotEmpty()) Color(0xFFFDE8E6) else Color(0xFFE7F6EC), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (paused) "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" else "🟢 تستقبل طلبات", Modifier.weight(1f), color = if (paused) Color(0xFFB42318) else Color(0xFF15803D), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            if (paused) Button(onClick = { vm.toggleStorePause() }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("▶️ رجّع الاستقبال", fontSize = 13.sp) }
-            else OutlinedButton(onClick = { vm.toggleStorePause() }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("⏸️ أوقف الطلبات", fontSize = 13.sp) }
+            Text(if (allOff) "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" else if (off.isNotEmpty()) "⏸️ موقف: " + off.joinToString("، ") { bn(it) } else "🟢 تستقبل طلبات",
+                Modifier.weight(1f), color = if (allOff || off.isNotEmpty()) Color(0xFFB42318) else Color(0xFF15803D), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            val onTap = {
+                when {
+                    scope.size > 1 -> sheet = true
+                    canAll && vm.myStoreBranches().size <= 1 -> vm.setMyPause(!all, emptySet())
+                    scope.isNotEmpty() -> { val id = scope.first().id; vm.setMyPause(all, if (id in brs) brs - id else brs + id) }
+                    else -> vm.setMyPause(!all, brs)
+                }
+            }
+            if (allOff || off.isNotEmpty()) Button(onClick = onTap, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (scope.size > 1) "⏸️ إيقاف / تشغيل" else "▶️ رجّع الاستقبال", fontSize = 13.sp) }
+            else OutlinedButton(onClick = onTap, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (scope.size > 1) "⏸️ إيقاف / تشغيل" else "⏸️ أوقف الطلبات", fontSize = 13.sp) }
         }
+    }
+    if (sheet) {
+        var a by remember { mutableStateOf(all) }
+        val sel = remember { mutableStateListOf<String>().apply { addAll(brs) } }
+        AlertDialog(onDismissRequest = { sheet = false }, title = { Text("⏸️ إيقاف استقبال الطلبات") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("الزبائن يشوفون إن الفرع موقف مؤقتاً، وما يقدرون يطلبون منه.", fontSize = 13.sp)
+                    if (canAll) Row(verticalAlignment = Alignment.CenterVertically) { Text("⏸️ كل الفروع", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); Switch(a, { a = it }) }
+                    if (!(canAll && a)) scope.forEach { b ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("⏸️ فرع ", fontSize = 14.sp); androidx.compose.material3.Text(bn(b), fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            Switch(b.id in sel, { on -> if (on) sel.add(b.id) else sel.remove(b.id) })
+                        }
+                    }
+                }
+            },
+            confirmButton = { Button(onClick = { vm.setMyPause(if (canAll) a else all, sel.toSet()); sheet = false }) { Text("حفظ") } },
+            dismissButton = { TextButton(onClick = { sheet = false }) { Text("رجوع") } })
     }
 }
 
@@ -587,6 +649,7 @@ fun OrdersDialog(
                 val (bg, line) = orderTint(o.status)
                 Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(if (asStore && o.status == "sent") 2.dp else 1.dp, if (asStore && o.status == "sent") CalmSagePrimary else line ?: MaterialTheme.colorScheme.outlineVariant), color = bg ?: MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        if (o.branchName.isNotBlank()) androidx.compose.material3.Text("📍 ${o.branchName}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary)
                         Row { Text("#${o.code}", fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f)); Text(if (asStore) HayynaOrder.STATUS[o.status] ?: o.status else o.statusText(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary) }
                         Text((if (asStore) listOf(o.customerName, o.customerPhone.let { p -> val d = p.filter { it.isDigit() }; if (d.startsWith("966")) "0" + d.drop(3) else p }).filter { it.isNotBlank() }.joinToString(" • ") else "🏪 ${o.storeName}") + if (o.createdAtMillis > 0) " • ${dm(o.createdAtMillis)}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         val nsc = if (asStore && ns && o.isLive) cfg.noshow.recentCount(stats[o.customerUid], now) else 0
@@ -686,6 +749,17 @@ fun OrdersDialog(
                     }
                 }
             }
+            // 📍 صاحب المحل: فلتر بالفروع
+            val allBr = if (asStore && staffMe?.branchIds.isNullOrEmpty()) vm.myStoreBranches() else emptyList()
+            var ordBr by rememberSaveable { mutableStateOf("") }
+            if (allBr.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = ordBr.isBlank(), onClick = { ordBr = "" }, label = { Text("كل الفروع", fontSize = 12.sp) })
+                allBr.forEach { b ->
+                    val n = orders.count { it.branchId == b.id && it.isLive }
+                    FilterChip(selected = ordBr == b.id, onClick = { ordBr = b.id }, label = { androidx.compose.material3.Text(b.name.ifBlank { b.district.ifBlank { "الفرع" } } + if (n > 0) " ($n)" else "", fontSize = 12.sp) })
+                }
+            }
+            @Suppress("NAME_SHADOWING") val orders = if (ordBr.isBlank()) orders else orders.filter { it.branchId == ordBr }
             if (!asStore) orders.take(100).forEach { card(it) }
             else ORDER_GROUPS.forEach { g ->
                 val prepMs = myPre.prepMin * 60_000L
