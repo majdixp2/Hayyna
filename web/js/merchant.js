@@ -522,6 +522,8 @@ export async function openOfferForm(editing) {
   const e = editing || null;
   // العروض مع المنيو: نوع العرض + ربطه بالأصناف
   const dealsOn = catalogOf(state.config).enabled && Object.values(DEAL_TYPES).some((t) => feat(state.config, t.feat));
+  // ✨ جديدنا ينطلب من لكوفر (نفس «إعلان قابل للطلب») لو الطلب والميزة شغّالين
+  const newOrderableOn = catalogOf(state.config).enabled && catalogOf(state.config).orderEnabled && feat(state.config, DEAL_TYPES.promo.feat);
   const myItems = dealsOn ? (await loadMyItems(state.user.uid)).filter((x) => x.approved && !x.adminNote) : [];
   const ed = e?.deal || {};
   const f = {
@@ -590,7 +592,7 @@ export async function openOfferForm(editing) {
         <label class="label">على وش الخصم؟</label>${dt === "discount" && myItems.length ? scopePickerHtml(f.dScope, myItems) : `<input id="oScope" class="input" value="${esc(f.scope)}" maxlength="40" placeholder="على جميع الأصناف">`}`}
       ${dt === "bundle" && myItems.length ? `<label class="label">🎁 وش فيها الباقة؟ (اختياري — من منيوك)</label><div class="pick-list">${myItems.map((it) => `<label class="switch-row sub"><span>${KINDS[it.kind]?.icon || ""} ${esc(it.name)} <small>${fmt(it.price)} ر.س</small></span><input type="checkbox" data-pack="${esc(it.id)}" ${f.packIds.includes(it.id) ? "checked" : ""}></label>`).join("")}</div>
         ${packSum ? `<div class="hint-box" id="packHint">مجموع الأصناف <b>${fmt(packSum)} ر.س</b>${+f.price > 0 && +f.price < packSum ? ` — الزبون يوفّر <b>${fmt(packSum - +f.price)} ر.س</b> 🎉` : ""}</div>` : `<small class="hint">لو الباقة شي جديد ما هو في المنيو، اكتب محتواها في التفاصيل.</small>`}` : ""}
-      ${dt === "promo" && dealsOn && catalogOf(state.config).orderEnabled ? `<label class="switch-row"><span>🛒 الزبون يقدر يطلبه من لكوفر <small class="hint">(لازم سعر)</small></span><input type="checkbox" id="oOrderable" ${f.orderable ? "checked" : ""}></label>` : ""}
+      ${(dt === "promo" && dealsOn && catalogOf(state.config).orderEnabled) || (isNew && newOrderableOn) ? `<label class="switch-row"><span>🛒 الزبون يقدر يطلبه من لكوفر${f.orderable && !(Number(f.price) > 0) ? ` <small class="hint" style="color:#B42318">اكتب السعر عشان ينطلب</small>` : ""}</span><input type="checkbox" id="oOrderable" ${f.orderable ? "checked" : ""}></label>` : ""}
       <label class="label">${isNew ? "وصف المنتج" : "تفاصيل العرض"}</label><textarea id="oDesc" class="input" rows="3" maxlength="2000">${esc(f.desc)}</textarea>
       <label class="label">الأصناف (للبحث)</label><input id="oTags" class="input" value="${esc(f.tags)}" placeholder="شاورما، برجر، بروست">
       ${deliveryFields(f)}
@@ -619,7 +621,7 @@ export async function openOfferForm(editing) {
     body.querySelectorAll("[data-bogo]").forEach((b) => b.onclick = () => { f.bogoItem = b.dataset.bogo; const it = myItems.find((x) => x.id === f.bogoItem); if (it && !f.title.trim()) f.title = `${f.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"} على ${it.name}`; dirty = true; render(); });
     body.querySelectorAll("[data-getpct]").forEach((b) => b.onclick = () => { f.getPct = +b.dataset.getpct; dirty = true; render(); });
     body.querySelectorAll("[data-pack]").forEach((c) => c.onchange = () => { f.packIds = c.checked ? [...new Set([...f.packIds, c.dataset.pack])] : f.packIds.filter((x) => x !== c.dataset.pack); const y = window.scrollY, pb = $("pageBody").scrollTop; render(); $("pageBody").scrollTop = pb; });
-    $("oOrderable")?.addEventListener("change", (ev) => { f.orderable = ev.target.checked; dirty = true; });
+    $("oOrderable")?.addEventListener("change", (ev) => { f.orderable = ev.target.checked; dirty = true; render(); });
     if (dt === "discount") bindScopePicker(body, f.dScope, () => { dirty = true; render(); });
     // الباقة: نحدّث «كم يوفّر الزبون» وهو يكتب (بدون إعادة رسم الصفحة)
     if (dt === "bundle") $("oPrice")?.addEventListener("input", () => { const h = $("packHint"), v = +f.price; if (h && packSum) h.innerHTML = `مجموع الأصناف <b>${fmt(packSum)} ر.س</b>${v > 0 && v < packSum ? ` — الزبون يوفّر <b>${fmt(packSum - v)} ر.س</b> 🎉` : ""}`; });
@@ -684,12 +686,12 @@ export async function openOfferForm(editing) {
       : f.keepExpiry && e ? X.ms(e.expiresAt)
       : f.durIdx === -1 ? ((+f.customDays >= 1 && +f.customDays <= 90) ? base + (+f.customDays) * DAY : null)
       : (X.DURATIONS[f.durIdx].days ? base + X.DURATIONS[f.durIdx].days * DAY : null);
-    const dt = f.kind !== "new" && dealsOn ? f.dealType : "";
+    const dt = f.kind === "new" ? (newOrderableOn && f.orderable ? "promo" : "") : dealsOn ? f.dealType : "";
     if (!f.media.length) return err("أرفق صورة أو فيديو للعرض.");
     if (f.kind !== "new" && dealsOn && !dt) return err("اختر نوع عرضك من فوق 👆");
     if (dt === "discount" && myItems.length) { const se = scopeError(f.dScope); if (se) return err(se); }
     if (dt === "bogo" && !myItems.some((x) => x.id === f.bogoItem)) return err("اختر الصنف اللي عليه العرض.");
-    if (dt === "promo" && f.orderable && !(Number(f.price) > 0)) return err("عشان الزبون يطلبه، اكتب سعر العرض.");
+    if (dt === "promo" && f.orderable && !(Number(f.price) > 0)) return err(f.kind === "new" ? "عشان الزبون يطلبه، اكتب سعر المنتج." : "عشان الزبون يطلبه، اكتب سعر العرض.");
     if (!f.title.trim()) return err(f.kind === "new" ? "اكتب اسم المنتج." : "اكتب عنوان العرض.");
     if (!useTiers && !f.keepExpiry && f.durIdx === -1 && !(+f.customDays >= 1 && +f.customDays <= 90)) return err("اكتب عدد أيام العرض (من 1 إلى 90).");
     const isNew = f.kind === "new";

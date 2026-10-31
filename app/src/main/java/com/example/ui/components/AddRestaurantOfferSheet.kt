@@ -110,6 +110,8 @@ fun AddRestaurantOfferSheet(
     val isEditing = editingOffer != null
     val dealTypes = com.example.data.model.DealType.entries.filter { dealsCfg != null && dealsCfg.enabled && dealsCfg.feat(it.feat) }
     val dealsOn = dealTypes.isNotEmpty()
+    // ✨ جديدنا ينطلب من لكوفر (نفس «إعلان قابل للطلب») لو الطلب والميزة شغّالين
+    val newOrderableOn = dealsCfg?.orderEnabled == true && dealTypes.any { it.id == "promo" }
     val ed = com.example.data.model.OfferDeal.from(editingOffer?.deal)
     var dealType by remember { mutableStateOf(ed?.type ?: if (isEditing) "promo" else "") }
     var dScope by remember { mutableStateOf(if (ed?.type == "discount") ed.scope else "all") }
@@ -229,7 +231,7 @@ fun AddRestaurantOfferSheet(
     }
 
     fun submit() {
-        val dt = if (!isNewProduct && dealsOn) dealType else ""
+        val dt = if (isNewProduct) (if (newOrderableOn && orderable) "promo" else "") else if (dealsOn) dealType else ""
         val bogoIt = catalogItems.firstOrNull { it.id == bogoItem }
         if (dt == "bogo" && bogoIt != null) { priceText = formatPrice(bogoIt.price); originalPriceText = "" }
         val price = if (percentMode) 0.0 else if (isNewProduct && priceText.isBlank()) 0.0 else priceText.toDoubleOrNull()
@@ -272,7 +274,7 @@ fun AddRestaurantOfferSheet(
             dt == "discount" && catalogItems.isNotEmpty() && dScope == "section" && dSection.isBlank() -> "اختر القسم."
             dt == "discount" && catalogItems.isNotEmpty() && dScope == "items" && dItems.isEmpty() -> "اختر صنف واحد على الأقل."
             dt == "bogo" && bogoIt == null -> "اختر الصنف اللي عليه العرض."
-            dt == "promo" && orderable && (priceText.toDoubleOrNull() ?: 0.0) <= 0.0 -> "عشان الزبون يطلبه، اكتب سعر العرض."
+            dt == "promo" && orderable && (priceText.toDoubleOrNull() ?: 0.0) <= 0.0 -> if (isNewProduct) "عشان الزبون يطلبه، اكتب سعر المنتج." else "عشان الزبون يطلبه، اكتب سعر العرض."
             paid && !useTiers && newExpiry == null -> "اختر مدة العرض."
             restaurantName.isBlank() -> "يرجى كتابة اسم المتجر."
             offerTitle.isBlank() -> if (isNewProduct) "اكتب اسم المنتج." else "يرجى كتابة عنوان العرض."
@@ -710,8 +712,12 @@ fun AddRestaurantOfferSheet(
                         if (sum > 0) Text("مجموع الأصناف ${formatPrice(sum)} ر.س" + if (pv in 0.01..(sum - 0.01)) " — الزبون يوفّر ${formatPrice(sum - pv)} ر.س 🎉" else "", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary)
                         else Text("لو الباقة شي جديد ما هو في المنيو، اكتب محتواها في التفاصيل.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (dt == "promo" && dealsCfg?.orderEnabled == true) Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🛒 الزبون يقدر يطلبه من لكوفر (لازم سعر)", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    if ((dt == "promo" && dealsCfg?.orderEnabled == true) || (isNewProduct && newOrderableOn)) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("🛒 الزبون يقدر يطلبه من لكوفر", fontSize = 13.sp)
+                            if (orderable && (priceText.toDoubleOrNull() ?: 0.0) <= 0.0)
+                                Text("اكتب السعر عشان ينطلب", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        }
                         HSwitch(checked = orderable, onCheckedChange = { orderable = it })
                     }
 
