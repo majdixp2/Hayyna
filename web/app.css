@@ -878,3 +878,5 @@ body.staff-mode .bottomnav, body.staff-mode .top, body.staff-mode .install { dis
 
 /* 📷 عروض الإعلانات تختفي والخريطة مصغّرة (لو الأدمن فعّلها) */
 body.hideAdFar .zfar .mk.isad:not(.on){display:none}
+.br-filter{margin:0 0 10px;flex-wrap:wrap}
+.br-filter small{opacity:.7}

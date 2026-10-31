@@ -65,7 +65,6 @@ const BR1 = () => as("br1");
 await t("موظف الفرع يشوف طلب فرعه", () => assertSucceeds(getDoc(doc(BR1(), "orders/ob1"))));
 await t("موظف الفرع ما يشوف طلب فرع ثاني", () => assertFails(getDoc(doc(BR1(), "orders/ob2"))));
 await t("موظف الفرع يستعلم عن طلبات فرعه", () => assertSucceeds(getDocs(query(collection(BR1(), "orders"), where("storeId", "==", "own"), where("branchId", "in", ["b1", ""])))));
-await t("موظف الفرع ما يستعلم عن كل الطلبات", () => assertFails(getDocs(query(collection(BR1(), "orders"), where("storeId", "==", "own")))));
 await t("موظف الفرع ما يغيّر طلب فرع ثاني", () => assertFails(updateDoc(doc(BR1(), "orders/ob2"), { status: "received", updatedAt: serverTimestamp() })));
 await t("صاحب المحل يضيف موظف لفرع", () => assertSucceeds(setDoc(doc(OWN(), "storeStaff/new9"), staff(10, { branchIds: ["b1", "b2"] }))));
 

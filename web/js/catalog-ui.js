@@ -24,16 +24,19 @@ const kindPill = (k) => `<span class="kpill" style="background:${KINDS[k].bg};co
 const M = { uid: null, items: [], passes: [], orders: [], unsubs: [], ctx: null, onChange: null };
 
 /** يتابع منتجات التاجر وظهورها المدفوع وطلباته (يُستدعى من لوحة التاجر) */
-export function watchMerchantCatalog(uid, onChange) {
+export function watchMerchantCatalog(uid, onChange, branchIds = []) {
   M.onChange = onChange;
   if (M.uid === uid) return;
-  M.unsubs.forEach((u) => u()); M.unsubs = []; M.uid = uid; M.items = []; M.passes = []; M.orders = [];
+  M.unsubs.forEach((u) => u()); M.unsubs = []; M.uid = uid; M.items = []; M.passes = []; M.orders = []; M.branchIds = branchIds;
   // ⏰ الطلب المسبق: تنبيه لما يجي وقت تجهيزه
   if (F("preorder")) { loadPre(uid).catch(() => {}); clearInterval(M.dueT); M.dueT = setInterval(checkDue, 60000); setTimeout(checkDue, 5000); }
   const fire = () => M.onChange?.();
   M.unsubs.push(onSnapshot(query(collection(db, "items"), where("merchantId", "==", uid)), (s) => { M.items = s.docs.map((d) => ({ ...d.data(), id: d.id })); fire(); refreshPage(); }, () => {}));
   M.unsubs.push(onSnapshot(query(collection(db, "itemPasses"), where("merchantId", "==", uid)), (s) => { M.passes = s.docs.map((d) => ({ ...d.data(), id: d.id })); fire(); refreshPage(); }, () => {}));
-  M.unsubs.push(onSnapshot(query(collection(db, "orders"), where("storeId", "==", uid)), (s) => {
+  // 👥 موظف مخصص لفروع: طلبات فروعه بس (والطلبات اللي ما لها فرع)
+  const oq = branchIds.length ? query(collection(db, "orders"), where("storeId", "==", uid), where("branchId", "in", [...branchIds.slice(0, 29), ""]))
+    : query(collection(db, "orders"), where("storeId", "==", uid));
+  M.unsubs.push(onSnapshot(oq, (s) => {
     const prev = new Map(M.orders.map((o) => [o.id, o]));
     M.orders = s.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => X.ms(b.createdAt) - X.ms(a.createdAt)); fire();
     loadCustStats(M.orders.filter((o) => ["sent", "received", "ready", "delivering"].includes(o.status)).map((o) => o.customerUid));
@@ -395,7 +398,7 @@ export function openPreSettings(onBack) {
 }
 
 // ⏸️ زر إيقاف استقبال الطلبات (صاحب المحل + موظف الطلبات)
-let pauseUnsub = null, pauseSid = "", myPaused = false, pauseRedraw = null;
+let pauseUnsub = null, pauseSid = "", myPaused = false, pauseRedraw = null, ordBr = "";
 const mySid = () => state.staff?.storeId || state.user?.uid || "";
 function watchMyPause(redraw) {
   pauseRedraw = redraw;
@@ -403,13 +406,58 @@ function watchMyPause(redraw) {
   if (!sid || pauseSid === sid) return;
   pauseUnsub?.(); pauseSid = sid;
   loadPre(sid).then(() => pauseRedraw?.());
-  pauseUnsub = onSnapshot(doc(db, "storeStatus", sid), (d) => { myPaused = d.exists() && d.data().paused === true; pauseCache[sid] = myPaused; pauseRedraw?.(); }, (e) => console.warn("storeStatus", e));
+  pauseUnsub = onSnapshot(doc(db, "storeStatus", sid), (d) => { setPause(sid, d); myPaused = pauseCache[sid]; pauseRedraw?.(); }, (e) => console.warn("storeStatus", e));
+}
+// فروع المحل، والفروع اللي يقدر هذا الحساب يتحكم فيها (الموظف المخصص = فروعه بس)
+const storeBranches = () => (state.stores.find((x) => x.uid === mySid())?.branches || []).filter((b) => b && b.id);
+const myScope = () => { const bs = storeBranches(), ids = state.staff?.branchIds || []; return ids.length ? bs.filter((b) => ids.includes(b.id)) : bs; };
+const canAll = () => !(state.staff?.branchIds || []).length;
+const bName = (b) => b.name || X.districtLabel(b.district) || "الفرع";
+async function savePause(paused, branches) {
+  const sid = mySid(); if (!sid) return;
+  const by = state.staff ? (state.staff.name || "موظف " + state.staff.n) : "صاحب المحل";
+  await setDoc(doc(db, "storeStatus", sid), { paused, pausedAt: serverTimestamp(), by: String(by).slice(0, 60), pausedBranches: [...branches].slice(0, 50) });
+}
+/** حالة الاستقبال لهذا الحساب: كل شي شغّال / بعض الفروع موقفة / الكل موقف */
+function pauseState() {
+  const sid = mySid(), sc = myScope(), br = pauseBr[sid] || new Set();
+  if (myPaused && canAll()) return { all: true, n: 0 };
+  const off = sc.filter((b) => br.has(b.id));
+  return { all: myPaused || (sc.length > 0 && off.length === sc.length), n: off.length, off };
 }
 async function togglePause() {
   const sid = mySid(); if (!sid) return;
-  const by = state.staff ? (state.staff.name || "موظف " + state.staff.n) : "صاحب المحل";
-  try { await setDoc(doc(db, "storeStatus", sid), { paused: !myPaused, pausedAt: serverTimestamp(), by: String(by).slice(0, 60) }); toast(!myPaused ? "▶️ رجع استقبال الطلبات" : "⏸️ وقّفنا الطلبات — الزبائن يشوفون إن المحل موقف مؤقتاً", true); }
-  catch (e) { console.error(e); toast("تعذّر التغيير"); }
+  const sc = myScope(), br = new Set(pauseBr[sid] || []);
+  try {
+    // فرع واحد أو محل بفرع واحد: زر مباشر
+    if (sc.length <= 1) {
+      if (canAll() && storeBranches().length <= 1) { await savePause(!myPaused, []); toast(!myPaused ? "▶️ رجع استقبال الطلبات" : "⏸️ وقّفنا الطلبات — الزبائن يشوفون إن المحل موقف مؤقتاً", true); return; }
+      const id = sc[0]?.id; if (!id) return;
+      br.has(id) ? br.delete(id) : br.add(id);
+      await savePause(myPaused, br); toast(br.has(id) ? `⏸️ وقّفنا طلبات فرع ${bName(sc[0])}` : `▶️ رجع استقبال طلبات فرع ${bName(sc[0])}`, true); return;
+    }
+    return pauseSheet();
+  } catch (e) { console.error(e); toast("تعذّر التغيير"); }
+}
+function pauseSheet() {
+  const sid = mySid(), sc = myScope();
+  let all = myPaused, br = new Set(pauseBr[sid] || []);
+  const back = () => { ordersOpen = true; if (M.ordersTarget) { hideSheet(); pauseRedraw?.(); } else openStoreOrders(); };
+  const draw = () => {
+    showSheet(`<div class="pad form"><div class="section-title">⏸️ إيقاف استقبال الطلبات</div>
+      <p class="desc tr">الزبائن يشوفون إن الفرع موقف مؤقتاً، وما يقدرون يطلبون منه.</p>
+      ${canAll() ? `<label class="switch-row"><span><b>⏸️ كل الفروع</b></span><input type="checkbox" id="pzAll" ${all ? "checked" : ""}></label>` : ""}
+      ${all && canAll() ? "" : sc.map((b) => `<label class="switch-row sub"><span>⏸️ فرع ${esc(bName(b))}</span><input type="checkbox" data-pz="${esc(b.id)}" ${br.has(b.id) ? "checked" : ""}></label>`).join("")}
+      <button class="btn dir big" id="pzSave">حفظ</button><button class="btn ghost" id="pzBack">‹ رجوع</button></div>`);
+    $("pzAll")?.addEventListener("change", (e) => { all = e.target.checked; draw(); });
+    $("sheetBody").querySelectorAll("[data-pz]").forEach((x) => x.onchange = () => { x.checked ? br.add(x.dataset.pz) : br.delete(x.dataset.pz); });
+    $("pzBack").onclick = back;
+    $("pzSave").onclick = async () => {
+      try { await savePause(canAll() ? all : myPaused, br); toast("انحفظ ✅", true); back(); }
+      catch (e) { console.error(e); toast("تعذّر التغيير"); }
+    };
+  };
+  ordersOpen = false; draw();
 }
 
 export function openStoreOrders(opts = {}) {
@@ -422,11 +470,14 @@ export function openStoreOrders(opts = {}) {
   const draw = () => {
     if (!ordersOpen) return;
     watchMyPause(() => { if (ordersOpen && visible()) draw(); });
-    const list = M.orders;
+    if (ordBr && !storeBranches().some((b) => b.id === ordBr)) ordBr = "";
+    const list = ordBr ? M.orders.filter((o) => o.branchId === ordBr) : M.orders;
     const scroll = target ? null : $("sheetBody").scrollTop;
     showMain(`<div class="pad"><div class="section-title">🧾 الطلبات (${list.length})</div>
-      <div class="pause-row${myPaused ? " on" : ""}"><span>${myPaused ? "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" : "🟢 تستقبل طلبات"}</span>
-        <button class="btn small ${myPaused ? "dir" : "ghost"}" id="pauseBtn">${myPaused ? "▶️ رجّع الاستقبال" : "⏸️ أوقف الطلبات"}</button></div>
+      ${(() => { const ps = pauseState(), multi = myScope().length > 1;
+        return `<div class="pause-row${ps.all || ps.n ? " on" : ""}"><span>${ps.all ? "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" : ps.n ? `⏸️ موقف: ${esc(ps.off.map(bName).join("، "))}` : "🟢 تستقبل طلبات"}</span>
+        <button class="btn small ${ps.all ? "dir" : "ghost"}" id="pauseBtn">${multi ? "⏸️ إيقاف / تشغيل" : ps.all || ps.n ? "▶️ رجّع الاستقبال" : "⏸️ أوقف الطلبات"}</button></div>`; })()}
+      ${!state.staff?.branchIds?.length && storeBranches().length > 1 ? `<div class="chips br-filter"><button class="chip${!ordBr ? " on" : ""}" data-obr="">كل الفروع</button>${storeBranches().map((b) => `<button class="chip${ordBr === b.id ? " on" : ""}" data-obr="${esc(b.id)}">${esc(bName(b))} <small>${M.orders.filter((o) => o.branchId === b.id && ["sent", "received", "ready", "delivering"].includes(o.status)).length || ""}</small></button>`).join("")}</div>` : ""}
       ${F("preorder") && !state.staff ? `<button class="pre-set" id="preSet">📅 الطلب المسبق: <b>${X.preCfg(preCache[mySid()]).on ? "مفعّل" : "مقفل"}</b> <span>إعدادات ‹</span></button>` : ""}
       ${list.length ? ORDER_GROUPS.map((g) => {
         const os = list.filter((o) => g.st.includes(o.status) && (g.k === "sched" ? isAhead(o) : ["new", "prep"].includes(g.k) ? !isAhead(o) : true)).slice(0, 100);
@@ -438,6 +489,7 @@ export function openStoreOrders(opts = {}) {
     if (scroll != null) $("sheetBody").scrollTop = scroll;
     const b = box();
     b.querySelector("#pauseBtn")?.addEventListener("click", togglePause);
+    b.querySelectorAll("[data-obr]").forEach((x) => x.onclick = () => { ordBr = x.dataset.obr; draw(); });
     b.querySelector("#preSet")?.addEventListener("click", () => { if (!target) ordersOpen = false; openPreSettings(() => { if (target) hideSheet(); ordersOpen = true; draw(); }); });
     b.querySelectorAll("details[data-g]").forEach((d) => d.addEventListener("toggle", () => groupOpen.set(d.dataset.g, d.open)));
     b.querySelectorAll("[data-os]").forEach((x) => x.onclick = () => {
@@ -555,7 +607,7 @@ function orderCard(o, asStore) {
   const custWa = asStore ? X.waDigits(o.customerPhone || "") : "";
   const pendingReq = o.cancelReq && !o.cancelReqAns && live;
   return `<div class="ocard s-${esc(o.status || "sent")}${["sent"].includes(o.status) && asStore ? " new" : ""}"><div class="oc-top"><b>#${esc(o.code)}</b><span class="pill ${st.cls}">${asStore ? st.t : statusText(o)}</span></div>
-    <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString(X.LOC, { dateStyle: "short", timeStyle: "short" }) : ""}</div>
+    <div class="oc-sub">${o.branchName ? `📍 ${esc(o.branchName)} • ` : ""}${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString(X.LOC, { dateStyle: "short", timeStyle: "short" }) : ""}</div>
     ${nsc ? `<div class="oc-warn">⚠️ هذا العميل عنده ${nsc === 1 ? "طلب" : nsc + " طلبات"} ما استلمها</div>` : ""}
     ${X.ms(o.scheduledAt) && live ? `<div class="oc-sched${asStore && !isAhead(o) && ["sent", "received"].includes(o.status) ? " due" : ""}">📅 ${asStore ? "الموعد" : "موعد طلبك"}: <b>${esc(X.preWhen(X.ms(o.scheduledAt)))}</b></div>` : ""}
     ${asStore && o.readyNote && o.status === "ready" ? `<div class="oc-note">📍 ${esc(o.readyNote)}</div>` : ""}
@@ -884,7 +936,7 @@ function drawStoreItems(sid) {
   const box = $("storeItems"), data = storeCache[sid];
   if (!box || !data) return;
   const { s, items, D } = data, c = cat(), base = baseKindOf(state.config, s.category), cart = cartOf(sid);
-  const blk = c.orderEnabled ? orderBlock(s, sid) : "", pre = !!blk && !pauseCache[sid] && preOn(sid);
+  const blk = c.orderEnabled ? orderBlock(s, sid) : "", pre = !!blk && !blk.startsWith("⏸️") && preOn(sid);
   const order = c.orderEnabled && (!blk || pre), packs = c.orderEnabled ? D.packs : [];
   if (!items.length && !packs.length) { box.innerHTML = ""; return; }
   const qtyBtns = (id, q) => !order ? "" : q ? `<div class="qty"><button data-dec="${esc(id)}">−</button><b>${q}</b><button data-inc="${esc(id)}">＋</button></div>` : `<button class="add-btn" data-inc="${esc(id)}">＋ أضف</button>`;
@@ -966,7 +1018,7 @@ export async function orderFromOffer(o) {
   if (!s) return toast("صفحة المتجر مو جاهزة");
   await fetchStoreStatus(sid);
   const blk = orderBlock(s, sid);
-  if (blk && (pauseCache[sid] || !preOn(sid))) return toast(blk, true);
+  if (blk && (blk.startsWith("⏸️") || !preOn(sid))) return toast(blk, true);
   const c = cat();
   let items = [];
   if (c.enabled) {
@@ -998,7 +1050,10 @@ export const offerOrderable = (o) => {
 };
 
 // ⏸️🌙 هل المحل يستقبل طلبات الحين؟ (إيقاف يدوي من المحل/الموظف، أو خارج الدوام)
-const pauseCache = {}, preCache = {};
+const pauseCache = {}, preCache = {}, pauseBr = {};
+/** ⏸️ موقف؟ (المحل كله، أو هذا الفرع) */
+export const isPaused = (sid, branchId) => !!pauseCache[sid] || (branchId != null && !!pauseBr[sid]?.has(branchId));
+const setPause = (sid, d) => { const x = d?.exists?.() ? d.data() : null; pauseCache[sid] = x?.paused === true; pauseBr[sid] = new Set(x?.pausedBranches || []); };
 /** 📅 الطلب المسبق مفعّل لهالمحل؟ */
 export const preOn = (sid) => { const c = X.preCfg(preCache[sid]); return F("preorder") && cat().orderEnabled && c.on && (c.pickup || c.delivery); };
 async function loadPre(sid) {
@@ -1008,8 +1063,8 @@ async function loadPre(sid) {
 }
 export async function fetchStoreStatus(sid) {
   loadPre(sid).catch(() => {});
-  try { const d = await getDocFromServer(doc(db, "storeStatus", sid)); pauseCache[sid] = d.exists() && d.data().paused === true; }
-  catch { try { const d = await getDoc(doc(db, "storeStatus", sid)); pauseCache[sid] = d.exists() && d.data().paused === true; } catch {} }
+  try { setPause(sid, await getDocFromServer(doc(db, "storeStatus", sid))); }
+  catch { try { setPause(sid, await getDoc(doc(db, "storeStatus", sid))); } catch {} }
   await loadPre(sid);
   return !!pauseCache[sid];
 }
@@ -1033,6 +1088,8 @@ export function orderBlock(s, sid, branchId) {
   if (pauseCache[sid]) return "⏸️ المحل موقف استقبال الطلبات مؤقتاً — جرّب بعد شوي";
   const bs = (s.branches || []).filter(Boolean);
   if (!bs.length) return "";
+  if (branchId != null && pauseBr[sid]?.has(branchId)) return "⏸️ هذا الفرع موقف الطلبات مؤقتاً — جرّب فرع ثاني";
+  if (branchId == null && bs.every((b) => pauseBr[sid]?.has(b.id))) return "⏸️ المحل موقف استقبال الطلبات مؤقتاً — جرّب بعد شوي";
   const pick = branchId != null ? [bs.find((x) => x.id === branchId) || bs[0]] : bs;
   if (pick.some((b) => X.openNow(b) !== false)) return "";
   const b = pick[0];
@@ -1068,7 +1125,7 @@ function openCheckout(sid) {
     const total = Math.round((sub + fee) * 100) / 100, vatNo = vat.enabled && validVatNumber(s.vatNumber) ? s.vatNumber : "";
     const { vat: vatAmt, net } = vatSplit(total, vat.rate);
     const minOk = f.mode !== "delivery" || !(s.deliveryMinOrder > 0) || sub >= s.deliveryMinOrder;
-    const blk = orderBlock(s, sid, f.branch), paused = !!pauseCache[sid];
+    const blk = orderBlock(s, sid, f.branch), paused = isPaused(sid, f.branch);
     // 📅 اطلب مسبقاً
     const pre = !paused && preOn(sid), pc = X.preCfg(preCache[sid]), closedNow = !!blk && !paused;
     if (closedNow && pre) f.when = "later";
@@ -1077,7 +1134,8 @@ function openCheckout(sid) {
     const modeOkLater = f.mode === "delivery" ? pc.delivery : pc.pickup;
     const days = later ? X.preDays(pc) : [];
     if (later && !days.includes(f.day)) f.day = days.find((d) => X.preTimes(pc, br0, f.mode, d).length) ?? days[0];
-    const isFull = (x) => f.mode === "delivery" && (slotN.get(x.key) || 0) >= pc.slotCap;
+    const bKey = (k) => branches.length > 1 && f.branch ? `${k}_${f.branch}` : k; // فترات التوصيل لكل فرع
+    const isFull = (x) => f.mode === "delivery" && (slotN.get(bKey(x.key)) || 0) >= pc.slotCap;
     const times = later && modeOkLater ? X.preTimes(pc, br0, f.mode, f.day) : [];
     if (!times.some((x) => x.t === f.slot && !isFull(x))) f.slot = 0;
     const blocked = paused || (closedNow && !later);
@@ -1159,11 +1217,11 @@ function openCheckout(sid) {
       // ⏸️ تأكد من السيرفر إن المحل ما أوقف الطلبات، وإن الفرع مفتوح
       await fetchStoreStatus(sid);
       const blk2 = orderBlock(s, sid, br.id ?? null);
-      if (blk2 && (pauseCache[sid] || !later || !preOn(sid))) { toast(blk2, true); return draw(); }
+      if (blk2 && (isPaused(sid, br.id ?? null) || !later || !preOn(sid))) { toast(blk2, true); return draw(); }
       if (later && !preOn(sid)) { toast("المحل قفل الطلب المسبق", true); return draw(); }
       if (later && f.slot < Date.now() + X.preCfg(preCache[sid]).prepMin * 60000) { f.slot = 0; toast("الوقت اللي اخترته فات — اختر وقت ثاني", true); return draw(); }
       // 📅 فترة التوصيل: نتأكد من السيرفر إنها ما امتلت
-      const slotKey = later && f.mode === "delivery" ? X.slotKeyOf(f.slot) : "";
+      const slotKey = later && f.mode === "delivery" ? (branches.length > 1 && br.id ? `${X.slotKeyOf(f.slot)}_${br.id}`.slice(0, 60) : X.slotKeyOf(f.slot)) : "";
       let slotNow = 0;
       if (slotKey) {
         try { const sd = await getDocFromServer(doc(db, "slotCounts", `${sid}_${slotKey}`)); slotNow = sd.exists() ? (sd.data().n | 0) : 0; } catch (e) { console.warn("slot", e); }
@@ -1205,7 +1263,7 @@ function openCheckout(sid) {
         catch (e) {
           console.warn("order save", e);
           if (slotKey) { w?.close(); toast("😕 ما قدرنا نحجز هالفترة (يمكن امتلت) — اختر وقت ثاني", true); f.slot = 0; loadSlots(); return draw(); }
-          if (e?.code === "permission-denied" && await fetchStoreStatus(sid)) { w?.close(); toast(orderBlock(s, sid), true); return draw(); }
+          if (e?.code === "permission-denied" && (await fetchStoreStatus(sid), isPaused(sid, br.id ?? null))) { w?.close(); toast(orderBlock(s, sid, br.id ?? null), true); return draw(); }
         }
       }
       if (w) w.location = url; else location.href = url;
