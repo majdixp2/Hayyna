@@ -107,8 +107,11 @@ data class HayynaOrder(
     val discount: Double = 0.0,
     // متابعة الطلب: وين واقف (السيارة)، طلب الإلغاء، سبب إلغاء المحل، متى صار جاهز
     val customerUid: String = "", val spot: String = "", val readyAtMillis: Long = 0L,
-    val cancelReq: String = "", val cancelReqAns: String = "", val cancelBy: String = "", val cancelReason: String = ""
+    val cancelReq: String = "", val cancelReqAns: String = "", val cancelBy: String = "", val cancelReason: String = "",
+    // 📅 طلب مسبق + 🛍️ ملاحظة الجاهزية
+    val scheduledAtMillis: Long = 0L, val slotKey: String = "", val readyNote: String = ""
 ) {
+    val isScheduled get() = scheduledAtMillis > 0
     val isLive get() = status in listOf("sent", "received", "ready", "delivering")
     val pendingCancelReq get() = cancelReq.isNotBlank() && cancelReqAns.isBlank() && isLive
     val isDelivery get() = mode == "delivery"
@@ -118,7 +121,7 @@ data class HayynaOrder(
     /** وصف الحالة للزبون حسب نوع الطلب */
     fun statusText(): String = when (status) {
         "sent" -> "📨 أُرسل — بانتظار المحل"; "received" -> "👍 المحل استلم طلبك ويجهّزه"
-        "ready" -> if (isCurbside) (if (arrived) "🚗 جاهز — المحل جاي لسيارتك" else "🚗 جاهز — تعال واضغط «وصلت»") else "🛍️ جاهز للاستلام"
+        "ready" -> (if (isCurbside) (if (arrived) "🚗 جاهز — المحل جاي لسيارتك" else "🚗 جاهز — تعال واضغط «وصلت»") else "🛍️ جاهز للاستلام") + if (readyNote.isNotBlank()) " — $readyNote" else ""
         "delivering" -> "🚚 جاري التوصيل"; "done" -> if (isDelivery) "✅ تم التوصيل" else if (isCurbside) "✅ تم التسليم" else "✅ تم الاستلام"
         "cancelled" -> if (cancelBy == "store") "✕ ألغاه المحل" else "✕ ملغي"; "noshow" -> "🚫 ما انستلم"; else -> status
     }
@@ -147,6 +150,7 @@ data class HayynaOrder(
     fun text(): String = buildString {
         appendLine("🧾 ملخص طلب من لكوفر — رقم #$code")
         appendLine("🏪 $storeName" + if (branchName.isNotBlank()) " — $branchName" else "")
+        if (scheduledAtMillis > 0) appendLine("📅 طلب مسبق — الموعد: ${PreOrder.whenText(scheduledAtMillis)}")
         appendLine("━━━━━━━━━━━━")
         items.forEach {
             appendLine("${it.qty} × ${it.name} ........ ${f(it.price * it.qty)} ر.س" + if (it.was > it.price) " (بدل ${f(it.was * it.qty)})" else "")

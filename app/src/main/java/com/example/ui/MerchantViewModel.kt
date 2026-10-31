@@ -928,7 +928,18 @@ class MerchantViewModel(
             toast("تم ✅ خصمنا $cost نقطة")
         }
     }
-    fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0, extra: Map<String, Any> = emptyMap()) = launchSafely("تعذّر التحديث — يمكن المحل استلمه") { repository.setOrderStatus(id, status, etaMinutes, extra) }
+    fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0, extra: Map<String, Any> = emptyMap()) = launchSafely("تعذّر التحديث — يمكن المحل استلمه") {
+        val o = if (status == "cancelled") (storeOrders.value + myOrders.value).firstOrNull { it.id == id } else null
+        repository.setOrderStatus(id, status, etaMinutes, extra, o?.takeIf { it.slotKey.isNotBlank() && it.status != "cancelled" }?.let { it.storeId to it.slotKey })
+    }
+    /** 🛍️ جاهز للاستلام + ملاحظة للعميل (وين يستلم) */
+    fun markReady(o: com.example.data.model.HayynaOrder, note: String) {
+        val n = note.trim().take(80)
+        if (n.isNotBlank()) readyNotes.value = (listOf(n) + readyNotes.value.filter { it != n }).take(4).also { readyPrefs.edit().putString("notes", it.joinToString("\n")).apply() }
+        setOrderStatus(o.id, "ready", extra = if (n.isNotBlank()) mapOf("readyNote" to n) else emptyMap())
+    }
+    private val readyPrefs = application.getSharedPreferences("lc_ready", android.content.Context.MODE_PRIVATE)
+    val readyNotes = MutableStateFlow(readyPrefs.getString("notes", "").orEmpty().split("\n").filter { it.isNotBlank() })
     /** إلغاء من المحل بسبب */
     fun storeCancel(o: com.example.data.model.HayynaOrder, reason: String) = setOrderStatus(o.id, "cancelled", extra = mapOf("cancelBy" to "store", "cancelReason" to reason.take(120)))
     /** رد المحل على طلب الإلغاء */
@@ -1005,7 +1016,7 @@ class MerchantViewModel(
                 } else list.forEach { o ->
                     val old = p[o.id]
                     when {
-                        old == null -> if (o.status == "sent") { toast("🛎️ طلب جديد #${o.code} من ${o.customerName.ifBlank { "عميل" }}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "new") }
+                        old == null -> if (o.status == "sent") { toast(if (o.isScheduled) "📅 طلب مسبق جديد #${o.code} — موعده ${com.example.data.model.PreOrder.whenText(o.scheduledAtMillis)}" else "🛎️ طلب جديد #${o.code} من ${o.customerName.ifBlank { "عميل" }}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "new") }
                         o.arrived && !old.arrived -> { toast("🚗 العميل وصل — طلب #${o.code} ${o.car}${if (o.spot.isNotBlank()) " • " + o.spot else ""}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "arrive") }
                         o.cancelReq.isNotBlank() && old.cancelReq.isBlank() -> { toast("🙋 العميل يطلب إلغاء #${o.code}: ${o.cancelReq}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "cancel") }
                         o.status == "cancelled" && old.status != "cancelled" && o.cancelBy != "store" -> { toast("✕ العميل ألغى طلب #${o.code}"); if (snd) com.example.data.OrderSounds.play(getApplication(), "cancel") }
@@ -1075,7 +1086,50 @@ class MerchantViewModel(
     }
     // ⏸️🌙 هل المحل يستقبل طلبات الحين؟ (إيقاف يدوي أو خارج الدوام)
     val pausedStores = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    // 📅 اطلب مسبقاً
+    val preCfgs = MutableStateFlow<Map<String, com.example.data.model.PreorderCfg>>(emptyMap())
+    fun preOn(sid: String): Boolean = catalogConfig.value.feat("preorder") && catalogConfig.value.orderEnabled && preCfgs.value[sid]?.active == true
+    val slotCounts = MutableStateFlow<Map<String, Map<String, Int>>>(emptyMap())
+    fun loadSlotCounts(sid: String) { viewModelScope.launch { slotCounts.value = slotCounts.value + (sid to repository.slotCounts(sid)) } }
+    /** إعدادات الطلب المسبق لمتجري (صاحب المحل/الموظف) */
+    val myPre = MutableStateFlow(com.example.data.model.PreorderCfg())
+    fun saveMyPre(c: com.example.data.model.PreorderCfg, onDone: () -> Unit) {
+        val uid = currentUser.value?.uid ?: return
+        launchSafely("تعذّر الحفظ") {
+            repository.savePreorderCfg(uid, c); myPre.value = c; preCfgs.value = preCfgs.value + (uid to c)
+            toast(if (c.on) "📅 الطلب المسبق مفعّل ✅" else "انقفل الطلب المسبق"); onDone()
+        }
+    }
+    // ⏰ الطلب المسبق: تنبيه المحل لما يجي وقت تجهيزه
+    private val duePrefs = application.getSharedPreferences("lc_due", android.content.Context.MODE_PRIVATE)
+    init {
+        viewModelScope.launch {
+            storeIdFlow { it.canOrders }.collect { sid ->
+                if (sid != null && catalogConfig.value.feat("preorder")) myPre.value = repository.preorderCfg(sid) ?: com.example.data.model.PreorderCfg()
+            }
+        }
+        viewModelScope.launch {
+            delay(5_000)
+            while (true) {
+                if (catalogConfig.value.feat("preorder")) {
+                    val now = System.currentTimeMillis()
+                    val prep = myPre.value.prepMin * 60_000L
+                    val seen = duePrefs.getStringSet("ids", emptySet()).orEmpty().toMutableSet()
+                    storeOrders.value.filter { it.isScheduled && it.status in listOf("sent", "received") && it.id !in seen }
+                        .filter { it.scheduledAtMillis - prep <= now && it.scheduledAtMillis > now - 3_600_000L }
+                        .forEach { o ->
+                            seen += o.id
+                            toast("⏰ حان وقت تجهيز الطلب المسبق #${o.code} — موعده ${com.example.data.model.PreOrder.timeOf(o.scheduledAtMillis)}")
+                            if (catalogConfig.value.feat("sounds")) com.example.data.OrderSounds.play(getApplication(), "new")
+                        }
+                    duePrefs.edit().putStringSet("ids", seen.toList().takeLast(50).toSet()).apply()
+                }
+                delay(60_000)
+            }
+        }
+    }
     suspend fun refreshStorePause(sid: String): Boolean {
+        if (catalogConfig.value.feat("preorder")) repository.preorderCfg(sid).let { preCfgs.value = preCfgs.value + (sid to (it ?: com.example.data.model.PreorderCfg())) }
         val p = repository.storePausedNow(sid)
         pausedStores.value = pausedStores.value + (sid to p)
         return p
@@ -1116,7 +1170,8 @@ class MerchantViewModel(
         viewModelScope.launch {
             val st = approvedStores.value.firstOrNull { it.uid == o.merchantId } ?: runCatching { repository.getStore(o.merchantId) }.getOrNull()
             if (st == null) { toast("صفحة المتجر مو جاهزة"); return@launch }
-            orderBlock(st, null, refreshStorePause(st.uid))?.let { toast(it); return@launch }
+            val paused = refreshStorePause(st.uid)
+            orderBlock(st, null, paused)?.let { if (paused || !preOn(st.uid)) { toast(it); return@launch } }
             val items = loadStoreCatalog(st.uid)
             val d = com.example.data.model.OfferDeal.from(o.deal) ?: return@launch
             when (d.type) {
@@ -1154,7 +1209,10 @@ class MerchantViewModel(
     }
 
     /** يحفظ الطلب (لو مسجّل) ويرجّع رابط واتساب المحل مع ملخص الطلب */
-    fun sendOrder(store: com.example.data.model.StoreProfile, branch: com.example.data.model.Branch?, mode: String, name: String, phone: String, note: String, pay: String, car: String, onUrl: (String) -> Unit) {
+    fun sendOrder(store: com.example.data.model.StoreProfile, branch: com.example.data.model.Branch?, mode: String, name: String, phone: String, note: String, pay: String, car: String, scheduledAt: Long = 0L, onUrl: (String) -> Unit) {
+        val later = scheduledAt > 0
+        val slotKey = if (later && mode == "delivery") com.example.data.model.PreOrder.slotKey(scheduledAt) else ""
+        if (slotKey.isNotBlank() && currentUser.value == null) { toast("سجّل دخولك عشان تحجز موعد توصيل"); return }
         val lines = carts.value[store.uid].orEmpty().values.toList()
         if (lines.isEmpty()) return
         val cfg = catalogConfig.value
@@ -1170,7 +1228,8 @@ class MerchantViewModel(
             branchName = if (store.branches.size > 1) (branch?.name?.ifBlank { branch.district } ?: "") else "",
             customerName = name.trim().take(60), customerPhone = phone.trim(), items = tot.lines, subtotal = sub, discount = tot.saved, deliveryFee = fee, total = total,
             vatRate = if (vatNo.isNotBlank()) cfg.vatRate else 0.0, vatAmount = vatAmt, vatNumber = vatNo, mode = mode, pay = pay, car = if (mode == "curbside") car.trim().take(60) else "",
-            lat = if (mode == "delivery") loc?.latitude else null, lng = if (mode == "delivery") loc?.longitude else null, note = note.trim().take(300)
+            lat = if (mode == "delivery") loc?.latitude else null, lng = if (mode == "delivery") loc?.longitude else null, note = note.trim().take(300),
+            scheduledAtMillis = scheduledAt, slotKey = slotKey
         )
         val digits = (branch?.phone ?: store.phone).filter { it.isDigit() }.let { d ->
             when { d.startsWith("05") && d.length == 10 -> "966" + d.drop(1); d.startsWith("5") && d.length == 9 -> "966$d"; else -> d }
@@ -1179,7 +1238,17 @@ class MerchantViewModel(
         val url = "https://wa.me/$digits?text=" + java.net.URLEncoder.encode(o.text(), "UTF-8").replace("+", "%20")
         viewModelScope.launch {
             // ⏸️ نتأكد من السيرفر إن المحل ما أوقف الطلبات، وإن الفرع مفتوح
-            orderBlock(store, branch?.id, refreshStorePause(store.uid))?.let { toast(it); return@launch }
+            val paused = refreshStorePause(store.uid)
+            orderBlock(store, branch?.id, paused)?.let { if (paused || !later || !preOn(store.uid)) { toast(it); return@launch } }
+            val pc = preCfgs.value[store.uid] ?: com.example.data.model.PreorderCfg()
+            if (later && !preOn(store.uid)) { toast("المحل قفل الطلب المسبق"); return@launch }
+            if (later && scheduledAt < System.currentTimeMillis() + pc.prepMin * 60_000L) { toast("الوقت اللي اخترته فات — اختر وقت ثاني"); return@launch }
+            // 📅 فترة التوصيل: نتأكد من السيرفر إنها ما امتلت
+            var slotN = 0
+            if (slotKey.isNotBlank()) {
+                slotN = repository.slotCountNow(store.uid, slotKey)
+                if (slotN >= pc.slotCap) { loadSlotCounts(store.uid); toast("😕 هالفترة امتلت الحين — اختر وقت ثاني"); return@launch }
+            }
             // ❌ نتأكد من السيرفر إن العروض اللي في السلة ما نفدت (يمكن الموظف علّمها الحين)
             val sold = lines.filter { it.id.startsWith("deal_") }.filter { repository.offerSoldOutNow(it.id.removePrefix("deal_")) }
             if (sold.isNotEmpty()) {
@@ -1187,10 +1256,11 @@ class MerchantViewModel(
                 toast("❌ «${sold.first().name}» نفد اليوم — شلناه من سلتك")
                 return@launch
             }
-            val saveErr = currentUser.value?.uid?.let { uid -> runCatching { repository.saveOrder(o, uid, branch?.id.orEmpty()) }.onFailure { Log.w(TAG, "order: ${it.message}") }.exceptionOrNull() }
+            val saveErr = currentUser.value?.uid?.let { uid -> runCatching { repository.saveOrder(o, uid, branch?.id.orEmpty(), slotN) }.onFailure { Log.w(TAG, "order: ${it.message}") }.exceptionOrNull() }
+            if (saveErr != null && slotKey.isNotBlank()) { loadSlotCounts(store.uid); toast("😕 ما قدرنا نحجز هالفترة (يمكن امتلت) — اختر وقت ثاني"); return@launch }
             if (saveErr != null && refreshStorePause(store.uid)) { toast(orderBlock(store, null, true) ?: ""); return@launch }
             carts.value = carts.value - store.uid
-            toast("انرسل طلبك #${o.code} ✅ كمّل في واتساب")
+            toast(if (later) "📅 انحجز طلبك #${o.code} — ${com.example.data.model.PreOrder.whenText(scheduledAt)} ✅ كمّل في واتساب" else "انرسل طلبك #${o.code} ✅ كمّل في واتساب")
             onUrl(url)
         }
     }

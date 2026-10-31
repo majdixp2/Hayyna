@@ -28,6 +28,8 @@ export function watchMerchantCatalog(uid, onChange) {
   M.onChange = onChange;
   if (M.uid === uid) return;
   M.unsubs.forEach((u) => u()); M.unsubs = []; M.uid = uid; M.items = []; M.passes = []; M.orders = [];
+  // ⏰ الطلب المسبق: تنبيه لما يجي وقت تجهيزه
+  if (F("preorder")) { loadPre(uid).catch(() => {}); clearInterval(M.dueT); M.dueT = setInterval(checkDue, 60000); setTimeout(checkDue, 5000); }
   const fire = () => M.onChange?.();
   M.unsubs.push(onSnapshot(query(collection(db, "items"), where("merchantId", "==", uid)), (s) => { M.items = s.docs.map((d) => ({ ...d.data(), id: d.id })); fire(); refreshPage(); }, () => {}));
   M.unsubs.push(onSnapshot(query(collection(db, "itemPasses"), where("merchantId", "==", uid)), (s) => { M.passes = s.docs.map((d) => ({ ...d.data(), id: d.id })); fire(); refreshPage(); }, () => {}));
@@ -42,7 +44,7 @@ export function watchMerchantCatalog(uid, onChange) {
       if (waiting) { toast(waiting === 1 ? "🛎️ عندك طلب جديد" : `🛎️ عندك ${waiting} طلبات جديدة`, true); if (S) play("new"); }
     } else for (const o of M.orders) {
       const p = prev.get(o.id);
-      if (!p) { if (o.status === "sent") { toast(`🛎️ طلب جديد #${o.code} من ${o.customerName || "عميل"}`, true); if (S) play("new"); } }
+      if (!p) { if (o.status === "sent") { toast(X.ms(o.scheduledAt) ? `📅 طلب مسبق جديد #${o.code} — موعده ${X.preWhen(X.ms(o.scheduledAt))}` : `🛎️ طلب جديد #${o.code} من ${o.customerName || "عميل"}`, true); if (S) play("new"); } }
       else if (o.arrivedAt && !p.arrivedAt) { toast(`🚗 العميل وصل — طلب #${o.code}${o.car ? " • " + o.car : ""}${o.spot ? " • " + o.spot : ""}`, true); if (S) play("arrive"); }
       else if (o.cancelReq && !p.cancelReq) { toast(`🙋 العميل يطلب إلغاء #${o.code}: ${o.cancelReq}`, true); if (S) play("cancel"); }
       else if (o.status === "cancelled" && p.status !== "cancelled" && o.cancelBy !== "store") { toast(`✕ العميل ألغى طلب #${o.code}`, true); if (S) play("cancel"); }
@@ -50,6 +52,20 @@ export function watchMerchantCatalog(uid, onChange) {
     M.ordersLoaded = true;
     if (ordersOpen && (M.ordersVisible ? M.ordersVisible() : !$("sheet").classList.contains("hidden"))) M.onOrders?.();
   }, () => {}));
+}
+function checkDue() {
+  let seen = []; try { seen = JSON.parse(localStorage.getItem("lc_due") || "[]"); } catch {}
+  const now = Date.now(), prep = myPrep() * 60000; let hit = false;
+  for (const o of M.orders) {
+    const t = X.ms(o.scheduledAt);
+    if (!t || !["sent", "received"].includes(o.status) || seen.includes(o.id)) continue;
+    if (t - prep <= now && t > now - 3600e3) {
+      seen.push(o.id); hit = true;
+      toast(`⏰ حان وقت تجهيز الطلب المسبق #${o.code} — موعده ${X.timeOf(t)}`, true);
+      if (F("sounds")) play("new");
+    }
+  }
+  if (hit) { try { localStorage.setItem("lc_due", JSON.stringify(seen.slice(-50))); } catch {} if (ordersOpen) M.onOrders?.(); }
 }
 // عدّاد «ما انستلم» لكل عميل (يظهر للمحل جنب الطلب)
 const custStats = new Map();
@@ -311,6 +327,7 @@ let ordersOpen = false;
 export const storeItems = () => M.items; // أصناف المحل (شاشة الموظف: نفد اليوم)
 // مجموعات الطلبات عند المحل: اللي فيها شغل مفتوحة، والمنتهية والملغية مطوية
 const ORDER_GROUPS = [
+  { k: "sched", t: "📅 مجدولة (موعدها لاحق)", st: ["sent", "received"], open: true },
   { k: "new", t: "🆕 الجديدة", st: ["sent"], open: true },
   { k: "prep", t: "👨‍🍳 جاري التجهيز", st: ["received"], open: true },
   { k: "ready", t: "🛍️ جاهز / 🚚 بالطريق", st: ["ready", "delivering"], open: true },
@@ -318,8 +335,65 @@ const ORDER_GROUPS = [
   { k: "cancelled", t: "✕ الملغية / ما انستلمت", st: ["cancelled", "noshow"], open: false },
 ];
 const groupOpen = new Map();
+// 📅 الطلب المجدول يظل في «مجدولة» لين يجي وقت تجهيزه
+const myPrep = () => X.preCfg(preCache[M.uid]).prepMin;
+const isAhead = (o) => { const t = X.ms(o.scheduledAt); return !!t && t - myPrep() * 60000 > Date.now(); };
 const REMIND_MIN = 30; // تذكير المحل لو الطلب جاهز وما انستلم
 /** شاشة طلبات المحل. opts.el = ترسمها داخل عنصر (شاشة الموظف) بدل النافذة */
+/** 📅 إعدادات الطلب المسبق (صاحب المحل) */
+export function openPreSettings(onBack) {
+  const sid = state.user?.uid; if (!sid) return;
+  const store = state.stores.find((x) => x.uid === sid) || {};
+  const f = { ...X.preCfg(preCache[sid]) }, mins = [15, 30, 45, 60, 90, 120];
+  if (!mins.includes(f.prepMin)) mins.push(f.prepMin);
+  const tSel = (id, v) => `<select id="${id}" class="input"><option value="-1" ${v < 0 ? "selected" : ""}>حسب الدوام</option>${X.minuteOptions().map((mm) => `<option value="${mm}" ${mm === v ? "selected" : ""}>${X.fmtMinute(mm)}</option>`).join("")}</select>`;
+  const draw = () => {
+    showSheet(`<div class="pad form"><div class="section-title">📅 الطلب المسبق</div>
+      <p class="desc tr">الزبون يطلب الحين ويختار موعد لاحق — حتى لو المحل مغلق.</p>
+      <label class="switch-row"><span><b>تفعيل «اطلب مسبقاً»</b></span><input type="checkbox" id="pOn" ${f.on ? "checked" : ""}></label>
+      ${!f.on ? "" : `
+      <label class="label">أبعد موعد يقدر الزبون يختاره</label>
+      <div class="chips"><button class="chip${f.maxDays === 0 ? " on" : ""}" data-md="0">نفس اليوم بس</button><button class="chip${f.maxDays > 0 ? " on" : ""}" data-md="${f.maxDays || 2}">عدد أيام</button></div>
+      ${f.maxDays > 0 ? `<div class="row2"><input id="pDays" class="input" inputmode="numeric" maxlength="2" value="${f.maxDays}"><span class="hint" style="align-self:center">يوم قدام (لين 14)</span></div>` : ""}
+      <label class="label">⏱️ وقت التجهيز (أقرب موعد بعد كم؟)</label>
+      <div class="chips wrap">${mins.map((m) => `<button class="chip${f.prepMin === m ? " on" : ""}" data-pm="${m}">${m} دقيقة</button>`).join("")}</div>
+      <label class="switch-row"><span>🏃 استلام بموعد <small class="hint">(الزبون يختار وقت داخل الدوام كل ربع ساعة)</small></span><input type="checkbox" id="pPick" ${f.pickup ? "checked" : ""}></label>
+      ${store.delivery ? `<label class="switch-row"><span>🚚 توصيل بموعد <small class="hint">(فترات تحددها أنت)</small></span><input type="checkbox" id="pDel" ${f.delivery ? "checked" : ""}></label>
+      ${f.delivery ? `<div class="pre-del">
+        <div class="row2"><div><label class="label">التوصيل من</label>${tSel("pFrom", f.delFrom)}</div><div><label class="label">لين</label>${tSel("pTo", f.delFrom < 0 ? -1 : f.delTo)}</div></div>
+        <label class="label">طول الفترة</label>
+        <div class="chips">${[30, 60, 120].map((m) => `<button class="chip${f.slotMin === m ? " on" : ""}" data-sm="${m}">${m === 30 ? "نص ساعة" : m === 60 ? "ساعة" : "ساعتين"}</button>`).join("")}</div>
+        <label class="label">الحد الأقصى للطلبات في كل فترة</label>
+        <input id="pCap" class="input" inputmode="numeric" maxlength="2" value="${f.slotCap}">
+      </div>` : ""}` : ""}`}
+      <div id="pErr" class="err"></div>
+      <button class="btn dir big" id="pSave">حفظ ✓</button><button class="btn ghost" id="pBack">‹ رجوع</button></div>`);
+    const b = $("sheetBody"), keepIn = () => {
+      if ($("pDays")) f.maxDays = Math.max(1, Math.min(14, parseInt($("pDays").value.replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c)), 10) || 1));
+      if ($("pCap")) f.slotCap = Math.max(1, Math.min(50, parseInt($("pCap").value.replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c)), 10) || 1));
+      if ($("pFrom")) { f.delFrom = +$("pFrom").value; f.delTo = f.delFrom < 0 ? -1 : +$("pTo").value; if (f.delFrom >= 0 && f.delTo < 0) f.delTo = (f.delFrom + 240) % 1440; }
+    };
+    $("pOn").onchange = (e) => { keepIn(); f.on = e.target.checked; draw(); };
+    $("pPick")?.addEventListener("change", (e) => { f.pickup = e.target.checked; });
+    $("pDel")?.addEventListener("change", (e) => { keepIn(); f.delivery = e.target.checked; draw(); });
+    $("pFrom")?.addEventListener("change", () => { keepIn(); draw(); });
+    b.querySelectorAll("[data-md]").forEach((x) => x.onclick = () => { keepIn(); f.maxDays = +x.dataset.md; draw(); });
+    b.querySelectorAll("[data-pm]").forEach((x) => x.onclick = () => { keepIn(); f.prepMin = +x.dataset.pm; draw(); });
+    b.querySelectorAll("[data-sm]").forEach((x) => x.onclick = () => { keepIn(); f.slotMin = +x.dataset.sm; draw(); });
+    $("pBack").onclick = () => onBack ? onBack() : hideSheet();
+    $("pSave").onclick = async () => {
+      keepIn();
+      if (f.on && !f.pickup && !(store.delivery && f.delivery)) return $("pErr").textContent = "فعّل الاستلام أو التوصيل بموعد.";
+      const data = { on: !!f.on, maxDays: f.maxDays | 0, prepMin: f.prepMin | 0, pickup: !!f.pickup, delivery: !!(store.delivery && f.delivery),
+        delFrom: f.delFrom | 0, delTo: f.delTo | 0, slotMin: [30, 60, 120].includes(f.slotMin) ? f.slotMin : 60, slotCap: f.slotCap | 0 || 1, updatedAt: serverTimestamp() };
+      $("pSave").disabled = true;
+      try { await setDoc(doc(db, "preorderCfg", sid), data); preCache[sid] = data; toast(data.on ? "📅 الطلب المسبق مفعّل ✅" : "انقفل الطلب المسبق", true); onBack ? onBack() : hideSheet(); }
+      catch (e) { console.error(e); $("pSave").disabled = false; $("pErr").textContent = "تعذّر الحفظ"; }
+    };
+  };
+  draw();
+}
+
 // ⏸️ زر إيقاف استقبال الطلبات (صاحب المحل + موظف الطلبات)
 let pauseUnsub = null, pauseSid = "", myPaused = false, pauseRedraw = null;
 const mySid = () => state.staff?.storeId || state.user?.uid || "";
@@ -328,6 +402,7 @@ function watchMyPause(redraw) {
   const sid = mySid();
   if (!sid || pauseSid === sid) return;
   pauseUnsub?.(); pauseSid = sid;
+  loadPre(sid).then(() => pauseRedraw?.());
   pauseUnsub = onSnapshot(doc(db, "storeStatus", sid), (d) => { myPaused = d.exists() && d.data().paused === true; pauseCache[sid] = myPaused; pauseRedraw?.(); }, (e) => console.warn("storeStatus", e));
 }
 async function togglePause() {
@@ -352,8 +427,10 @@ export function openStoreOrders(opts = {}) {
     showMain(`<div class="pad"><div class="section-title">🧾 الطلبات (${list.length})</div>
       <div class="pause-row${myPaused ? " on" : ""}"><span>${myPaused ? "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" : "🟢 تستقبل طلبات"}</span>
         <button class="btn small ${myPaused ? "dir" : "ghost"}" id="pauseBtn">${myPaused ? "▶️ رجّع الاستقبال" : "⏸️ أوقف الطلبات"}</button></div>
+      ${F("preorder") && !state.staff ? `<button class="pre-set" id="preSet">📅 الطلب المسبق: <b>${X.preCfg(preCache[mySid()]).on ? "مفعّل" : "مقفل"}</b> <span>إعدادات ‹</span></button>` : ""}
       ${list.length ? ORDER_GROUPS.map((g) => {
-        const os = list.filter((o) => g.st.includes(o.status)).slice(0, 100);
+        const os = list.filter((o) => g.st.includes(o.status) && (g.k === "sched" ? isAhead(o) : ["new", "prep"].includes(g.k) ? !isAhead(o) : true)).slice(0, 100);
+        if (g.k === "sched") os.sort((a, b) => X.ms(a.scheduledAt) - X.ms(b.scheduledAt));
         if (!os.length) return "";
         const open = groupOpen.has(g.k) ? groupOpen.get(g.k) : g.open;
         return `<details class="ogrp g-${g.k}" data-g="${g.k}"${open ? " open" : ""}><summary>${g.t} <span class="cnt">${os.length}</span></summary>${os.map((o) => orderCard(o, true)).join("")}</details>`;
@@ -361,10 +438,12 @@ export function openStoreOrders(opts = {}) {
     if (scroll != null) $("sheetBody").scrollTop = scroll;
     const b = box();
     b.querySelector("#pauseBtn")?.addEventListener("click", togglePause);
+    b.querySelector("#preSet")?.addEventListener("click", () => { if (!target) ordersOpen = false; openPreSettings(() => { if (target) hideSheet(); ordersOpen = true; draw(); }); });
     b.querySelectorAll("details[data-g]").forEach((d) => d.addEventListener("toggle", () => groupOpen.set(d.dataset.g, d.open)));
     b.querySelectorAll("[data-os]").forEach((x) => x.onclick = () => {
       const o = M.orders.find((y) => y.id === x.dataset.oid), st = x.dataset.os;
       if (st === "received") return F("eta") ? pickEta(o) : setStatus(o, "received");
+      if (st === "ready") return pickReady(o);
       if (st === "cancelled") return storeCancel(o);
       if (st === "noshow") return markNoshow(o);
       setStatus(o, st, st === "ready" ? { readyAt: serverTimestamp() } : {});
@@ -376,7 +455,7 @@ export function openStoreOrders(opts = {}) {
     });
   };
   const setStatus = async (o, st, extra = {}) => {
-    try { await updateDoc(doc(db, "orders", o.id), { status: st, updatedAt: serverTimestamp(), ...extra }); Object.assign(o, { status: st }, extra); if (target) hideSheet(); ordersOpen = true; draw(); }
+    try { await updOrder(o, { status: st, updatedAt: serverTimestamp(), ...extra }); Object.assign(o, { status: st }, extra); if (target) hideSheet(); ordersOpen = true; draw(); }
     catch (e) { console.error(e); toast("تعذّر التحديث"); if (target) hideSheet(); ordersOpen = true; draw(); }
   };
   // استلام الطلب: المحل يختار وقت تقريبي للتجهيز
@@ -388,6 +467,24 @@ export function openStoreOrders(opts = {}) {
       <button class="btn call" id="etaSkip" style="margin-top:10px">بدون وقت</button></div>`);
     $("sheetBody").querySelectorAll("[data-eta]").forEach((x) => x.onclick = () => setStatus(o, "received", { etaAt: Timestamp.fromMillis(Date.now() + +x.dataset.eta * 60000) }));
     $("etaSkip").onclick = () => setStatus(o, "received");
+  };
+  // 🛍️ جاهز للاستلام: ملاحظة توصل للعميل (وين يستلم)
+  const pickReady = (o) => {
+    if (!target) ordersOpen = false;
+    let quick = []; try { quick = JSON.parse(localStorage.getItem("lc_readyNotes") || "[]"); } catch {}
+    const picks = [...new Set([...quick, "عند خدمة العملاء", "عند الكاشير", "كاشير رقم 1", "كاشير رقم 2", "كاشير رقم 3", o.mode === "curbside" ? "بنطلّعه لسيارتك" : "عند الباب"])].slice(0, 9);
+    showSheet(`<div class="pad form"><div class="section-title">🛍️ طلب #${esc(o.code)} جاهز</div>
+      <p class="desc tr">تبي تكتب للعميل وين يستلم؟ (اختياري)</p>
+      <div class="chips wrap">${picks.map((r) => `<button class="chip" data-rn="${esc(r)}">${esc(r)}</button>`).join("")}</div>
+      <input id="rnTxt" class="input" maxlength="80" placeholder="مثال: لدى كاشير رقم 3">
+      <button class="btn dir big" id="rnGo">✅ جاهز — بلّغ العميل</button><button class="btn ghost" id="rnBack">‹ رجوع</button></div>`);
+    $("sheetBody").querySelectorAll("[data-rn]").forEach((x) => x.onclick = () => { $("rnTxt").value = x.dataset.rn; });
+    $("rnBack").onclick = () => { if (target) hideSheet(); ordersOpen = true; draw(); };
+    $("rnGo").onclick = () => {
+      const note = $("rnTxt").value.trim().slice(0, 80);
+      if (note) { try { localStorage.setItem("lc_readyNotes", JSON.stringify([note, ...quick.filter((q) => q !== note)].slice(0, 4))); } catch {} }
+      setStatus(o, "ready", { readyAt: serverTimestamp(), ...(note ? { readyNote: note } : {}) });
+    };
   };
   // إلغاء من المحل: سبب من القائمة (يوصل للعميل)
   const storeCancel = (o) => {
@@ -460,6 +557,8 @@ function orderCard(o, asStore) {
   return `<div class="ocard s-${esc(o.status || "sent")}${["sent"].includes(o.status) && asStore ? " new" : ""}"><div class="oc-top"><b>#${esc(o.code)}</b><span class="pill ${st.cls}">${asStore ? st.t : statusText(o)}</span></div>
     <div class="oc-sub">${asStore ? esc([o.customerName, X.toLocalPhone(o.customerPhone)].filter(Boolean).join(" • ")) : `🏪 ${esc(o.storeName)}`} • ${when ? new Date(when).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "short", timeStyle: "short" }) : ""}</div>
     ${nsc ? `<div class="oc-warn">⚠️ هذا العميل عنده ${nsc === 1 ? "طلب" : nsc + " طلبات"} ما استلمها</div>` : ""}
+    ${X.ms(o.scheduledAt) && live ? `<div class="oc-sched${asStore && !isAhead(o) && ["sent", "received"].includes(o.status) ? " due" : ""}">📅 ${asStore ? "الموعد" : "موعد طلبك"}: <b>${esc(X.preWhen(X.ms(o.scheduledAt)))}</b></div>` : ""}
+    ${asStore && o.readyNote && o.status === "ready" ? `<div class="oc-note">📍 ${esc(o.readyNote)}</div>` : ""}
     ${stepper(o)}${F("eta") && etaText(o) ? `<div class="oc-eta">${etaText(o)}</div>` : ""}
     <div class="oc-items">${(o.items || []).map((i) => `${i.qty} × ${esc(i.name)}`).join("، ")}</div>
     <div class="oc-tot">${MODES[o.mode] || "🏃 استلام"} • <b>${fmt(o.total)} ر.س</b>${o.pay ? ` • ${PAY[o.pay]?.icon} ${PAY[o.pay]?.label}` : ""}${o.note ? ` • 📝 ${esc(o.note)}` : ""}</div>
@@ -512,7 +611,7 @@ function subscribeMy(uid) {
   });
 }
 const myOrdersQuery = (uid) => query(collection(db, "orders"), where("customerUid", "==", uid));
-const sig = (o) => [o.status, X.ms(o.etaAt) || "", X.ms(o.arrivedAt) || "", o.cancelReq || "", o.cancelReqAns || "", o.car || "", o.spot || ""].join("|");
+const sig = (o) => [o.readyNote || "", o.status, X.ms(o.etaAt) || "", X.ms(o.arrivedAt) || "", o.cancelReq || "", o.cancelReqAns || "", o.car || "", o.spot || ""].join("|");
 function applyMyOrders(docs) {
   const prev = new Map(MY.list.map((o) => [o.id, sig(o)]));
   const prevStatus = new Map(MY.list.map((o) => [o.id, o.status]));
@@ -650,7 +749,8 @@ function drawMyOrders() {
   $("myRefresh").onclick = () => { $("myRefresh").textContent = "…"; refreshMyOrders(true).finally(() => { const r = $("myRefresh"); if (r) r.textContent = "↻ تحديث"; }); };
   b.querySelectorAll("[data-os]").forEach((x) => x.onclick = async () => {
     if (!confirm("إلغاء الطلب؟")) return;
-    try { await updateDoc(doc(db, "orders", x.dataset.oid), { status: "cancelled", cancelBy: "customer", updatedAt: serverTimestamp() }); } catch { toast("ما تقدر تلغيه — المحل استلم طلبك 👍 تقدر ترسل «طلب إلغاء»"); refreshMyOrders(true); }
+    const mo = MY.list.find((y) => y.id === x.dataset.oid) || { id: x.dataset.oid };
+    try { await updOrder(mo, { status: "cancelled", cancelBy: "customer", updatedAt: serverTimestamp() }); } catch { toast("ما تقدر تلغيه — المحل استلم طلبك 👍 تقدر ترسل «طلب إلغاء»"); refreshMyOrders(true); }
   });
   b.querySelectorAll("[data-creqask]").forEach((x) => x.onclick = () => askCancel(list.find((y) => y.id === x.dataset.creqask)));
   b.querySelectorAll("[data-curbedit]").forEach((x) => x.onclick = () => editCurb(list.find((y) => y.id === x.dataset.curbedit)));
@@ -784,10 +884,11 @@ function drawStoreItems(sid) {
   const box = $("storeItems"), data = storeCache[sid];
   if (!box || !data) return;
   const { s, items, D } = data, c = cat(), base = baseKindOf(state.config, s.category), cart = cartOf(sid);
-  const blk = c.orderEnabled ? orderBlock(s, sid) : "", order = c.orderEnabled && !blk, packs = c.orderEnabled ? D.packs : [];
+  const blk = c.orderEnabled ? orderBlock(s, sid) : "", pre = !!blk && !pauseCache[sid] && preOn(sid);
+  const order = c.orderEnabled && (!blk || pre), packs = c.orderEnabled ? D.packs : [];
   if (!items.length && !packs.length) { box.innerHTML = ""; return; }
   const qtyBtns = (id, q) => !order ? "" : q ? `<div class="qty"><button data-dec="${esc(id)}">−</button><b>${q}</b><button data-inc="${esc(id)}">＋</button></div>` : `<button class="add-btn" data-inc="${esc(id)}">＋ أضف</button>`;
-  box.innerHTML = (blk ? `<div class="closed-bar">${esc(blk)}</div>` : "") + (D.banners.length ? `<div class="deal-bar">${D.banners.map((b) => `<span class="deal-chip${b.quick ? " quick" : ""}">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : "")
+  box.innerHTML = (blk ? `<div class="closed-bar">${esc(blk)}${pre ? `<small>📅 تقدر تطلب الحين بموعد لاحق</small>` : ""}</div>` : "") + (D.banners.length ? `<div class="deal-bar">${D.banners.map((b) => `<span class="deal-chip${b.quick ? " quick" : ""}">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : "")
     + (packs.length ? `<div class="kind-sec deal-sec"><div class="ks-title">🎁 عروض تقدر تطلبها <small>(${packs.length})</small></div>${packs.map((p) => `<div class="icard deal">
         ${p.imageUrl ? `<img src="${esc(cld(p.imageUrl, 240))}" data-full="${esc(cld(p.imageUrl, 1400))}" alt="">` : `<div class="iph">🎁</div>`}
         <div class="ic-main"><b>${esc(p.name)}</b>${p.desc ? `<small>${esc(p.desc)}</small>` : ""}<div class="ic-price">${fmt(p.price)} ر.س${p.was ? ` <s>${fmt(p.was)}</s>` : ""}</div></div>
@@ -808,7 +909,7 @@ function drawStoreItems(sid) {
         </div>`; }).join("")}`).join("")}
     </div>`;
   }).join("") + (order && cartCount(sid) ? (() => { const di = deliveryInfo(s, cartSum(sid));
-    return `<div class="cart-bar"><span>🧾 سلتك: <b>${cartCount(sid)}</b> • <b>${fmt(cartSum(sid))} ر.س</b>${!F("freeHint") ? "" : di?.left > 0 ? `<small>🚚 باقي ${fmt(di.left)} ر.س للتوصيل المجاني</small>` : di?.free && di.freeOver > 0 ? `<small>🚚 التوصيل صار مجاني 🎉</small>` : ""}</span><button class="btn dir" id="cartGo">اطلب</button></div>`; })() : "");
+    return `<div class="cart-bar"><span>🧾 سلتك: <b>${cartCount(sid)}</b> • <b>${fmt(cartSum(sid))} ر.س</b>${!F("freeHint") ? "" : di?.left > 0 ? `<small>🚚 باقي ${fmt(di.left)} ر.س للتوصيل المجاني</small>` : di?.free && di.freeOver > 0 ? `<small>🚚 التوصيل صار مجاني 🎉</small>` : ""}</span><button class="btn dir" id="cartGo">${pre ? "📅 اطلب مسبقاً" : "اطلب"}</button></div>`; })() : "");
   box.querySelectorAll("[data-inc]").forEach((b) => b.onclick = () => { addToCart(sid, b.dataset.inc); drawStoreItems(sid); });
   box.querySelectorAll("[data-dec]").forEach((b) => b.onclick = () => { const l = cart[b.dataset.dec]; if (l) { l.qty--; if (l.qty <= 0) delete cart[b.dataset.dec]; } saveCarts(); drawStoreItems(sid); });
   box.querySelectorAll("img[data-full]").forEach((im) => im.onclick = () => { $("viewerImg").src = im.dataset.full; $("viewer").classList.remove("hidden"); });
@@ -865,7 +966,7 @@ export async function orderFromOffer(o) {
   if (!s) return toast("صفحة المتجر مو جاهزة");
   await fetchStoreStatus(sid);
   const blk = orderBlock(s, sid);
-  if (blk) return toast(blk, true);
+  if (blk && (pauseCache[sid] || !preOn(sid))) return toast(blk, true);
   const c = cat();
   let items = [];
   if (c.enabled) {
@@ -897,11 +998,35 @@ export const offerOrderable = (o) => {
 };
 
 // ⏸️🌙 هل المحل يستقبل طلبات الحين؟ (إيقاف يدوي من المحل/الموظف، أو خارج الدوام)
-const pauseCache = {};
+const pauseCache = {}, preCache = {};
+/** 📅 الطلب المسبق مفعّل لهالمحل؟ */
+export const preOn = (sid) => { const c = X.preCfg(preCache[sid]); return F("preorder") && cat().orderEnabled && c.on && (c.pickup || c.delivery); };
+async function loadPre(sid) {
+  if (!F("preorder")) return;
+  try { const d = await getDocFromServer(doc(db, "preorderCfg", sid)); preCache[sid] = d.exists() ? d.data() : null; }
+  catch { try { const d = await getDoc(doc(db, "preorderCfg", sid)); preCache[sid] = d.exists() ? d.data() : null; } catch {} }
+}
 export async function fetchStoreStatus(sid) {
+  loadPre(sid).catch(() => {});
   try { const d = await getDocFromServer(doc(db, "storeStatus", sid)); pauseCache[sid] = d.exists() && d.data().paused === true; }
   catch { try { const d = await getDoc(doc(db, "storeStatus", sid)); pauseCache[sid] = d.exists() && d.data().paused === true; } catch {} }
+  await loadPre(sid);
   return !!pauseCache[sid];
+}
+/** إلغاء طلب محجوز له فترة توصيل: نفك الحجز في نفس العملية */
+async function updOrder(o, patch) {
+  if (patch.status === "cancelled" && o.slotKey && o.status !== "cancelled") {
+    try {
+      const id = `${o.storeId}_${o.slotKey}`, sd = await getDocFromServer(doc(db, "slotCounts", id)), n = sd.exists() ? (sd.data().n | 0) : 0;
+      if (n > 0) {
+        const b = writeBatch(db);
+        b.update(doc(db, "orders", o.id), patch);
+        b.set(doc(db, "slotCounts", id), { storeId: o.storeId, slotKey: o.slotKey, n: n - 1, last: o.id });
+        return await b.commit();
+      }
+    } catch (e) { console.warn("slot release", e); }
+  }
+  return updateDoc(doc(db, "orders", o.id), patch);
 }
 // branchId محدد = نفحص هذا الفرع؛ بدونه = المحل مغلق لو كل فروعه مغلقة. الفرع اللي ما حدد دوامه = مفتوح.
 export function orderBlock(s, sid, branchId) {
@@ -922,8 +1047,13 @@ function openCheckout(sid) {
   let myStats = null;
   if (state.user && F("noshow")) getDoc(doc(db, "custStats", state.user.uid)).then((d) => { myStats = d.exists() ? d.data() : null; if (myStats && blockedUntil(myStats, state.config) && $("coSend")) draw(); }).catch(() => {});
   fetchStoreStatus(sid).then(() => { if ($("coSend")) { keep?.(); draw(); } });
+  // 📅 كم طلب في كل فترة توصيل (عشان نبيّن الممتلئة)
+  const slotN = new Map();
+  const loadSlots = () => getDocs(query(collection(db, "slotCounts"), where("storeId", "==", sid)))
+    .then((r) => { slotN.clear(); r.docs.forEach((d) => slotN.set(d.data().slotKey, d.data().n | 0)); if ($("coSend")) { keep?.(); draw(); } }).catch(() => {});
+  if (F("preorder")) loadSlots();
   let keep = null;
-  const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: (branches.find((b) => X.openNow(b) !== false) || branches[0])?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null };
+  const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: (branches.find((b) => X.openNow(b) !== false) || branches[0])?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null, when: "now", day: 0, slot: 0 };
   const draw = () => {
     if (!Object.values(cart).length) { openStore(sid, false); return; }
     const T = cartTotals(Object.values(cart), storeCache[sid].D), lines = T.lines, sub = T.sub;
@@ -932,7 +1062,19 @@ function openCheckout(sid) {
     const total = Math.round((sub + fee) * 100) / 100, vatNo = vat.enabled && validVatNumber(s.vatNumber) ? s.vatNumber : "";
     const { vat: vatAmt, net } = vatSplit(total, vat.rate);
     const minOk = f.mode !== "delivery" || !(s.deliveryMinOrder > 0) || sub >= s.deliveryMinOrder;
-    const blk = orderBlock(s, sid, f.branch);
+    const blk = orderBlock(s, sid, f.branch), paused = !!pauseCache[sid];
+    // 📅 اطلب مسبقاً
+    const pre = !paused && preOn(sid), pc = X.preCfg(preCache[sid]), closedNow = !!blk && !paused;
+    if (closedNow && pre) f.when = "later";
+    if (!pre) f.when = "now";
+    const later = f.when === "later", br0 = branches.find((x) => x.id === f.branch) || branches[0];
+    const modeOkLater = f.mode === "delivery" ? pc.delivery : pc.pickup;
+    const days = later ? X.preDays(pc) : [];
+    if (later && !days.includes(f.day)) f.day = days.find((d) => X.preTimes(pc, br0, f.mode, d).length) ?? days[0];
+    const isFull = (x) => f.mode === "delivery" && (slotN.get(x.key) || 0) >= pc.slotCap;
+    const times = later && modeOkLater ? X.preTimes(pc, br0, f.mode, f.day) : [];
+    if (!times.some((x) => x.t === f.slot && !isFull(x))) f.slot = 0;
+    const blocked = paused || (closedNow && !later);
     showSheet(`<div class="pad form checkout"><div class="section-title">🧾 طلبك من ${esc(s.name)}</div>
       ${lines.map((l) => `<div class="co-line"><span>${esc(l.name)}${l.was > l.price ? ` <s>${fmt(l.was)}</s>` : ""}${l.bogo ? `<small class="deal-pct bogo">${esc(l.bogo)}${l.off > 0 ? ` −${fmt(l.off)}` : " (أضف واحد ثاني)"}</small>` : ""}</span><div class="qty"><button data-dec="${esc(l.id)}">−</button><b>${l.qty}</b><button data-inc="${esc(l.id)}">＋</button></div><b>${fmt(l.qty * l.price - l.off)}</b></div>`).join("")}
       ${T.saved > 0 ? `<div class="saved-line">🔥 وفّرت <b>${fmt(T.saved)} ر.س</b> بالعروض</div>` : ""}
@@ -942,6 +1084,14 @@ function openCheckout(sid) {
         ${curb ? `<button class="mode${f.mode === "curbside" ? " on" : ""}" data-mode="curbside"><b>🚗 استلام من السيارة</b><small>المحل يطلّع طلبك لسيارتك</small></button>` : ""}
         ${di ? `<button class="mode${f.mode === "delivery" ? " on" : ""}" data-mode="delivery"><b>${esc(di.label)}</b>${s.deliveryMinOrder > 0 ? `<small>أقل طلب ${fmt(s.deliveryMinOrder)} ر.س${sub < s.deliveryMinOrder ? ` — باقي ${fmt(s.deliveryMinOrder - sub)} ر.س عشان يصير متاح` : ""}</small>` : ""}</button>` : ""}
       </div>` : `<div class="hint-box">🏃 الطلب استلام من المحل — المحل ما يوفر توصيل</div>`}
+      ${pre ? `<label class="label">⏰ متى تبي طلبك؟</label>
+        <div class="chips"><button class="chip${!later ? " on" : ""}" data-when="now" ${closedNow ? "disabled" : ""}>⚡ الحين${closedNow ? " (مغلق)" : ""}</button><button class="chip${later ? " on" : ""}" data-when="later">📅 وقت لاحق</button></div>
+        ${!later ? "" : !modeOkLater ? `<div class="hint-box">${f.mode === "delivery" ? "المحل ما يوفر توصيل بموعد — اختر الاستلام" : "المحل ما يوفر استلام بموعد — اختر التوصيل"}</div>` : `
+          ${days.length > 1 ? `<div class="chips">${days.map((d) => `<button class="chip${d === f.day ? " on" : ""}" data-day="${d}">${X.dayLabel(d)}</button>`).join("")}</div>` : ""}
+          ${times.length ? `<div class="slots">${times.map((x) => { const full = isFull(x);
+            return `<button class="slot${x.t === f.slot ? " on" : ""}" data-slot="${x.t}" ${full ? "disabled" : ""}>${X.timeOf(x.t)}${x.end ? ` – ${X.timeOf(x.end)}` : ""}${full ? "<small>ممتلئة</small>" : ""}</button>`; }).join("")}</div>`
+            : `<div class="hint-box">ما فيه أوقات متاحة ${esc(X.dayLabel(f.day))}${days.length > 1 ? " — جرّب يوم ثاني" : ""}</div>`}
+          ${f.mode === "delivery" && !state.user ? `<div class="err">سجّل دخولك عشان تحجز موعد توصيل</div>` : ""}`}` : ""}
       ${f.mode === "delivery" && di?.left > 0 && F("freeHint") ? `<div class="free-hint">💡 أضف <b>${fmt(di.left)} ر.س</b> وصار التوصيل مجاني 🎉
         <div class="fh-bar"><i style="width:${Math.min(100, (sub / di.freeOver) * 100).toFixed(0)}%"></i></div><small>${fmt(sub)} من ${fmt(di.freeOver)}</small>
         <button class="link" id="coMore">‹ تصفّح المنيو وكمّل</button></div>` : ""}
@@ -961,9 +1111,9 @@ function openCheckout(sid) {
       ${!minOk ? `<div class="err">أقل طلب للتوصيل ${fmt(s.deliveryMinOrder)} ر.س — أضف ${fmt(s.deliveryMinOrder - sub)} ر.س أو اختر الاستلام</div>` : ""}
       ${blockedUntil(myStats, state.config) ? `<div class="err">🚫 الطلب موقف عن حسابك مؤقتاً لين ${new Date(blockedUntil(myStats, state.config)).toLocaleDateString("ar-SA-u-ca-gregory")} بسبب طلبات سابقة ما انستلمت. لو فيه خطأ تواصل معنا.</div>` : ""}
       ${!state.user ? `<small class="hint">💡 سجّل دخولك عشان تنحفظ طلباتك وتقدر تعيدها بضغطة.</small>` : ""}
-      ${blk ? `<div class="closed-bar">${esc(blk)}</div>` : ""}
+      ${blocked ? `<div class="closed-bar">${esc(blk)}</div>` : closedNow ? `<div class="hint-box">🌙 المحل مغلق الحين — طلبك يوصله ويتجهّز على موعدك</div>` : ""}
       <div id="coErr" class="err"></div>
-      <button class="btn wa big" id="coSend" ${minOk && !blk && !blockedUntil(myStats, state.config) ? "" : "disabled"}>📨 أرسل الطلب على واتساب</button>
+      <button class="btn wa big" id="coSend" ${minOk && !blocked && !blockedUntil(myStats, state.config) ? "" : "disabled"}>${later ? "📅 أرسل الطلب المسبق على واتساب" : "📨 أرسل الطلب على واتساب"}</button>
       <button class="btn ghost" id="coBack">‹ رجوع للمتجر</button></div>`);
     keep = () => { f.name = $("coName").value; f.phone = $("coPhone").value; f.note = $("coNote").value; if ($("coBr")) f.branch = $("coBr").value; if ($("coCar")) f.car = $("coCar").value; };
     const b = $("sheetBody");
@@ -971,6 +1121,9 @@ function openCheckout(sid) {
     b.querySelectorAll("[data-dec]").forEach((x) => x.onclick = () => { keep(); const l = cart[x.dataset.dec]; l.qty--; if (l.qty <= 0) delete cart[x.dataset.dec]; saveCarts(); draw(); });
     b.querySelectorAll("[data-mode]").forEach((x) => x.onclick = () => { keep(); f.mode = x.dataset.mode; draw(); });
     b.querySelectorAll("[data-pay]").forEach((x) => x.onclick = () => { keep(); f.pay = x.dataset.pay; draw(); });
+    b.querySelectorAll("[data-when]").forEach((x) => x.onclick = () => { keep(); f.when = x.dataset.when; draw(); });
+    b.querySelectorAll("[data-day]").forEach((x) => x.onclick = () => { keep(); f.day = +x.dataset.day; f.slot = 0; draw(); });
+    b.querySelectorAll("[data-slot]").forEach((x) => x.onclick = () => { keep(); f.slot = +x.dataset.slot; draw(); });
     $("coMore")?.addEventListener("click", () => openStore(sid, false));
     $("coBr")?.addEventListener("change", () => { keep(); draw(); });
     $("coLoc")?.addEventListener("click", () => { keep(); navigator.geolocation?.getCurrentPosition((p) => { f.loc = { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6) }; draw(); }, () => toast("ما قدرنا نحدد موقعك")); });
@@ -982,6 +1135,11 @@ function openCheckout(sid) {
       if (!phoneOk) return $("coErr").textContent = "اكتب رقم جوال صحيح مثل 05xxxxxxxx.";
       if (f.mode === "delivery" && !f.loc) return $("coErr").textContent = "حدد موقعك للتوصيل.";
       if (f.mode === "curbside" && !f.car.trim()) return $("coErr").textContent = "اكتب وصف سيارتك (مثال: كامري بيضاء).";
+      if (later) {
+        if (!modeOkLater) return $("coErr").textContent = f.mode === "delivery" ? "المحل ما يوفر توصيل بموعد — اختر الاستلام." : "المحل ما يوفر استلام بموعد.";
+        if (!f.slot) return $("coErr").textContent = "اختر وقت طلبك.";
+        if (f.mode === "delivery" && !state.user) return $("coErr").textContent = "سجّل دخولك عشان تحجز موعد توصيل.";
+      }
       if (f.mode === "curbside") { try { localStorage.setItem("hayyna_car", f.car.trim()); } catch {} }
       const br = branches.find((x) => x.id === f.branch) || branches[0] || {};
       const to = X.waDigits(br.phone || s.phone || "");
@@ -989,7 +1147,16 @@ function openCheckout(sid) {
       // ⏸️ تأكد من السيرفر إن المحل ما أوقف الطلبات، وإن الفرع مفتوح
       await fetchStoreStatus(sid);
       const blk2 = orderBlock(s, sid, br.id ?? null);
-      if (blk2) { toast(blk2, true); return draw(); }
+      if (blk2 && (pauseCache[sid] || !later || !preOn(sid))) { toast(blk2, true); return draw(); }
+      if (later && !preOn(sid)) { toast("المحل قفل الطلب المسبق", true); return draw(); }
+      if (later && f.slot < Date.now() + X.preCfg(preCache[sid]).prepMin * 60000) { f.slot = 0; toast("الوقت اللي اخترته فات — اختر وقت ثاني", true); return draw(); }
+      // 📅 فترة التوصيل: نتأكد من السيرفر إنها ما امتلت
+      const slotKey = later && f.mode === "delivery" ? X.slotKeyOf(f.slot) : "";
+      let slotNow = 0;
+      if (slotKey) {
+        try { const sd = await getDocFromServer(doc(db, "slotCounts", `${sid}_${slotKey}`)); slotNow = sd.exists() ? (sd.data().n | 0) : 0; } catch (e) { console.warn("slot", e); }
+        if (slotNow >= X.preCfg(preCache[sid]).slotCap) { slotN.set(slotKey, slotNow); f.slot = 0; toast("😕 هالفترة امتلت الحين — اختر وقت ثاني", true); return draw(); }
+      }
       // ❌ تأكد من السيرفر إن العروض اللي في السلة ما نفدت (يمكن الموظف علّمها الحين)
       const dealIds = Object.keys(cart).filter((id) => id.startsWith("deal_")).map((id) => id.slice(5));
       for (const oid of dealIds) {
@@ -1009,19 +1176,29 @@ function openCheckout(sid) {
         subtotal: sub, discount: T.saved, deliveryFee: fee, total,
         vatRate: vatNo ? vat.rate : 0, vatAmount: vatNo ? vatAmt : 0, vatNumber: vatNo, mode: f.mode, location: f.mode === "delivery" ? f.loc : null,
         pay: F("payChoice") ? f.pay : "", car: f.mode === "curbside" ? f.car.trim().slice(0, 60) : "",
-        note: f.note.trim().slice(0, 300), status: "sent" };
+        note: f.note.trim().slice(0, 300), status: "sent",
+        ...(later ? { scheduledAt: Timestamp.fromMillis(f.slot), ...(slotKey ? { slotKey } : {}) } : {}) };
       const url = `https://wa.me/${to}?text=${encodeURIComponent(orderText(o))}`;
       const w = window.open("", "_blank"); // نفتح النافذة الحين (قبل الانتظار) عشان المتصفح ما يمنعها
       if (state.user) {
-        try { await setDoc(ref, { ...o, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }); }
+        try {
+          const full = { ...o, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+          if (slotKey) {
+            const b = writeBatch(db);
+            b.set(ref, full);
+            b.set(doc(db, "slotCounts", `${sid}_${slotKey}`), { storeId: sid, slotKey, n: slotNow + 1, last: ref.id });
+            await b.commit();
+          } else await setDoc(ref, full);
+        }
         catch (e) {
           console.warn("order save", e);
+          if (slotKey) { w?.close(); toast("😕 ما قدرنا نحجز هالفترة (يمكن امتلت) — اختر وقت ثاني", true); f.slot = 0; loadSlots(); return draw(); }
           if (e?.code === "permission-denied" && await fetchStoreStatus(sid)) { w?.close(); toast(orderBlock(s, sid), true); return draw(); }
         }
       }
       if (w) w.location = url; else location.href = url;
       carts[sid] = {}; saveCarts();
-      hideSheet(); toast(`انرسل طلبك #${o.code} ✅ كمّل في واتساب`, true);
+      hideSheet(); toast(later ? `📅 انحجز طلبك #${o.code} — ${X.preWhen(f.slot)} ✅ كمّل في واتساب` : `انرسل طلبك #${o.code} ✅ كمّل في واتساب`, true);
     };
   };
   draw();

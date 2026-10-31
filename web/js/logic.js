@@ -122,3 +122,40 @@ export function normalizeSaudiPhone(raw) {
 export const toLocalPhone = (p) => { const d = String(p || "").replace(/\D/g, ""); return d.startsWith("966") ? "0" + d.slice(3) : d; };
 export const menuLabel = (cat) => /مطاعم|مقاهي/.test(cat || "") ? "المنيو" : /خياط|حلاقة|خدمات/.test(cat || "") ? "الخدمات والأسعار" : "المنتجات والأسعار";
 export const minuteOptions = () => Array.from({ length: 48 }, (_, i) => i * 30);
+
+// ===== 📅 اطلب مسبقاً =====
+export const PRE_DEF = { on: false, maxDays: 0, prepMin: 30, pickup: true, delivery: true, delFrom: -1, delTo: -1, slotMin: 60, slotCap: 1 };
+export const preCfg = (c) => ({ ...PRE_DEF, ...(c || {}) });
+const p2 = (n) => String(n).padStart(2, "0");
+const dayStartOf = (t) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+/** مفتاح الفترة: YYYYMMDD-HHMM (13 حرف) */
+export const slotKeyOf = (t) => { const d = new Date(t); return `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`; };
+const winOf = (a, b) => (a >= 0 && a < 1440 && b >= 0 && b < 1440) ? (a === b ? [0, 1440] : [a, b > a ? b : b + 1440]) : null;
+/** الأيام المتاحة: اليوم + لين maxDays */
+export function preDays(cfg, now = Date.now()) {
+  const c = preCfg(cfg), s = dayStartOf(now), out = [];
+  for (let i = 0; i <= Math.min(14, Math.max(0, c.maxDays | 0)); i++) { const d = new Date(s); d.setDate(d.getDate() + i); out.push(d.getTime()); }
+  return out;
+}
+export const dayLabel = (t, now = Date.now()) => {
+  const diff = Math.round((dayStartOf(t) - dayStartOf(now)) / 864e5);
+  if (diff === 0) return "اليوم";
+  if (diff === 1) return "بكرة";
+  const d = new Date(t);
+  return `${d.toLocaleDateString("ar-SA-u-ca-gregory", { weekday: "long" })} ${d.getDate()}/${d.getMonth() + 1}`;
+};
+/** الأوقات المتاحة ليوم: التوصيل فترات (طولها slotMin) داخل نافذة المحل، والاستلام كل ربع ساعة داخل الدوام */
+export function preTimes(cfg, branch, mode, day, now = Date.now()) {
+  const c = preCfg(cfg), del = mode === "delivery";
+  const win = (del && c.delFrom >= 0 ? winOf(c.delFrom, c.delTo) : null) || winOf(branch?.openMinute, branch?.closeMinute) || [0, 1440];
+  const step = del ? c.slotMin : 15, min = now + c.prepMin * 60000, out = [];
+  for (let m = win[0]; del ? m + step <= win[1] : m < win[1]; m += step) {
+    const t = day + m * 60000;
+    if (t < min) continue;
+    out.push({ t, end: del ? t + step * 60000 : 0, key: slotKeyOf(t) });
+  }
+  return out;
+}
+export const timeOf = (t) => { const d = new Date(t); return fmtMinute(d.getHours() * 60 + d.getMinutes()); };
+/** «اليوم 7:30 م» */
+export const preWhen = (t, now = Date.now()) => `${dayLabel(t, now)} ${timeOf(t)}`;
