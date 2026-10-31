@@ -39,7 +39,8 @@ await t("إعلان قابل للطلب", () => assertSucceeds(put("f", { type: 
 await t("عرض بدون نوع (القديم) ✓", () => assertSucceeds(setDoc(doc(as("m1"), "offers", "g"), offer("g"))));
 await t("deal = null ✓", () => assertSucceeds(put("h", null)));
 await t("نوع غريب يُرفض", () => assertFails(put("x1", { type: "free" })));
-await t("1+1 بدون صنف يُرفض", () => assertFails(put("x2", { type: "bogo", getPct: 100 })));
+await t("1+1 بدون صنف وبدون سعر يُرفض", () => assertFails(setDoc(doc(as("m1"), "offers", "x2"), offer("x2", { deal: { type: "bogo", getPct: 100 }, price: 0 }))));
+await t("1+1 على منتج مو في المنيو (بسعر)", () => assertSucceeds(setDoc(doc(as("m1"), "offers", "x5"), offer("x5", { deal: { type: "bogo", itemId: "", getPct: 100 }, price: 10, originalPrice: 20 }))));
 await t("نسبة 1+1 غريبة (30) تُرفض", () => assertFails(put("x3", { type: "bogo", itemId: "a", getPct: 30 })));
 await t("حقل زايد في deal يُرفض", () => assertFails(put("x4", { type: "bundle", price: 1 })));
 await t("نطاق غريب يُرفض", () => assertFails(put("x5", { type: "discount", scope: "store" })));

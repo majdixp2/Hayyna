@@ -982,7 +982,7 @@ export async function orderFromOffer(o) {
   storeCache[sid] = { s, items, D };
   const menuOpen = items.some((x) => x.available !== false);
   if (d.type === "discount") return openStore(sid, true);
-  if (d.type === "bogo") { if (d.itemId && items.some((x) => x.id === d.itemId)) addToCart(sid, d.itemId, 2); return openStore(sid, true); }
+  if (d.type === "bogo" && d.itemId) { if (items.some((x) => x.id === d.itemId)) addToCart(sid, d.itemId, 2); return openStore(sid, true); }
   const pk = D.packs.find((x) => x.offerId === o.id);
   if (!pk) return openStore(sid, true);
   if (menuOpen) { addToCart(sid, pk.id); toast("انضاف العرض لسلتك 🛒 كمّل من صفحة المتجر", true); return openStore(sid, true); }

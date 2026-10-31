@@ -528,7 +528,8 @@ export async function openOfferForm(editing) {
   const ed = e?.deal || {};
   const f = {
     dealType: ed.type || (e ? "promo" : ""), dScope: { scope: ed.scope || "all", kind: ed.kind || "", section: ed.section || "", itemIds: ed.type === "discount" ? ed.itemIds || [] : [] },
-    packIds: ed.type === "bundle" ? ed.itemIds || [] : [], bogoItem: ed.itemId || "", getPct: ed.getPct === 50 ? 50 : 100, orderable: !!ed.orderable,
+    packIds: ed.type === "bundle" ? ed.itemIds || [] : [], bogoItem: ed.itemId || "", getPct: ed.getPct === 50 ? 50 : 100,
+    bogoUnit: ed.type === "bogo" && !ed.itemId && e?.originalPrice > 0 ? X.money(e.originalPrice / 2) : "", orderable: !!ed.orderable,
     title: e?.offerTitle || "", desc: e?.description || "", category: e?.cuisineType || p.cuisineType || categories()[0],
     percentMode: e ? X.isPercentOnly(e) : false, price: e && e.price > 0 ? X.money(e.price) : "", original: e?.originalPrice ? X.money(e.originalPrice) : "",
     pct: e?.discountPercent > 0 && !(e.dailyPercents || []).length ? String(e.discountPercent) : "", tiered: (e?.dailyPercents || []).length > 0,
@@ -562,7 +563,9 @@ export async function openOfferForm(editing) {
     if (dt === "discount") f.percentMode = true;
     if (dt === "bundle" || dt === "bogo") f.percentMode = false;
     const bogoIt = myItems.find((x) => x.id === f.bogoItem);
+    const bogoCalc = () => { const u = +String(f.bogoUnit).replace(",", "."); if (u > 0) { f.price = X.money(Math.round(u * (f.getPct === 50 ? 1.5 : 1) * 100) / 100); f.original = X.money(Math.round(u * 200) / 100); } };
     if (dt === "bogo" && bogoIt) { f.price = X.money(bogoIt.price); f.original = ""; }
+    else if (dt === "bogo") bogoCalc();
     const packSum = myItems.filter((x) => f.packIds.includes(x.id)).reduce((a, x) => a + (+x.price || 0), 0);
     const pr = paid ? priceFor("publish", Math.max(1, daysOf()), f.exclusive) : null, r = rw();
     $("pageBody").innerHTML = `<div class="form">
@@ -572,7 +575,7 @@ export async function openOfferForm(editing) {
         <button class="kind-btn new${isNew ? " on" : ""}" data-kind="new"><b>✨ جديدنا</b><small>صنف أو منتج جديد</small></button>
       </div>
       ${!isNew && dealsOn ? `<div class="section-title">وش نوع عرضك؟</div><div class="deal-grid">${Object.entries(DEAL_TYPES).filter(([, t]) => feat(state.config, t.feat)).map(([k, t]) => {
-        const need = (k === "discount" || k === "bogo") && !myItems.length;
+        const need = k === "discount" && !myItems.length;
         return `<button class="deal-type${f.dealType === k ? " on" : ""}" data-dt="${k}" ${need ? "disabled" : ""}><b>${t.icon} ${t.t}</b><small>${need ? "أضف أصناف للمنيو أول" : t.d}</small></button>`; }).join("")}</div>` : ""}
       <label class="label">${isNew ? "صور المنتج (حتى 3) أو فيديو *" : "صور العرض (حتى 3) أو فيديو *"}</label>
       <div class="tiles">${f.media.map((it, i) => f.isVideo ? `<div class="tile"><div class="vid">🎬 فيديو</div><button class="tile-x" data-rm="${i}">✕</button></div>`
@@ -580,8 +583,10 @@ export async function openOfferForm(editing) {
         ${!f.isVideo && f.media.length < 3 ? `<label class="tile add">＋ صور<input type="file" accept="image/*" multiple id="oImgs" hidden></label>` : ""}
         ${!f.media.length ? `<label class="tile add">🎬 فيديو<input type="file" accept="video/*" id="oVid" hidden></label>` : ""}</div>
       <label class="label">${isNew ? "اسم المنتج الجديد *" : "عنوان العرض *"}</label><input id="oTitle" class="input" value="${esc(f.title)}" maxlength="150" placeholder="${isNew ? "مثال: برجر الترافل الجديد" : "مثال: خصم 30% على كل المنتجات"}">
-      ${dt === "bogo" ? `<label class="label">➕ على أي صنف؟ *</label><div class="chips wrap">${myItems.map((it) => `<button class="chip${f.bogoItem === it.id ? " on" : ""}" data-bogo="${esc(it.id)}">${esc(it.name)} • ${fmt(it.price)}</button>`).join("")}</div>
-        <div class="chips"><button class="chip${f.getPct === 100 ? " on" : ""}" data-getpct="100">1+1 مجاناً</button><button class="chip${f.getPct === 50 ? " on" : ""}" data-getpct="50">الثاني بنص السعر</button></div>` : ""}
+      ${dt === "bogo" ? `<label class="label">➕ على أي صنف؟ *</label><div class="chips wrap"><button class="chip${!f.bogoItem ? " on" : ""}" data-bogo="">📦 منتج مو في المنيو</button>${myItems.map((it) => `<button class="chip${f.bogoItem === it.id ? " on" : ""}" data-bogo="${esc(it.id)}">${esc(it.name)} • ${fmt(it.price)}</button>`).join("")}</div>
+        <div class="chips"><button class="chip${f.getPct === 100 ? " on" : ""}" data-getpct="100">1+1 مجاناً</button><button class="chip${f.getPct === 50 ? " on" : ""}" data-getpct="50">الثاني بنص السعر</button></div>
+        ${!f.bogoItem ? `<label class="label">سعر الحبة الوحدة (ر.س) *</label><input id="oBogoUnit" class="input" inputmode="decimal" value="${esc(f.bogoUnit)}">
+          <div class="hint-box" id="bogoHint">${+f.bogoUnit > 0 ? `الزبون يدفع <b>${fmt(+f.bogoUnit * (f.getPct === 50 ? 1.5 : 1))} ر.س</b> ويستلم حبتين (بدل ${fmt(+f.bogoUnit * 2)})` : "اكتب سعر الحبة، ونحسب سعر العرض"}</div>` : ""}` : ""}
       ${isNew || dt === "discount" || dt === "bundle" || dt === "bogo" ? "" : `<div class="chips"><button class="chip${!f.percentMode ? " on" : ""}" data-mode="price">💰 سعر محدد</button><button class="chip${f.percentMode ? " on" : ""}" data-mode="pct">٪ خصم بالنسبة</button></div>`}
       ${dt === "bogo" ? "" : !f.percentMode ? `<div class="row2"><div><label class="label">${isNew ? "السعر (اختياري)" : dt === "bundle" ? "سعر الباقة (ر.س) *" : "السعر (ر.س) *"}</label><input id="oPrice" class="input" inputmode="decimal" value="${esc(f.price)}"></div>
         <div><label class="label">${isNew ? "قبل الخصم (لو عليه خصم)" : "قبل الخصم"}</label><input id="oOrig" class="input" inputmode="decimal" value="${esc(f.original)}"></div></div>`
@@ -618,6 +623,8 @@ export async function openOfferForm(editing) {
     set("oTitle", "title"); set("oPrice", "price"); set("oOrig", "original"); set("oPct", "pct"); set("oScope", "scope"); set("oDesc", "desc"); set("oTags", "tags");
     const body = $("pageBody");
     body.querySelectorAll("[data-dt]").forEach((b) => b.onclick = () => { f.dealType = b.dataset.dt; dirty = true; render(); });
+    $("oBogoUnit")?.addEventListener("input", (ev) => { f.bogoUnit = ev.target.value; dirty = true; bogoCalc(); const u = +String(f.bogoUnit).replace(",", "."); const h = $("bogoHint");
+      if (h) h.innerHTML = u > 0 ? `الزبون يدفع <b>${fmt(u * (f.getPct === 50 ? 1.5 : 1))} ر.س</b> ويستلم حبتين (بدل ${fmt(u * 2)})` : "اكتب سعر الحبة، ونحسب سعر العرض"; });
     body.querySelectorAll("[data-bogo]").forEach((b) => b.onclick = () => { f.bogoItem = b.dataset.bogo; const it = myItems.find((x) => x.id === f.bogoItem); if (it && !f.title.trim()) f.title = `${f.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"} على ${it.name}`; dirty = true; render(); });
     body.querySelectorAll("[data-getpct]").forEach((b) => b.onclick = () => { f.getPct = +b.dataset.getpct; dirty = true; render(); });
     body.querySelectorAll("[data-pack]").forEach((c) => c.onchange = () => { f.packIds = c.checked ? [...new Set([...f.packIds, c.dataset.pack])] : f.packIds.filter((x) => x !== c.dataset.pack); const y = window.scrollY, pb = $("pageBody").scrollTop; render(); $("pageBody").scrollTop = pb; });
@@ -690,7 +697,8 @@ export async function openOfferForm(editing) {
     if (!f.media.length) return err("أرفق صورة أو فيديو للعرض.");
     if (f.kind !== "new" && dealsOn && !dt) return err("اختر نوع عرضك من فوق 👆");
     if (dt === "discount" && myItems.length) { const se = scopeError(f.dScope); if (se) return err(se); }
-    if (dt === "bogo" && !myItems.some((x) => x.id === f.bogoItem)) return err("اختر الصنف اللي عليه العرض.");
+    if (dt === "bogo" && f.bogoItem && !myItems.some((x) => x.id === f.bogoItem)) return err("اختر الصنف اللي عليه العرض.");
+    if (dt === "bogo" && !f.bogoItem && !(+f.bogoUnit > 0)) return err("اكتب سعر الحبة الوحدة.");
     if (dt === "promo" && f.orderable && !(Number(f.price) > 0)) return err(f.kind === "new" ? "عشان الزبون يطلبه، اكتب سعر المنتج." : "عشان الزبون يطلبه، اكتب سعر العرض.");
     if (!f.title.trim()) return err(f.kind === "new" ? "اكتب اسم المنتج." : "اكتب عنوان العرض.");
     if (!useTiers && !f.keepExpiry && f.durIdx === -1 && !(+f.customDays >= 1 && +f.customDays <= 90)) return err("اكتب عدد أيام العرض (من 1 إلى 90).");
@@ -731,7 +739,7 @@ export async function openOfferForm(editing) {
         deal: !dt ? null
           : dt === "discount" ? { type: "discount", scope: myItems.length ? f.dScope.scope : "all", kind: f.dScope.scope === "kind" ? f.dScope.kind : "", section: f.dScope.scope === "section" ? f.dScope.section : "", itemIds: f.dScope.scope === "items" ? f.dScope.itemIds.slice(0, 50) : [] }
           : dt === "bundle" ? { type: "bundle", itemIds: f.packIds.filter((id) => myItems.some((x) => x.id === id)).slice(0, 20) }
-          : dt === "bogo" ? { type: "bogo", itemId: f.bogoItem, getPct: f.getPct }
+          : dt === "bogo" ? { type: "bogo", itemId: f.bogoItem || "", getPct: f.getPct }
           : { type: "promo", orderable: !!f.orderable && price > 0 },
       };
       if (dt === "discount" && myItems.length) data.itemsScope = f.dScope.scope === "all" ? "على كل المنيو" : f.dScope.scope === "kind" ? `على ${KINDS[f.dScope.kind]?.title || ""}` : f.dScope.scope === "section" ? `على ${f.dScope.section}`.slice(0, 40) : "على أصناف مختارة";

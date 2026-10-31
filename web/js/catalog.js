@@ -205,11 +205,15 @@ export function storeDeals(config, offers, quick, items = [], now = Date.now()) 
   for (const o of offers || []) {
     const d = o.deal; if (!d || !live(o, now) || !DEAL_TYPES[d.type] || !on(d.type)) continue;
     const sold = ms(o.soldOutUntil) > now; // ❌ نفد اليوم
-    if (sold && d.type !== "bundle" && d.type !== "promo") continue;
+    const bogoPack = d.type === "bogo" && !d.itemId; // 1+1 على منتج مو في المنيو = باقة حبتين
+    if (sold && d.type !== "bundle" && d.type !== "promo" && !bogoPack) continue;
     if (d.type === "discount") {
       const pct = offerPct(o, now); if (pct <= 0 || pct >= 100) continue;
       const r = { pct, scope: d.scope || "all", kind: d.kind || "", section: d.section || "", itemIds: d.itemIds || [], src: o.id };
       D.rules.push(r); D.banners.push({ icon: "🔥", t: `${pct}% ${r.scope === "all" ? "على كل شي" : "على " + scopeText(r, items)}`, offerId: o.id });
+    } else if (bogoPack) {
+      if (o.price > 0) D.packs.push({ id: "deal_" + o.id, offerId: o.id, kind: "deal", name: o.offerTitle, desc: `${d.getPct === 50 ? "الثاني بنص السعر" : "1+1 مجاناً"} — حبتين`,
+        price: +o.price, was: o.originalPrice > o.price ? +o.originalPrice : 0, imageUrl: o.mediaType === "VIDEO" ? "" : o.mediaUri, type: "bogo", available: !sold });
     } else if (d.type === "bogo") {
       const it = items.find((x) => x.id === d.itemId); if (!it) continue;
       const g = d.getPct === 50 ? 50 : 100;
