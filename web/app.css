@@ -834,3 +834,15 @@ body.staff-mode .bottomnav, body.staff-mode .top, body.staff-mode .install { dis
 .sold-box > div { flex: 1; display: flex; flex-direction: column; } .sold-box b { color: #B91C1C; } .sold-box small { color: var(--muted); }
 .sold-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 [data-theme="dark"] .sold-box { background: rgba(185,28,28,.15); }
+
+/* عروضي: النشطة مفتوحة، والمنتهية مطوية */
+.osec { margin: 8px 0 12px; }
+.osec > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 12px 14px; border-radius: 14px; font-weight: 800; background: rgba(16,49,143,.07); color: #10318F; }
+.osec > summary::-webkit-details-marker { display: none; }
+.osec > summary::after { content: "▾"; margin-inline-start: auto; transition: transform .2s; }
+.osec[open] > summary::after { transform: rotate(180deg); }
+.osec > summary .cnt { background: #10318F; color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 12px; }
+.osec.ended > summary { background: rgba(107,114,128,.1); color: #4B5563; }
+.osec.ended > summary .cnt { background: #6B7280; }
+.osec .mlist { margin-top: 8px; }
+[data-theme="dark"] .osec > summary { color: #9DB4FF; }

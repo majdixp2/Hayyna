@@ -66,7 +66,13 @@ function draw() {
     ${hasStore ? staffCardHtml() : ""}
     ${m.offers.some((o) => o.adminNote) ? `<div class="banner red">↩️ عندك ${m.offers.filter((o) => o.adminNote).length === 1 ? "عرض يحتاج تعديل" : m.offers.filter((o) => o.adminNote).length + " عروض تحتاج تعديل"} من فريق لكوفر — شوف الملاحظة تحت العرض واضغط ✎</div>` : ""}
     <div class="section-title">عروضي (${m.offers.length})</div>
-    <div class="mlist">${m.offers.length ? m.offers.map(offerRow).join("") : `<div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div>`}</div>
+    ${m.offers.length ? (() => {
+      const ended = m.offers.filter((o) => X.isExpired(o, now)), live = m.offers.filter((o) => !X.isExpired(o, now));
+      return `<details class="osec live" data-sec="live"${m.secLive !== false ? " open" : ""}><summary>🔥 العروض النشطة <span class="cnt">${live.length}</span></summary>
+          <div class="mlist">${live.length ? live.map(offerRow).join("") : `<div class="empty-inline">ما عندك عروض نشطة — أعد نشر عرض منتهي من ✎ أو أضف عرض جديد</div>`}</div></details>
+        ${ended.length ? `<details class="osec ended" data-sec="ended"${m.secEnded ? " open" : ""}><summary>⏹️ العروض المنتهية <span class="cnt">${ended.length}</span></summary>
+          <div class="mlist">${ended.map(offerRow).join("")}</div></details>` : ""}`;
+    })() : `<div class="mlist"><div class="empty-inline">ما نشرت عروض للحين — ابدأ بأول عرض 🔥</div></div>`}
     ${walletCard()}
     <div class="stat-row">
       <div class="stat"><b>${active.length}</b><small>عرض نشط</small></div>
@@ -78,6 +84,7 @@ function draw() {
     ${!st.verified ? `<div class="hint-box">✔ توثيق المتجر (السجل التجاري / العمل الحر) متاح حالياً من تطبيق أندرويد.</div>` : ""}
     <button class="btn call" id="mContact">💬 تواصل معنا</button>`;
   $("editStore").onclick = () => openStoreForm();
+  root.querySelectorAll("details.osec").forEach((d) => d.addEventListener("toggle", () => { if (d.dataset.sec === "live") m.secLive = d.open; else m.secEnded = d.open; }));
   bindStaffCard(p.restaurantName || "");
   $("viewStore")?.addEventListener("click", () => openStore(state.user.uid, true));
   // جاي من "أنا صاحب المحل" على الخريطة: نفتح صفحة المتجر بموقع المحل
