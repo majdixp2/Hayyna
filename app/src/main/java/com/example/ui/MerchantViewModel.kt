@@ -141,17 +141,17 @@ class MerchantViewModel(
         if (storeCode.value != null) return
         launchSafely("تعذّر إنشاء رقم المتجر") { storeCode.value = repository.ensureStoreCode(u.uid) }
     }
-    fun saveStaff(old: com.example.data.model.StoreStaff?, name: String, role: String, perms: List<String>, pin: String, storeName: String, onDone: () -> Unit) {
+    fun saveStaff(old: com.example.data.model.StoreStaff?, name: String, role: String, perms: List<String>, pin: String, storeName: String, onDone: () -> Unit, branchIds: List<String> = old?.branchIds.orEmpty()) {
         val u = currentUser.value ?: return
         val code = storeCode.value ?: return toast("انتظر رقم المتجر")
         if (perms.isEmpty()) return toast("اختر صلاحية وحدة على الأقل")
         viewModelScope.launch {
             isSavingStaff.value = true
             try {
-                if (old != null && pin.isBlank()) repository.updateStaff(old.uid, mapOf("name" to name.take(40), "role" to role, "perms" to perms))
+                if (old != null && pin.isBlank()) repository.updateStaff(old.uid, mapOf("name" to name.take(40), "role" to role, "perms" to perms, "branchIds" to branchIds.take(50)))
                 else {
                     val n = old?.n ?: (1..50).firstOrNull { k -> myStaff.value.none { it.n == k } } ?: return@launch toast("وصلت للحد (50 موظف)")
-                    repository.addStaff(getApplication(), u.uid, storeName, code, n, name.trim(), role, perms, pin, replace = old)
+                    repository.addStaff(getApplication(), u.uid, storeName, code, n, name.trim(), role, perms, pin, replace = old, branchIds = branchIds)
                 }
                 toast(if (old == null) "✅ انضاف الموظف" else if (pin.isNotBlank()) "✅ تغيّر الرمز السري" else "انحفظ ✅")
                 onDone()
@@ -865,7 +865,8 @@ class MerchantViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val storeOrdersRaw: StateFlow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>?> = storeIdFlow { it.canOrders }
-        .flatMapLatest { id -> if (id == null) flowOf(null) else repository.storeOrders(id) }
+        .combine(staffMe) { id, st -> id to st?.branchIds.orEmpty() }.distinctUntilChanged()
+        .flatMapLatest { (id, brs) -> if (id == null) flowOf(null) else repository.storeOrders(id, brs) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val storeOrders: StateFlow<List<com.example.data.model.HayynaOrder>> = storeOrdersRaw.map { it?.first.orEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -1130,16 +1131,22 @@ class MerchantViewModel(
     }
     suspend fun refreshStorePause(sid: String): Boolean {
         if (catalogConfig.value.feat("preorder")) repository.preorderCfg(sid).let { preCfgs.value = preCfgs.value + (sid to (it ?: com.example.data.model.PreorderCfg())) }
-        val p = repository.storePausedNow(sid)
+        val (p, brs) = repository.storePausedNow(sid)
         pausedStores.value = pausedStores.value + (sid to p)
+        pausedBranches.value = pausedBranches.value + (sid to brs)
         return p
     }
+    /** ⏸️ الفروع الموقفة لكل متجر */
+    val pausedBranches = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
     fun refreshStorePauseAsync(sid: String) { viewModelScope.launch { refreshStorePause(sid) } }
     /** branchId = null: المحل مغلق لو كل فروعه مغلقة. الفرع بدون دوام = مفتوح. */
-    fun orderBlock(store: com.example.data.model.StoreProfile, branchId: String?, paused: Boolean = pausedStores.value[store.uid] == true): String? {
+    fun orderBlock(store: com.example.data.model.StoreProfile, branchId: String?, paused: Boolean = pausedStores.value[store.uid] == true,
+                   pausedBr: Set<String> = pausedBranches.value[store.uid].orEmpty()): String? {
         if (paused) return "⏸️ المحل موقف استقبال الطلبات مؤقتاً — جرّب بعد شوي"
         val bs = store.branches
         if (bs.isEmpty()) return null
+        if (branchId != null && branchId in pausedBr) return "⏸️ هذا الفرع موقف الطلبات مؤقتاً — جرّب فرع ثاني"
+        if (branchId == null && bs.all { it.id in pausedBr }) return "⏸️ المحل موقف استقبال الطلبات مؤقتاً — جرّب بعد شوي"
         val many = branchId != null && bs.size > 1
         val pick = if (branchId != null) listOf(bs.firstOrNull { it.id == branchId } ?: bs.first()) else bs
         if (pick.any { OfferTime.isOpenNow(it) != false }) return null
@@ -1147,18 +1154,26 @@ class MerchantViewModel(
     }
     /** حالة الإيقاف لمتجري (صاحب المحل أو موظف الطلبات) */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val myStorePaused: StateFlow<Boolean> = storeIdFlow { it.canOrders }
-        .flatMapLatest { sid -> if (sid == null) flowOf(false) else repository.storePaused(sid) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    fun toggleStorePause() {
+    val myStorePause: StateFlow<Pair<Boolean, Set<String>>> = storeIdFlow { it.canOrders }
+        .flatMapLatest { sid -> if (sid == null) flowOf(false to emptySet()) else repository.storePaused(sid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false to emptySet())
+    /** فروع متجري، والفروع اللي يقدر هذا الحساب يتحكم فيها (الموظف المخصص = فروعه بس) */
+    fun myStoreBranches(): List<com.example.data.model.Branch> {
+        val u = currentUser.value ?: return emptyList()
+        val st = staffMe.value
+        val sid = if (com.example.data.model.StoreStaff.isStaffEmail(u.email)) st?.storeId ?: return emptyList() else u.uid
+        return (if (sid == u.uid) merchantProfile.value?.branches else null) ?: approvedStores.value.firstOrNull { it.uid == sid }?.branches.orEmpty()
+    }
+    fun myPauseScope(): List<com.example.data.model.Branch> { val ids = staffMe.value?.branchIds.orEmpty(); val bs = myStoreBranches(); return if (ids.isEmpty()) bs else bs.filter { it.id in ids } }
+    fun canPauseAll(): Boolean = staffMe.value?.branchIds.isNullOrEmpty()
+    fun setMyPause(all: Boolean, branches: Set<String>) {
         val u = currentUser.value ?: return
         val st = staffMe.value
         val staff = com.example.data.model.StoreStaff.isStaffEmail(u.email)
         val sid = if (staff) st?.storeId ?: return else u.uid
-        val to = !myStorePaused.value
         viewModelScope.launch {
-            runCatching { repository.setStorePaused(sid, to, if (staff) st?.name?.ifBlank { "موظف ${st.n}" } ?: "موظف" else "صاحب المحل") }
-                .onSuccess { toast(if (to) "⏸️ وقّفنا الطلبات — الزبائن يشوفون إن المحل موقف مؤقتاً" else "▶️ رجع استقبال الطلبات") }
+            runCatching { repository.setStorePaused(sid, all, if (staff) st?.name?.ifBlank { "موظف ${st.n}" } ?: "موظف" else "صاحب المحل", branches) }
+                .onSuccess { toast(if (all) "⏸️ وقّفنا الطلبات — الزبائن يشوفون إن المحل موقف مؤقتاً" else if (branches.isEmpty()) "▶️ رجع استقبال الطلبات" else "انحفظ ✅") }
                 .onFailure { toast("تعذّر التغيير: ${it.message ?: ""}") }
         }
     }
@@ -1184,7 +1199,7 @@ class MerchantViewModel(
             val st = approvedStores.value.firstOrNull { it.uid == o.merchantId } ?: runCatching { repository.getStore(o.merchantId) }.getOrNull()
             if (st == null) { toast("صفحة المتجر مو جاهزة"); return@launch }
             val paused = refreshStorePause(st.uid)
-            orderBlock(st, null, paused)?.let { if (paused || !preOn(st.uid)) { toast(it); return@launch } }
+            orderBlock(st, null, paused)?.let { if (it.startsWith("⏸️") || !preOn(st.uid)) { toast(it); return@launch } }
             val items = loadStoreCatalog(st.uid)
             val d = com.example.data.model.OfferDeal.from(o.deal) ?: return@launch
             when (d.type) {
@@ -1228,7 +1243,8 @@ class MerchantViewModel(
     /** يحفظ الطلب (لو مسجّل) ويرجّع رابط واتساب المحل مع ملخص الطلب */
     fun sendOrder(store: com.example.data.model.StoreProfile, branch: com.example.data.model.Branch?, mode: String, name: String, phone: String, note: String, pay: String, car: String, scheduledAt: Long = 0L, onUrl: (String) -> Unit) {
         val later = scheduledAt > 0
-        val slotKey = if (later && mode == "delivery") com.example.data.model.PreOrder.slotKey(scheduledAt) else ""
+        // فترات التوصيل لكل فرع (لو المحل عنده أكثر من فرع)
+        val slotKey = if (later && mode == "delivery") com.example.data.model.PreOrder.slotKey(scheduledAt).let { k -> if (store.branches.size > 1 && branch != null) "${k}_${branch.id}".take(60) else k } else ""
         if (slotKey.isNotBlank() && currentUser.value == null) { toast("سجّل دخولك عشان تحجز موعد توصيل"); return }
         val lines = carts.value[store.uid].orEmpty().values.toList()
         if (lines.isEmpty()) return
@@ -1256,7 +1272,7 @@ class MerchantViewModel(
         viewModelScope.launch {
             // ⏸️ نتأكد من السيرفر إن المحل ما أوقف الطلبات، وإن الفرع مفتوح
             val paused = refreshStorePause(store.uid)
-            orderBlock(store, branch?.id, paused)?.let { if (paused || !later || !preOn(store.uid)) { toast(it); return@launch } }
+            orderBlock(store, branch?.id, paused)?.let { if (it.startsWith("⏸️") || !later || !preOn(store.uid)) { toast(it); return@launch } }
             val pc = preCfgs.value[store.uid] ?: com.example.data.model.PreorderCfg()
             if (later && !preOn(store.uid)) { toast("المحل قفل الطلب المسبق"); return@launch }
             if (later && scheduledAt < System.currentTimeMillis() + pc.prepMin * 60_000L) { toast("الوقت اللي اخترته فات — اختر وقت ثاني"); return@launch }

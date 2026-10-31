@@ -120,8 +120,9 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
     LaunchedEffect(store.uid, cfg.orderEnabled) { if (cfg.orderEnabled) vm.refreshStorePause(store.uid) }
     val pausedMap by vm.pausedStores.collectAsStateWithLifecycle()
     val preMap by vm.preCfgs.collectAsStateWithLifecycle()
-    val closedMsg = if (cfg.orderEnabled) vm.orderBlock(store, null, pausedMap[store.uid] == true) else null
-    val pre = closedMsg != null && pausedMap[store.uid] != true && preMap[store.uid]?.active == true && vm.preOn(store.uid)
+    val pausedBr by vm.pausedBranches.collectAsStateWithLifecycle()
+    val closedMsg = if (cfg.orderEnabled) vm.orderBlock(store, null, pausedMap[store.uid] == true, pausedBr[store.uid].orEmpty()) else null
+    val pre = closedMsg != null && !closedMsg.startsWith("⏸️") && preMap[store.uid]?.active == true && vm.preOn(store.uid)
     val canOrder = cfg.orderEnabled && (closedMsg == null || pre)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         if (closedMsg != null) ClosedBanner(closedMsg + if (pre) "\n📅 تقدر تطلب الحين بموعد لاحق" else "")
@@ -253,8 +254,9 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     val paused by vm.pausedStores.collectAsStateWithLifecycle()
     val preMap by vm.preCfgs.collectAsStateWithLifecycle()
     val slotMap by vm.slotCounts.collectAsStateWithLifecycle()
-    val isPaused = paused[store.uid] == true
-    val closedMsg = vm.orderBlock(store, branchId.ifBlank { null }, isPaused)
+    val pausedBr by vm.pausedBranches.collectAsStateWithLifecycle()
+    val closedMsg = vm.orderBlock(store, branchId.ifBlank { null }, paused[store.uid] == true, pausedBr[store.uid].orEmpty())
+    val isPaused = closedMsg?.startsWith("⏸️") == true
     // 📅 اطلب مسبقاً
     val pc = preMap[store.uid] ?: com.example.data.model.PreorderCfg()
     val pre = !isPaused && pc.active && vm.preOn(store.uid)
@@ -280,7 +282,8 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     val preDays = if (later) com.example.data.model.PreOrder.days(pc) else emptyList()
     if (later && day !in preDays) day = preDays.firstOrNull { com.example.data.model.PreOrder.times(pc, br0, mode, it).isNotEmpty() } ?: preDays.firstOrNull() ?: 0L
     val preTimes = if (later && modeOkLater) com.example.data.model.PreOrder.times(pc, br0, mode, day) else emptyList()
-    val isFull = { x: com.example.data.model.PreSlot -> mode == "delivery" && (slotMap[store.uid]?.get(x.key) ?: 0) >= pc.slotCap }
+    val bKey = { k: String -> if (store.branches.size > 1 && branchId.isNotBlank()) "${k}_$branchId" else k } // فترات لكل فرع
+    val isFull = { x: com.example.data.model.PreSlot -> mode == "delivery" && (slotMap[store.uid]?.get(bKey(x.key)) ?: 0) >= pc.slotCap }
     if (slot != 0L && preTimes.none { it.t == slot && !isFull(it) }) slot = 0L
     val blocked = isPaused || (closedNow && !later)
     LaunchedEffect(Unit) { vm.loadMyStats() }
@@ -554,16 +557,52 @@ fun ClosedBanner(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** ⏸️ زر إيقاف استقبال الطلبات (صاحب المحل + موظف الطلبات) */
+/** ⏸️ زر إيقاف استقبال الطلبات (صاحب المحل + موظف الطلبات) — لكل فرع أو المحل كله */
 @Composable
 fun PauseOrdersRow(vm: MerchantViewModel) {
-    val paused by vm.myStorePaused.collectAsStateWithLifecycle()
-    Surface(shape = RoundedCornerShape(14.dp), color = if (paused) Color(0xFFFDE8E6) else Color(0xFFE7F6EC), modifier = Modifier.fillMaxWidth()) {
+    val pause by vm.myStorePause.collectAsStateWithLifecycle()
+    val staffMe by vm.staffMe.collectAsStateWithLifecycle()
+    val scope = remember(staffMe, pause) { vm.myPauseScope() }
+    val canAll = vm.canPauseAll()
+    val (all, brs) = pause
+    val off = scope.filter { it.id in brs }
+    val allOff = all || (scope.isNotEmpty() && off.size == scope.size)
+    var sheet by remember { mutableStateOf(false) }
+    val bn = { b: com.example.data.model.Branch -> b.name.ifBlank { b.district.ifBlank { "الفرع" } } }
+    Surface(shape = RoundedCornerShape(14.dp), color = if (allOff || off.isNotEmpty()) Color(0xFFFDE8E6) else Color(0xFFE7F6EC), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (paused) "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" else "🟢 تستقبل طلبات", Modifier.weight(1f), color = if (paused) Color(0xFFB42318) else Color(0xFF15803D), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            if (paused) Button(onClick = { vm.toggleStorePause() }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("▶️ رجّع الاستقبال", fontSize = 13.sp) }
-            else OutlinedButton(onClick = { vm.toggleStorePause() }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("⏸️ أوقف الطلبات", fontSize = 13.sp) }
+            Text(if (allOff) "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" else if (off.isNotEmpty()) "⏸️ موقف: " + off.joinToString("، ") { bn(it) } else "🟢 تستقبل طلبات",
+                Modifier.weight(1f), color = if (allOff || off.isNotEmpty()) Color(0xFFB42318) else Color(0xFF15803D), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            val onTap = {
+                when {
+                    scope.size > 1 -> sheet = true
+                    canAll && vm.myStoreBranches().size <= 1 -> vm.setMyPause(!all, emptySet())
+                    scope.isNotEmpty() -> { val id = scope.first().id; vm.setMyPause(all, if (id in brs) brs - id else brs + id) }
+                    else -> vm.setMyPause(!all, brs)
+                }
+            }
+            if (allOff || off.isNotEmpty()) Button(onClick = onTap, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (scope.size > 1) "⏸️ إيقاف / تشغيل" else "▶️ رجّع الاستقبال", fontSize = 13.sp) }
+            else OutlinedButton(onClick = onTap, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (scope.size > 1) "⏸️ إيقاف / تشغيل" else "⏸️ أوقف الطلبات", fontSize = 13.sp) }
         }
+    }
+    if (sheet) {
+        var a by remember { mutableStateOf(all) }
+        val sel = remember { mutableStateListOf<String>().apply { addAll(brs) } }
+        AlertDialog(onDismissRequest = { sheet = false }, title = { Text("⏸️ إيقاف استقبال الطلبات") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("الزبائن يشوفون إن الفرع موقف مؤقتاً، وما يقدرون يطلبون منه.", fontSize = 13.sp)
+                    if (canAll) Row(verticalAlignment = Alignment.CenterVertically) { Text("⏸️ كل الفروع", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); Switch(a, { a = it }) }
+                    if (!(canAll && a)) scope.forEach { b ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("⏸️ فرع ", fontSize = 14.sp); androidx.compose.material3.Text(bn(b), fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            Switch(b.id in sel, { on -> if (on) sel.add(b.id) else sel.remove(b.id) })
+                        }
+                    }
+                }
+            },
+            confirmButton = { Button(onClick = { vm.setMyPause(if (canAll) a else all, sel.toSet()); sheet = false }) { Text("حفظ") } },
+            dismissButton = { TextButton(onClick = { sheet = false }) { Text("رجوع") } })
     }
 }
 
@@ -610,6 +649,7 @@ fun OrdersDialog(
                 val (bg, line) = orderTint(o.status)
                 Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(if (asStore && o.status == "sent") 2.dp else 1.dp, if (asStore && o.status == "sent") CalmSagePrimary else line ?: MaterialTheme.colorScheme.outlineVariant), color = bg ?: MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        if (o.branchName.isNotBlank()) androidx.compose.material3.Text("📍 ${o.branchName}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary)
                         Row { Text("#${o.code}", fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f)); Text(if (asStore) HayynaOrder.STATUS[o.status] ?: o.status else o.statusText(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CalmSagePrimary) }
                         Text((if (asStore) listOf(o.customerName, o.customerPhone.let { p -> val d = p.filter { it.isDigit() }; if (d.startsWith("966")) "0" + d.drop(3) else p }).filter { it.isNotBlank() }.joinToString(" • ") else "🏪 ${o.storeName}") + if (o.createdAtMillis > 0) " • ${dm(o.createdAtMillis)}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         val nsc = if (asStore && ns && o.isLive) cfg.noshow.recentCount(stats[o.customerUid], now) else 0
@@ -709,6 +749,17 @@ fun OrdersDialog(
                     }
                 }
             }
+            // 📍 صاحب المحل: فلتر بالفروع
+            val allBr = if (asStore && staffMe?.branchIds.isNullOrEmpty()) vm.myStoreBranches() else emptyList()
+            var ordBr by rememberSaveable { mutableStateOf("") }
+            if (allBr.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = ordBr.isBlank(), onClick = { ordBr = "" }, label = { Text("كل الفروع", fontSize = 12.sp) })
+                allBr.forEach { b ->
+                    val n = orders.count { it.branchId == b.id && it.isLive }
+                    FilterChip(selected = ordBr == b.id, onClick = { ordBr = b.id }, label = { androidx.compose.material3.Text(b.name.ifBlank { b.district.ifBlank { "الفرع" } } + if (n > 0) " ($n)" else "", fontSize = 12.sp) })
+                }
+            }
+            @Suppress("NAME_SHADOWING") val orders = if (ordBr.isBlank()) orders else orders.filter { it.branchId == ordBr }
             if (!asStore) orders.take(100).forEach { card(it) }
             else ORDER_GROUPS.forEach { g ->
                 val prepMs = myPre.prepMin * 60_000L

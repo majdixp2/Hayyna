@@ -929,20 +929,22 @@ class RestaurantOfferRepository(
         (d.getTimestamp("soldOutUntil")?.toDate()?.time ?: 0L) > System.currentTimeMillis()
     }.getOrDefault(false)
     // ⏸️ إيقاف استقبال الطلبات (storeStatus/{storeUid})
-    suspend fun storePausedNow(storeId: String): Boolean = runCatching {
-        db.collection("storeStatus").document(storeId).get(com.google.firebase.firestore.Source.SERVER).await().getBoolean("paused") == true
+    /** ⏸️ (المحل كله موقف، الفروع الموقفة) */
+    private fun pauseOf(d: DocumentSnapshot?) = (d?.getBoolean("paused") == true) to (d?.get("pausedBranches") as? List<*>)?.mapNotNull { it as? String }.orEmpty().toSet()
+    suspend fun storePausedNow(storeId: String): Pair<Boolean, Set<String>> = runCatching {
+        pauseOf(db.collection("storeStatus").document(storeId).get(com.google.firebase.firestore.Source.SERVER).await())
     }.recoverCatching {
-        db.collection("storeStatus").document(storeId).get().await().getBoolean("paused") == true
-    }.getOrDefault(false)
-    fun storePaused(storeId: String): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.callbackFlow {
+        pauseOf(db.collection("storeStatus").document(storeId).get().await())
+    }.getOrDefault(false to emptySet())
+    fun storePaused(storeId: String): kotlinx.coroutines.flow.Flow<Pair<Boolean, Set<String>>> = kotlinx.coroutines.flow.callbackFlow {
         val reg = db.collection("storeStatus").document(storeId).addSnapshotListener { d, e ->
             if (e != null) { Log.w("Repo", "storeStatus: ${e.message}"); return@addSnapshotListener }
-            trySend(d?.getBoolean("paused") == true)
+            trySend(pauseOf(d))
         }
         awaitClose { reg.remove() }
     }
-    suspend fun setStorePaused(storeId: String, paused: Boolean, by: String) {
-        db.collection("storeStatus").document(storeId).set(mapOf("paused" to paused, "pausedAt" to FieldValue.serverTimestamp(), "by" to by.take(60))).await()
+    suspend fun setStorePaused(storeId: String, paused: Boolean, by: String, branches: Set<String> = emptySet()) {
+        db.collection("storeStatus").document(storeId).set(mapOf("paused" to paused, "pausedAt" to FieldValue.serverTimestamp(), "by" to by.take(60), "pausedBranches" to branches.toList().take(50))).await()
     }
     /** 👥 موظف «نفد اليوم»: يغيّر التوفر بس */
     suspend fun setItemAvailable(id: String, available: Boolean) {
@@ -954,7 +956,8 @@ class RestaurantOfferRepository(
         uid = d.id, storeId = d.getString("storeId").orEmpty(), storeName = d.getString("storeName").orEmpty(),
         code = d.getString("code").orEmpty(), n = (d.getLong("n") ?: 0L).toInt(), name = d.getString("name").orEmpty(),
         role = d.getString("role") ?: "cashier", perms = (d.get("perms") as? List<*>)?.mapNotNull { it as? String }.orEmpty(),
-        active = d.getBoolean("active") ?: false, email = d.getString("email").orEmpty()
+        active = d.getBoolean("active") ?: false, email = d.getString("email").orEmpty(),
+        branchIds = (d.get("branchIds") as? List<*>)?.mapNotNull { it as? String }.orEmpty()
     )
     /** ملف الموظف نفسه (null = انحذف) */
     fun staffSelf(uid: String): Flow<com.example.data.model.StoreStaff?> = callbackFlow {
@@ -998,7 +1001,7 @@ class RestaurantOfferRepository(
         } finally { runCatching { app2.delete() } }
     }
     suspend fun addStaff(context: Context, ownerUid: String, storeName: String, code: String, n: Int, name: String, role: String, perms: List<String>, pin: String,
-                         replace: com.example.data.model.StoreStaff? = null) {
+                         replace: com.example.data.model.StoreStaff? = null, branchIds: List<String> = emptyList()) {
         val rnd = (1..6).map { "abcdefghijklmnopqrstuvwxyz0123456789".random() }.joinToString("")
         val email = "$code-$n-$rnd@${com.example.data.model.StoreStaff.DOMAIN}"
         val uid = createStaffAccount(context, email, pin)
@@ -1006,7 +1009,8 @@ class RestaurantOfferRepository(
         if (replace != null) wb.delete(db.collection("storeStaff").document(replace.uid))
         wb.set(db.collection("storeStaff").document(uid), hashMapOf(
             "storeId" to ownerUid, "storeName" to storeName.take(100), "code" to code, "n" to n.toLong(), "name" to name.take(40),
-            "role" to role, "perms" to perms, "active" to (replace?.active ?: true), "createdAt" to FieldValue.serverTimestamp(), "email" to email))
+            "role" to role, "perms" to perms, "active" to (replace?.active ?: true), "createdAt" to FieldValue.serverTimestamp(), "email" to email,
+            "branchIds" to (replace?.branchIds ?: branchIds).take(50)))
         wb.set(db.collection("staffLogin").document("$code-$n"), hashMapOf("email" to email, "storeId" to ownerUid, "n" to n.toLong()))
         wb.commit().await()
     }
@@ -1055,7 +1059,8 @@ class RestaurantOfferRepository(
         cancelReq = d.getString("cancelReq").orEmpty(), cancelReqAns = d.getString("cancelReqAns").orEmpty(),
         cancelBy = d.getString("cancelBy").orEmpty(), cancelReason = d.getString("cancelReason").orEmpty(),
         lat = (d.get("location") as? Map<String, Any?>)?.get("lat") as? Double, lng = (d.get("location") as? Map<String, Any?>)?.get("lng") as? Double,
-        scheduledAtMillis = d.getTimestamp("scheduledAt")?.toDate()?.time ?: 0L, slotKey = d.getString("slotKey").orEmpty(), readyNote = d.getString("readyNote").orEmpty()
+        scheduledAtMillis = d.getTimestamp("scheduledAt")?.toDate()?.time ?: 0L, slotKey = d.getString("slotKey").orEmpty(), readyNote = d.getString("readyNote").orEmpty(),
+        branchId = d.getString("branchId").orEmpty()
     )
     fun myOrdersFlow(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
         val l = db.collection("orders").whereEqualTo("customerUid", uid).addSnapshotListener { s, e ->
@@ -1076,8 +1081,10 @@ class RestaurantOfferRepository(
             .map { Triple((it.getLong("stars") ?: 0L).toInt(), it.getString("name").orEmpty(), it.getString("text").orEmpty()) }
     }.getOrDefault(emptyList())
     /** طلبات المحل + هل الدفعة من الكاش (أول دفعة من السيرفر هي «الأساس» عشان ما نحسب القديمة «جديدة») */
-    fun storeOrders(uid: String): Flow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>> = callbackFlow {
-        val l = db.collection("orders").whereEqualTo("storeId", uid).addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { s, _ ->
+    fun storeOrders(uid: String, branchIds: List<String> = emptyList()): Flow<Pair<List<com.example.data.model.HayynaOrder>, Boolean>> = callbackFlow {
+        // 👥 موظف مخصص لفروع: طلبات فروعه بس (والطلبات اللي ما لها فرع)
+        val q = db.collection("orders").whereEqualTo("storeId", uid).let { if (branchIds.isEmpty()) it else it.whereIn("branchId", branchIds.take(29) + "") }
+        val l = q.addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { s, _ ->
             if (s != null) trySend(s.documents.map { parseOrder(it) }.sortedByDescending { it.createdAtMillis } to s.metadata.isFromCache)
         }
         awaitClose { l.remove() }
