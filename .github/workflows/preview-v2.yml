@@ -1,0 +1,23 @@
+name: Preview design v2 (temporary channel)
+# ينشر نسخة الويب من فرع design/v2 على رابط تجريبي مؤقت. ما يلمس الموقع الحي ولا القواعد. احذفه بعد القرار.
+on:
+  push:
+    branches: [design/v2]
+    paths: ["web/**", "firebase.json", ".github/workflows/preview-v2.yml"]
+  workflow_dispatch:
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    env:
+      SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Deploy preview channel
+        run: |
+          if [ -z "$SA" ]; then echo "::error::FIREBASE_SERVICE_ACCOUNT secret is missing"; exit 1; fi
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx -y firebase-tools@14 hosting:channel:deploy design-v2 --expires 30d --project gen-lang-client-0536850806 --non-interactive 2>&1 | tee out.txt
+          grep -oE "https://[a-z0-9.-]+--design-v2-[a-z0-9]+\.web\.app" out.txt | head -1 | sed 's/^/::notice title=Preview URL::/' || true

@@ -218,7 +218,24 @@ function renderScope(count) {
 
 // ---------------- الخريطة ----------------
 let map = null, fitted = false;
+// علامة الخريطة (التصميم الجديد): كبسولة فيها صورة صغيرة + السعر أو الخصم
+function markerLabel(o) {
+  if (X.isSoldOut(o)) return { t: "نفد اليوم", sold: true };
+  if (isPercentOnly(o)) return { t: `−${effectivePercent(o)}%` };
+  if (o.price > 0) return { t: money(o.price), cur: "ر.س" };
+  return { t: o.postType === "new" ? "جديد" : "عرض" };
+}
 function markerHtml(o, extra, on) {
+  if (document.documentElement.classList.contains("v2") || document.querySelector('link[href="/v2.css"]')) {
+    const L = markerLabel(o), ex = exclusiveOf(state.config);
+    return `<div class="mk mk2${on ? " on" : ""}${isFeat(o) ? " feat" : ""}${L.sold ? " sold" : ""}">`
+      + (o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : "")
+      + `<div class="mk-pill"><span class="mk-av"><img src="${esc(o.logoUrl ? cld(o.logoUrl, 80) : thumb(o, 80))}" alt="" loading="lazy"></span><span class="mk-p">${esc(L.t)}${L.cur ? `<small>${L.cur}</small>` : ""}</span></div>`
+      + `<i class="mk-tail"></i>${extra > 0 ? `<span class="more">+${extra}</span>` : ""}</div>`;
+  }
+  return markerHtmlV1(o, extra, on);
+}
+function markerHtmlV1(o, extra, on) {
   const bd = badge(o);
   const logo = o.logoUrl ? `<img class="lg" src="${esc(cld(o.logoUrl, 80))}" alt="">` : "";
   const ex = exclusiveOf(state.config);
