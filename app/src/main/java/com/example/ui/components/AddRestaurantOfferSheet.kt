@@ -121,6 +121,8 @@ fun AddRestaurantOfferSheet(
     val packIds = remember { mutableStateListOf<String>().apply { if (ed?.type == "bundle") addAll(ed.itemIds) } }
     var bogoItem by remember { mutableStateOf(ed?.itemId.orEmpty()) }
     var getPct by remember { mutableStateOf(if (ed?.getPct == 50) 50 else 100) }
+    // ➕ 1+1 على منتج مو في المنيو: سعر الحبة الوحدة
+    var bogoUnitText by remember { mutableStateOf(if (ed?.type == "bogo" && ed.itemId.isBlank()) editingOffer?.originalPrice?.takeIf { it > 0 }?.let { formatPrice(it / 2) }.orEmpty() else "") }
     var orderable by remember { mutableStateOf(ed?.orderable ?: false) }
     val paid = publish != null && !isEditing
     // الحصري ما ينشال بعد ما انتشر بخصم (لما المكافأة شغّالة)
@@ -234,6 +236,11 @@ fun AddRestaurantOfferSheet(
         val dt = if (isNewProduct) (if (newOrderableOn && orderable) "promo" else "") else if (dealsOn) dealType else ""
         val bogoIt = catalogItems.firstOrNull { it.id == bogoItem }
         if (dt == "bogo" && bogoIt != null) { priceText = formatPrice(bogoIt.price); originalPriceText = "" }
+        val bogoUnit = bogoUnitText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+        if (dt == "bogo" && bogoIt == null && bogoUnit > 0) {
+            priceText = formatPrice(Math.round(bogoUnit * (if (getPct == 50) 1.5 else 1.0) * 100) / 100.0)
+            originalPriceText = formatPrice(Math.round(bogoUnit * 2 * 100) / 100.0)
+        }
         val price = if (percentMode) 0.0 else if (isNewProduct && priceText.isBlank()) 0.0 else priceText.toDoubleOrNull()
         val original = if (percentMode) null else originalPriceText.toDoubleOrNull()
         val pct = percentText.trim().toIntOrNull()
@@ -273,7 +280,7 @@ fun AddRestaurantOfferSheet(
             dt == "discount" && catalogItems.isNotEmpty() && dScope == "kind" && dKind.isBlank() -> "اختر النوع."
             dt == "discount" && catalogItems.isNotEmpty() && dScope == "section" && dSection.isBlank() -> "اختر القسم."
             dt == "discount" && catalogItems.isNotEmpty() && dScope == "items" && dItems.isEmpty() -> "اختر صنف واحد على الأقل."
-            dt == "bogo" && bogoIt == null -> "اختر الصنف اللي عليه العرض."
+            dt == "bogo" && bogoIt == null && bogoUnit <= 0.0 -> "اكتب سعر الحبة الوحدة."
             dt == "promo" && orderable && (priceText.toDoubleOrNull() ?: 0.0) <= 0.0 -> if (isNewProduct) "عشان الزبون يطلبه، اكتب سعر المنتج." else "عشان الزبون يطلبه، اكتب سعر العرض."
             paid && !useTiers && newExpiry == null -> "اختر مدة العرض."
             restaurantName.isBlank() -> "يرجى كتابة اسم المتجر."
@@ -572,7 +579,7 @@ fun AddRestaurantOfferSheet(
                         dealTypes.chunked(2).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 row.forEach { t ->
-                                    val need = (t.id == "discount" || t.id == "bogo") && catalogItems.isEmpty()
+                                    val need = t.id == "discount" && catalogItems.isEmpty()
                                     val sel = dealType == t.id
                                     OutlinedCard(
                                         onClick = {
@@ -597,6 +604,7 @@ fun AddRestaurantOfferSheet(
                     if (dt == "bogo") {
                         Text("➕ على أي صنف؟ *", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = bogoItem.isBlank(), onClick = { bogoItem = "" }, label = { Text("📦 منتج مو في المنيو", fontSize = 12.sp) })
                             catalogItems.forEach { it ->
                                 FilterChip(selected = bogoItem == it.id, onClick = {
                                     bogoItem = it.id
@@ -607,6 +615,15 @@ fun AddRestaurantOfferSheet(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             FilterChip(selected = getPct == 100, onClick = { getPct = 100 }, label = { Text("1+1 مجاناً", fontSize = 12.sp) })
                             FilterChip(selected = getPct == 50, onClick = { getPct = 50 }, label = { Text("الثاني بنص السعر", fontSize = 12.sp) })
+                        }
+                        if (bogoItem.isBlank()) {
+                            OutlinedTextField(
+                                value = bogoUnitText, onValueChange = { bogoUnitText = it },
+                                label = { Text("سعر الحبة الوحدة (ر.س) *") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth()
+                            )
+                            val u = bogoUnitText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+                            if (u > 0) Text("الزبون يدفع ${formatPrice(u * (if (getPct == 50) 1.5 else 1.0))} ر.س ويستلم حبتين (بدل ${formatPrice(u * 2)})", fontSize = 12.sp, color = CalmSagePrimary, fontWeight = FontWeight.Bold)
                         }
                     }
 

@@ -35,14 +35,15 @@ service cloud.firestore {
     }
 
     // العروض مع المنيو: خصم / باقة / 1+1 / إعلان
-    function validDeal(d) {
+    function validDeal(d, price) {
       return d.keys().hasOnly(['type', 'scope', 'kind', 'section', 'itemIds', 'itemId', 'getPct', 'orderable'])
         && d.type in ['discount', 'bundle', 'bogo', 'promo']
         && d.get('scope', 'all') in ['all', 'kind', 'section', 'items']
         && d.get('kind', '').size() <= 20 && d.get('section', '').size() <= 40
         && d.get('itemIds', []).size() <= 50
         && d.get('getPct', 100) in [50, 100]
-        && (d.type != 'bogo' || d.get('itemId', '').size() > 0);
+        // 1+1 على صنف من المنيو، أو على منتج مو في المنيو (بسعر العرض)
+        && (d.type != 'bogo' || d.get('itemId', '').size() > 0 || (price is number && price > 0));
     }
 
     // ⚠️ مكتوبة مختصرة عمداً: Firestore يوقف التقييم بعد 1000 عملية في الطلب، والعرض فيه حقول كثيرة.
@@ -76,7 +77,7 @@ service cloud.firestore {
         && data.get('exclusive', false) is bool
         && data.get('draft', false) is bool
         && data.get('adminNote', '').size() <= 300
-        && (data.get('deal', null) == null || validDeal(data.deal))
+        && (data.get('deal', null) == null || validDeal(data.deal, data.get('price', 0)))
         && data.get('tags', []).size() <= 12
         && data.get('isApproved', false) is bool
         && data.get('isFeatured', false) is bool

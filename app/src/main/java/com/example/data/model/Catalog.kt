@@ -256,13 +256,17 @@ data class StoreDeals(
                 val t = DealType.of(d.type) ?: return@forEach
                 if (!cfg.feat(t.feat) || o.draft || !o.isApproved || OfferTime.isExpired(o, now) || OfferPricing.isUpcoming(o, now)) return@forEach
                 val sold = o.isSoldOut(now) // ❌ نفد اليوم: الخصم والـ1+1 يوقفون، والباقة تظهر «نفد»
-                if (sold && (t == DealType.DISCOUNT || t == DealType.BOGO)) return@forEach
+                val bogoPack = t == DealType.BOGO && d.itemId.isBlank() // 1+1 على منتج مو في المنيو = باقة حبتين
+                if (sold && (t == DealType.DISCOUNT || (t == DealType.BOGO && !bogoPack))) return@forEach
                 when (t) {
                     DealType.DISCOUNT -> {
                         val pct = OfferPricing.currentPercent(o, now)
                         if (pct in 1..99) { val r = DealRule(pct, d.scope, d.kind, d.section, d.itemIds); rules += r; banners += "🔥 $pct% على ${scopeText(r)}" }
                     }
-                    DealType.BOGO -> items.firstOrNull { it.id == d.itemId }?.let { it ->
+                    DealType.BOGO -> if (bogoPack) {
+                        if (o.price > 0) packs += DealPack("deal_${o.id}", o.id, o.offerTitle, (if (d.getPct == 50) "الثاني بنص السعر" else "1+1 مجاناً") + " — حبتين",
+                            o.price, if ((o.originalPrice ?: 0.0) > o.price) o.originalPrice!! else 0.0, if (o.mediaType == MediaType.VIDEO) "" else o.mediaUri, available = !sold)
+                    } else items.firstOrNull { it.id == d.itemId }?.let { it ->
                         val g = if (d.getPct == 50) 50 else 100; val label = if (g == 100) "1+1 مجاناً" else "الثاني بنص السعر"
                         bogo[it.id] = g to label; banners += "➕ ${it.name}: $label"
                     }

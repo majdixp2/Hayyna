@@ -1883,6 +1883,14 @@
   "🌙 هذا الفرع مغلق الحين — يفتح": "🌙 This branch is closed now — opens",
   "مغلق الحين": "closed now",
   "(جرّب فرع ثاني)": "(try another branch)",
-  "الاثنين": "Mon"
+  "الاثنين": "Mon",
+  "📦 منتج مو في المنيو": "📦 Item not on the menu",
+  "سعر الحبة الوحدة (ر.س) *": "Price of one item (SAR) *",
+  "سعر الحبة الوحدة": "Price of one item",
+  "اكتب سعر الحبة الوحدة": "Enter the price of one item",
+  "اكتب سعر الحبة، ونحسب سعر العرض": "Enter the item price and we'll calculate the offer price",
+  "الزبون يدفع": "The customer pays",
+  "ويستلم حبتين (بدل": "and gets two (instead of",
+  "حبتين": "two items"
  }
 }

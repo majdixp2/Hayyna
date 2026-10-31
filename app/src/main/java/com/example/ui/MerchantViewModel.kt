@@ -1176,7 +1176,11 @@ class MerchantViewModel(
             val d = com.example.data.model.OfferDeal.from(o.deal) ?: return@launch
             when (d.type) {
                 "discount" -> openStorePage(st)
-                "bogo" -> { items.firstOrNull { it.id == d.itemId && it.available }?.let { cartAdd(st.uid, it, 2) }; openStorePage(st) }
+                "bogo" -> if (d.itemId.isNotBlank()) { items.firstOrNull { it.id == d.itemId && it.available }?.let { cartAdd(st.uid, it, 2) }; openStorePage(st) }
+                    else dealsOf(st.uid).packs.firstOrNull { it.offerId == o.id }?.let { pk ->
+                        if (items.any { it.available }) { cartAddPack(st.uid, pk, 1); toast("انضاف العرض لسلتك 🛒 كمّل من صفحة المتجر"); openStorePage(st) }
+                        else { carts.value = carts.value + (st.uid to emptyMap()); cartAddPack(st.uid, pk, 1); activeDetailOffer.value = null; directCheckout.value = st }
+                    } ?: openStorePage(st)
                 else -> {
                     val pk = dealsOf(st.uid).packs.firstOrNull { it.offerId == o.id }
                     when {
