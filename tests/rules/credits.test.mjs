@@ -18,7 +18,12 @@ async function seed() {
     await setDoc(doc(db, "config/app"), { credits: { enabled: true, welcome: 30, items: {
       publish: { name: "نشر", effect: "publish", unit: "day", price: 3, days: 1, active: true },
       feature: { name: "تمييز", effect: "feature", unit: "fixed", price: 10, days: 3, active: true },
-      off: { name: "موقفة", effect: "listTop", unit: "fixed", price: 40, days: 7, active: false } } } });
+      off: { name: "موقفة", effect: "listTop", unit: "fixed", price: 40, days: 7, active: false },
+      boost: { name: "سوبر", effect: "spotlight", unit: "fixed", price: 25, days: 7, active: true },
+      promoted: { name: "تمييز بعرض", effect: "feature", unit: "fixed", price: 100, days: 1, active: true,
+        promo: { pct: 75, reason: "اليوم الوطني", startsAt: Timestamp.fromMillis(Date.now() - DAY), endsAt: Timestamp.fromMillis(Date.now() + DAY) } },
+      expiredPromo: { name: "عرض منتهي", effect: "feature", unit: "fixed", price: 100, days: 1, active: true,
+        promo: { pct: 75, reason: "قديم", startsAt: Timestamp.fromMillis(Date.now() - 3 * DAY), endsAt: Timestamp.fromMillis(Date.now() - DAY) } } } } });
     await setDoc(doc(db, "creditCodes/HY-AAAA-1111"), { points: 100, batch: "t", redeemedBy: null, redeemedAt: null, expiresAt: null });
     await setDoc(doc(db, "creditCodes/HY-USED-2222"), { points: 100, batch: "t", redeemedBy: "other", redeemedAt: Timestamp.now(), expiresAt: null });
     await setDoc(doc(db, "creditCodes/HY-OLDX-3333"), { points: 100, batch: "t", redeemedBy: null, redeemedAt: null, expiresAt: Timestamp.fromMillis(Date.now() - DAY) });
@@ -33,9 +38,9 @@ const redeem = (db, uid, code, newBal) => {
   wb.set(doc(db, "wallets", uid), { balance: newBal, lastOp: { kind: "redeem", ref: code }, updatedAt: serverTimestamp() });
   return wb.commit();
 };
-const spend = (db, uid, { item = "publish", effect = "publish", offerId = "o1", days = 7, cost = 21, bal, startsIn = 0, len }) => {
+const spend = (db, uid, { item = "publish", effect = "publish", offerId = "o1", days = 7, cost = 21, bal, startsIn = 0, len, extra = {} }) => {
   const wb = writeBatch(db), ref = doc(collection(db, "boosts")), s = Date.now() + startsIn;
-  wb.set(ref, { id: ref.id, merchantId: uid, offerId, item, effect, days, cost, createdAt: serverTimestamp(), startsAt: Timestamp.fromMillis(s), endsAt: Timestamp.fromMillis(s + (len ?? days) * DAY) });
+  wb.set(ref, { id: ref.id, merchantId: uid, offerId, item, effect, days, cost, createdAt: serverTimestamp(), startsAt: Timestamp.fromMillis(s), endsAt: Timestamp.fromMillis(s + (len ?? days) * DAY), ...extra });
   if (bal !== undefined) wb.set(doc(db, "wallets", uid), { balance: bal, lastOp: { kind: "spend", ref: ref.id }, updatedAt: serverTimestamp() });
   return wb.commit();
 };
@@ -71,6 +76,15 @@ await t("مدة أطول من المدفوع تُرفض", () => assertFails(spen
 await t("خدمة موقفة تُرفض", () => assertFails(spend(as("m1"), "m1", { item: "off", effect: "listTop", days: 7, cost: 40, bal: 29 })));
 await t("خدمة على عرض تاجر ثاني تُرفض", () => assertFails(spend(as("m1"), "m1", { offerId: "o2", days: 1, cost: 3, bal: 66 })));
 await t("رصيد بالسالب يُرفض", () => assertFails(spend(as("m1"), "m1", { days: 30, cost: 90, bal: -21 })));
+console.log("السوبر لكل فرع + عروض لكوفر");
+await seed();
+await redeem(as("m1"), "m1", "HY-AAAA-1111", 100);
+await t("سوبر لفرعين = 50 نقطة", () => assertSucceeds(spend(as("m1"), "m1", { item: "boost", effect: "spotlight", days: 7, cost: 50, bal: 50, extra: { branchIds: ["b1", "b2"] } })));
+await t("سوبر لفرعين بسعر فرع واحد يُرفض", () => assertFails(spend(as("m1"), "m1", { item: "boost", effect: "spotlight", days: 7, cost: 25, bal: 25, extra: { branchIds: ["b1", "b2"] } })));
+await t("فروع على خدمة مو سوبر تُرفض", () => assertFails(spend(as("m1"), "m1", { item: "feature", effect: "feature", days: 3, cost: 10, bal: 40, extra: { branchIds: ["b1"] } })));
+await t("عرض لكوفر 75% = 25 نقطة", () => assertSucceeds(spend(as("m1"), "m1", { item: "promoted", effect: "feature", days: 1, cost: 25, bal: 25, extra: { promo: 75 } })));
+await t("عرض لكوفر بنسبة غلط يُرفض", () => assertFails(spend(as("m1"), "m1", { item: "promoted", effect: "feature", days: 1, cost: 10, bal: 15, extra: { promo: 90 } })));
+await t("عرض لكوفر منتهي يُرفض", () => assertFails(spend(as("m1"), "m1", { item: "expiredPromo", effect: "feature", days: 1, cost: 25, bal: 0, extra: { promo: 75 } })));
 await t("الزائر يقرأ الخدمات النشطة (للخريطة)", () => assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), "boosts/any"))));
 
 await env.cleanup();

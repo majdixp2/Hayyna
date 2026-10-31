@@ -348,19 +348,32 @@ service cloud.firestore {
         && d.cost * 100 >= base * (100 - pct)
         && (d.cost - 1) * 100 < base * (100 - pct);
     }
+    // 🏷️ عرض لكوفر على سعر خدمة (credits.items[item].promo): نسبة لفترة، السعر مقرّب لفوق
+    function promoOk(it, d, base) {
+      let p = it.get('promo', null);
+      return p != null && p.get('pct', 0) is int && p.pct >= 1 && p.pct <= 100
+        && p.get('startsAt', null) is timestamp && p.get('endsAt', null) is timestamp
+        && request.time >= p.startsAt && request.time < p.endsAt
+        && d.get('promo', 0) == p.pct && !('disc' in d)
+        && d.cost * 100 >= base * (100 - p.pct)
+        && (d.cost - 1) * 100 < base * (100 - p.pct);
+    }
     function exclRewardOn() {
       return exclCfg().get('reward', {}).get('enabled', false) == true;
     }
     // خدمات مدفوعة (نشر / تمييز / إعلان بارز): السعر من إعدادات الأدمن، والخصم من المحفظة بنفس العملية
     function boostOk(d) {
       let it = creditsCfg().get('items', {}).get(d.item, null);
-      let base = it == null ? 0 : (it.unit == 'day' ? it.price * d.days : it.price);
+      // 🚀 السوبر لكل فرع: السعر × عدد الفروع المختارة
+      let nb = d.effect == 'spotlight' && 'branchIds' in d ? d.branchIds.size() : 1;
+      let base = it == null ? 0 : (it.unit == 'day' ? it.price * d.days : it.price) * nb;
       return it != null && it.get('active', false) == true
         && d.effect == it.effect
         && d.days is int && d.days >= 1 && d.days <= 90
         && (it.unit == 'day' || d.days == it.days)
         && d.cost is int && d.cost >= 0
-        && ((d.cost == base && d.cost > 0 && !('disc' in d)) || exclDiscountOk(it, d, base))
+        && (!('branchIds' in d) || (d.effect == 'spotlight' && d.branchIds is list && d.branchIds.size() >= 1 && d.branchIds.size() <= 50))
+        && ((d.cost == base && d.cost > 0 && !('disc' in d) && !('promo' in d)) || (exclDiscountOk(it, d, base) && !('promo' in d)) || promoOk(it, d, base))
         && d.createdAt == request.time
         && d.startsAt is timestamp && d.endsAt is timestamp
         && d.startsAt >= request.time - duration.value(1, 'h')
@@ -375,7 +388,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAdmin()
         || (isAuthenticated()
-          && request.resource.data.keys().hasOnly(['id', 'merchantId', 'offerId', 'item', 'effect', 'days', 'cost', 'disc', 'createdAt', 'startsAt', 'endsAt'])
+          && request.resource.data.keys().hasOnly(['id', 'merchantId', 'offerId', 'item', 'effect', 'days', 'cost', 'disc', 'promo', 'branchIds', 'createdAt', 'startsAt', 'endsAt'])
           && request.resource.data.id == boostId
           && request.resource.data.merchantId == request.auth.uid
           && request.resource.data.offerId is string
