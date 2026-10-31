@@ -543,7 +543,11 @@ service cloud.firestore {
       allow create: if isAuthenticated()
         && catalogCfg().get('orderEnabled', false) == true
         && request.resource.data.keys().hasOnly(['id', 'code', 'storeId', 'storeName', 'branchId', 'branchName', 'customerUid', 'customerName', 'customerPhone',
-            'items', 'subtotal', 'discount', 'deliveryFee', 'total', 'vatRate', 'vatAmount', 'vatNumber', 'mode', 'location', 'note', 'pay', 'car', 'status', 'createdAt', 'updatedAt'])
+            'items', 'subtotal', 'discount', 'deliveryFee', 'total', 'vatRate', 'vatAmount', 'vatNumber', 'mode', 'location', 'note', 'pay', 'car', 'status', 'createdAt', 'updatedAt',
+            'scheduledAt', 'slotKey'])
+        // 📅 اطلب مسبقاً: الموعد لازم في المستقبل، والتوصيل يحجز فترة (slotCounts) في نفس العملية
+        && (!('scheduledAt' in request.resource.data) || preOrderOk(orderId, request.resource.data))
+        && (!('slotKey' in request.resource.data) || 'scheduledAt' in request.resource.data)
         && (!('pay' in request.resource.data) || request.resource.data.pay in ['cash', 'card'])
         && (!('car' in request.resource.data) || (request.resource.data.car is string && request.resource.data.car.size() <= 60))
         && request.resource.data.id == orderId
@@ -568,7 +572,8 @@ service cloud.firestore {
               // 👥 موظف الطلبات: نفس صلاحية المحل ما عدا «ما انستلم» (لصاحب المحل)
               || (isStoreStaff(resource.data.storeId, 'orders') && request.resource.data.status != 'noshow'))
           && resource.data.status in ['sent', 'received', 'ready', 'delivering']
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'etaAt', 'readyAt', 'cancelReason', 'cancelReqAns', 'cancelBy'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'etaAt', 'readyAt', 'cancelReason', 'cancelReqAns', 'cancelBy', 'readyNote'])
+          && (!('readyNote' in request.resource.data) || (request.resource.data.readyNote is string && request.resource.data.readyNote.size() <= 80))
           && request.resource.data.status in ['sent', 'received', 'ready', 'delivering', 'done', 'cancelled', 'noshow']
           && (request.resource.data.status != 'noshow' || resource.data.status in ['received', 'ready', 'delivering'])
           && request.resource.data.get('cancelReason', '').size() <= 120
@@ -602,6 +607,58 @@ service cloud.firestore {
     // 🚫 الطلبات اللي ما انستلمت: سجل لكل طلب + عدّاد لكل عميل (يكتبه المحل بنفس عملية «ما انستلم»)
     function noshowCfg() { return catalogCfg().get('noshow', {}); }
     function custStatsPath(uid) { return /databases/$(database)/documents/custStats/$(uid); }
+    // ===== 📅 اطلب مسبقاً =====
+    function prePath(store) { return /databases/$(database)/documents/preorderCfg/$(store); }
+    function slotPath(id) { return /databases/$(database)/documents/slotCounts/$(id); }
+    function orderPath(id) { return /databases/$(database)/documents/orders/$(id); }
+    function preOrderOk(orderId, d) {
+      return featureOn('preorder') && exists(prePath(d.storeId)) && get(prePath(d.storeId)).data.on == true
+        && d.scheduledAt is timestamp && d.scheduledAt > request.time && d.scheduledAt < request.time + duration.value(15, 'd')
+        && ((d.mode == 'delivery' && get(prePath(d.storeId)).data.delivery == true
+              && d.slotKey is string && d.slotKey.size() == 13
+              && getAfter(slotPath(d.storeId + '_' + d.slotKey)).data.last == orderId)
+          || (d.mode != 'delivery' && get(prePath(d.storeId)).data.pickup == true && d.get('slotKey', '') == ''));
+    }
+    function slotDocOk(id) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['storeId', 'slotKey', 'n', 'last'])
+        && d.storeId is string && d.slotKey is string && d.slotKey.size() == 13 && id == d.storeId + '_' + d.slotKey
+        && d.n is int && d.last is string && d.last.size() > 0;
+    }
+    // حجز: العدد يزيد واحد مع طلب جديد لنفس الفترة في نفس العملية، وما يتعدى الحد
+    function slotIncOk(old) {
+      let d = request.resource.data;
+      return d.n == old + 1 && exists(prePath(d.storeId)) && d.n <= get(prePath(d.storeId)).data.slotCap
+        && !exists(orderPath(d.last)) && existsAfter(orderPath(d.last))
+        && getAfter(orderPath(d.last)).data.storeId == d.storeId && getAfter(orderPath(d.last)).data.get('slotKey', '') == d.slotKey;
+    }
+    // فك الحجز: العدد ينقص واحد لما طلب هالفترة ينلغي في نفس العملية
+    function slotDecOk() {
+      let d = request.resource.data;
+      return d.n == resource.data.n - 1 && d.n >= 0 && exists(orderPath(d.last))
+        && get(orderPath(d.last)).data.storeId == d.storeId && get(orderPath(d.last)).data.get('slotKey', '') == d.slotKey
+        && get(orderPath(d.last)).data.status != 'cancelled' && getAfter(orderPath(d.last)).data.status == 'cancelled';
+    }
+    match /preorderCfg/{uid} {
+      allow read: if true;
+      allow write: if isAuthenticated() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['on', 'maxDays', 'prepMin', 'pickup', 'delivery', 'delFrom', 'delTo', 'slotMin', 'slotCap', 'updatedAt'])
+        && request.resource.data.on is bool && request.resource.data.pickup is bool && request.resource.data.delivery is bool
+        && request.resource.data.maxDays is int && request.resource.data.maxDays >= 0 && request.resource.data.maxDays <= 14
+        && request.resource.data.prepMin is int && request.resource.data.prepMin >= 0 && request.resource.data.prepMin <= 720
+        && request.resource.data.delFrom is int && request.resource.data.delFrom >= -1 && request.resource.data.delFrom < 1440
+        && request.resource.data.delTo is int && request.resource.data.delTo >= -1 && request.resource.data.delTo < 1440
+        && request.resource.data.slotMin in [30, 60, 120]
+        && request.resource.data.slotCap is int && request.resource.data.slotCap >= 1 && request.resource.data.slotCap <= 50;
+    }
+    match /slotCounts/{id} {
+      allow read: if true;
+      allow create: if isAuthenticated() && slotDocOk(id) && slotIncOk(0);
+      allow update: if isAuthenticated() && slotDocOk(id)
+        && request.resource.data.storeId == resource.data.storeId && request.resource.data.slotKey == resource.data.slotKey
+        && (slotIncOk(resource.data.n) || slotDecOk());
+    }
+
     function noshowBlocked(uid) {
       return featureOn('noshow') && exists(custStatsPath(uid))
         && get(custStatsPath(uid)).data.get('blockedAt', null) != null
