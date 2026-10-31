@@ -108,6 +108,13 @@ fun MerchantStoreScreen(
     val creditPrompt by viewModel.creditPrompt.collectAsStateWithLifecycle()
     val boostTarget by viewModel.boostTarget.collectAsStateWithLifecycle()
     val catalogCfg by viewModel.catalogConfig.collectAsStateWithLifecycle()
+    // 📣 إعلانات لكوفر
+    val announcements by viewModel.announcements.collectAsStateWithLifecycle()
+    val mapAnn by viewModel.mapAnnouncement.collectAsStateWithLifecycle()
+    var annExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val annGo: (com.example.data.repository.Announcement) -> Unit = { a ->
+        viewModel.annClick(a)?.let { u -> runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u))) } }
+    }
     var showMyOrders by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val allOffers by viewModel.allOffers.collectAsStateWithLifecycle()
     val filteredCustomerOffers by viewModel.filteredCustomerOffers.collectAsStateWithLifecycle()
@@ -597,6 +604,13 @@ fun MerchantStoreScreen(
                                             }
                                         }
                                     }
+                                    mapAnn?.let { a ->
+                                        com.example.ui.components.AnnouncementStrip(
+                                            a = a, expanded = annExpanded, onToggle = { annExpanded = !annExpanded },
+                                            onClose = { annExpanded = false; viewModel.hideAnnouncementToday(a.id) },
+                                            onView = { viewModel.annViewed(it) }, onClick = annGo
+                                        )
+                                    }
                                 }
                             }
 
@@ -711,6 +725,11 @@ fun MerchantStoreScreen(
                                 }
                             }
 
+                            // 📣 إعلانات لكوفر في «حسابي» (ثابتة بدون إغلاق)
+                            announcements.filter { it.onAccount }.take(2).forEach { a ->
+                                com.example.ui.components.AnnouncementCard(a, onView = { viewModel.annViewed(it) }, onClick = annGo,
+                                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
+                            }
                             MerchantPortalView(
                                 isLoggedIn = isMerchantLoggedIn,
                                 merchantEmail = merchantEmail,

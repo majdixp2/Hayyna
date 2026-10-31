@@ -429,11 +429,39 @@ class RestaurantOfferRepository(
                     graceUntilMillis = (cr["graceUntil"] as? Timestamp)?.toDate()?.time ?: Long.MAX_VALUE,
                     exclusiveEnabled = ex["enabled"] as? Boolean ?: true,
                     exclusiveLabel = (ex["label"] as? String)?.takeIf { it.isNotBlank() } ?: "حصري في لكوفر",
-                    exclusiveIcon = (ex["icon"] as? String)?.takeIf { it.isNotBlank() } ?: "💎"
+                    exclusiveIcon = (ex["icon"] as? String)?.takeIf { it.isNotBlank() } ?: "💎",
+                    storeUrl = cr["storeUrl"] as? String ?: "",
+                    promoStoreUrl = cr["promoStoreUrl"] as? String ?: ""
                 )
             )
         }
         awaitClose { listener.remove() }
+    }
+
+    /** 📣 إعلانات لكوفر (الأدمن يتحكم فيها) */
+    val announcements: Flow<List<Announcement>> = callbackFlow {
+        val listener = db.collection("announcements").whereGreaterThan("endsAt", Timestamp.now())
+            .addSnapshotListener { snap, _ ->
+                trySend(snap?.documents.orEmpty().map { d ->
+                    @Suppress("UNCHECKED_CAST")
+                    val pl = d.get("places") as? Map<String, Any?> ?: emptyMap()
+                    Announcement(
+                        id = d.id, title = d.getString("title").orEmpty(), sub = d.getString("sub").orEmpty(), cta = d.getString("cta").orEmpty(),
+                        titleEn = d.getString("titleEn").orEmpty(), subEn = d.getString("subEn").orEmpty(), ctaEn = d.getString("ctaEn").orEmpty(),
+                        badge = d.getString("badge").orEmpty(), color = d.getString("color") ?: "navy", action = d.getString("action") ?: "none",
+                        value = d.getString("value").orEmpty(), audience = d.getString("audience") ?: "all",
+                        onMap = pl["map"] as? Boolean ?: false, onAccount = pl["account"] as? Boolean ?: false,
+                        startsAt = d.getTimestamp("startsAt")?.toDate()?.time ?: 0L, endsAt = d.getTimestamp("endsAt")?.toDate()?.time ?: 0L,
+                        active = d.getBoolean("active") ?: true, createdAt = d.getTimestamp("createdAt")?.toDate()?.time ?: 0L
+                    )
+                }.sortedByDescending { it.createdAt })
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun bumpAnnouncement(id: String, field: String) {
+        if (field != "views" && field != "clicks") return
+        db.collection("announcements").document(id).update(field, FieldValue.increment(1)).await()
     }
 
     /** الخدمات المدفوعة النشطة (نشر / تمييز / إعلان بارز). */
@@ -1425,7 +1453,18 @@ data class CreditsConfig(
     val graceUntilMillis: Long = Long.MAX_VALUE,
     val exclusiveEnabled: Boolean = true,
     val exclusiveLabel: String = "حصري في لكوفر",
-    val exclusiveIcon: String = "💎"
+    val exclusiveIcon: String = "💎",
+    val storeUrl: String = "",
+    val promoStoreUrl: String = ""
+)
+
+/** 📣 إعلان لكوفر: فوق الخريطة (سطر يتوسع) و/أو في «حسابي» (ثابت) */
+data class Announcement(
+    val id: String, val title: String, val sub: String = "", val cta: String = "",
+    val titleEn: String = "", val subEn: String = "", val ctaEn: String = "",
+    val badge: String = "", val color: String = "navy", val action: String = "none", val value: String = "",
+    val audience: String = "all", val onMap: Boolean = false, val onAccount: Boolean = false,
+    val startsAt: Long = 0L, val endsAt: Long = 0L, val active: Boolean = true, val createdAt: Long = 0L
 )
 
 data class Boost(val offerId: String, val effect: String, val startsAt: Long, val endsAt: Long, val merchantId: String = "", val branchIds: List<String> = emptyList())

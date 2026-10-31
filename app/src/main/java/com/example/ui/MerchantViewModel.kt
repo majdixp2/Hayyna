@@ -2206,6 +2206,36 @@ class MerchantViewModel(
     }
 
     // ---------------- 🔔 ذكّرني لما يتوفر ----------------
+    // ===================== 📣 إعلانات لكوفر =====================
+    private val annPrefs = application.getSharedPreferences("lc_ann", android.content.Context.MODE_PRIVATE)
+    private val annHiddenTick = MutableStateFlow(0)
+    private val annSeen = mutableSetOf<String>()
+    private fun todayKey(): String = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+    val announcements: StateFlow<List<com.example.data.repository.Announcement>> =
+        kotlinx.coroutines.flow.combine(repository.announcements, nowMillis, userRole, staffMe) { list, now, role, staff ->
+            val merch = role == ROLE_MERCHANT || staff != null
+            list.filter { a -> a.active && now in a.startsAt until a.endsAt && when (a.audience) { "merchants" -> merch; "customers" -> !merch; else -> true } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** إعلان الشريط فوق الخريطة (مخفي لين بكرة لو ضغط ✕) */
+    val mapAnnouncement: StateFlow<com.example.data.repository.Announcement?> =
+        kotlinx.coroutines.flow.combine(announcements, annHiddenTick) { list, _ ->
+            val t = todayKey(); list.firstOrNull { it.onMap && annPrefs.getString(it.id, "") != t }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    fun hideAnnouncementToday(id: String) { annPrefs.edit().putString(id, todayKey()).apply(); annHiddenTick.value++ }
+    fun annViewed(id: String) { if (annSeen.add(id)) launchSafely { repository.bumpAnnouncement(id, "views") } }
+    /** الزر: يرجّع رابط لو لازم يفتح برّا، وإلا ينفّذ داخل التطبيق */
+    fun annClick(a: com.example.data.repository.Announcement): String? {
+        launchSafely { repository.bumpAnnouncement(a.id, "clicks") }
+        return when (a.action) {
+            "url" -> a.value.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+            "offer" -> { offerById(a.value)?.let { openOfferDetail(it) } ?: toast("العرض انتهى"); null }
+            "store" -> { approvedStores.value.firstOrNull { it.uid == a.value }?.let { openStorePage(it) } ?: toast("المتجر غير متاح"); null }
+            "publish" -> { currentRole.value = AppRole.MERCHANT_PORTAL; openAddOfferSheet(); null }
+            "credits" -> creditsConfig.value.let { c -> c.promoStoreUrl.ifBlank { c.storeUrl } }.takeIf { it.isNotBlank() } ?: run { currentRole.value = AppRole.MERCHANT_PORTAL; null }
+            else -> null
+        }
+    }
+
     private val restockPrefs = application.getSharedPreferences("hayyna_restock", android.content.Context.MODE_PRIVATE)
     val restockIds = MutableStateFlow(restockPrefs.getStringSet("ids", emptySet()).orEmpty().toSet())
     private fun saveRestock(ids: Set<String>) { restockIds.value = ids; restockPrefs.edit().putStringSet("ids", ids).apply() }
