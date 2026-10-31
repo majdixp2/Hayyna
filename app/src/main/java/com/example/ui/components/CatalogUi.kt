@@ -119,10 +119,12 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
     val base = cfg.baseKind(store.category)
     LaunchedEffect(store.uid, cfg.orderEnabled) { if (cfg.orderEnabled) vm.refreshStorePause(store.uid) }
     val pausedMap by vm.pausedStores.collectAsStateWithLifecycle()
+    val preMap by vm.preCfgs.collectAsStateWithLifecycle()
     val closedMsg = if (cfg.orderEnabled) vm.orderBlock(store, null, pausedMap[store.uid] == true) else null
-    val canOrder = cfg.orderEnabled && closedMsg == null
+    val pre = closedMsg != null && pausedMap[store.uid] != true && preMap[store.uid]?.active == true && vm.preOn(store.uid)
+    val canOrder = cfg.orderEnabled && (closedMsg == null || pre)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        if (closedMsg != null) ClosedBanner(closedMsg)
+        if (closedMsg != null) ClosedBanner(closedMsg + if (pre) "\n📅 تقدر تطلب الحين بموعد لاحق" else "")
         // 🔥 شريط العروض الشغّالة
         if (deals.banners.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             deals.banners.forEach { b -> Surface(shape = RoundedCornerShape(50), color = Color(0xFFFFF1E3), border = BorderStroke(1.dp, Color(0xFFF8C9A0))) { Text(b, color = Color(0xFFC2410C), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)) } }
@@ -195,7 +197,7 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
             Button(
                 onClick = { checkout = true }, colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(top = 6.dp)
-            ) { Text("🧾 سلتك: ${cart.values.sumOf { it.qty }} • ${money(deals.totals(cart.values.toList()).sub)} ر.س — اطلب", fontWeight = FontWeight.ExtraBold) }
+            ) { Text("🧾 سلتك: ${cart.values.sumOf { it.qty }} • ${money(deals.totals(cart.values.toList()).sub)} ر.س — ${if (pre) "📅 اطلب مسبقاً" else "اطلب"}", fontWeight = FontWeight.ExtraBold) }
         }
     }
     if (checkout) CheckoutDialog(store, vm, onDismiss = { checkout = false })
@@ -246,9 +248,20 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     var pay by remember { mutableStateOf(pays.first()) }
     var car by remember { mutableStateOf("") }
     var branchId by remember { mutableStateOf((store.branches.firstOrNull { com.example.data.model.OfferTime.isOpenNow(it) != false } ?: store.branches.firstOrNull())?.id.orEmpty()) }
-    LaunchedEffect(store.uid) { vm.refreshStorePause(store.uid) }
+    LaunchedEffect(store.uid) { vm.refreshStorePause(store.uid); vm.loadSlotCounts(store.uid) }
     val paused by vm.pausedStores.collectAsStateWithLifecycle()
-    val closedMsg = vm.orderBlock(store, branchId.ifBlank { null }, paused[store.uid] == true)
+    val preMap by vm.preCfgs.collectAsStateWithLifecycle()
+    val slotMap by vm.slotCounts.collectAsStateWithLifecycle()
+    val isPaused = paused[store.uid] == true
+    val closedMsg = vm.orderBlock(store, branchId.ifBlank { null }, isPaused)
+    // 📅 اطلب مسبقاً
+    val pc = preMap[store.uid] ?: com.example.data.model.PreorderCfg()
+    val pre = !isPaused && pc.active && vm.preOn(store.uid)
+    val closedNow = closedMsg != null && !isPaused
+    var whenLater by remember { mutableStateOf(false) }
+    val later = pre && (whenLater || closedNow)
+    var day by remember { mutableStateOf(0L) }
+    var slot by remember { mutableStateOf(0L) }
     var name by remember { mutableStateOf(userName) }
     var phone by remember { mutableStateOf(userPhone.let { p -> val d = p.filter { it.isDigit() }; if (d.startsWith("966")) "0" + d.drop(3) else d }) }
     var note by remember { mutableStateOf("") }
@@ -261,6 +274,14 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     val vatNo = if (cfg.vatEnabled && CatalogConfig.validVat(store.vatNumber)) store.vatNumber else ""
     val vat = total * cfg.vatRate / (100 + cfg.vatRate)
     val minOk = mode != "delivery" || store.deliveryMinOrder <= 0 || sub >= store.deliveryMinOrder
+    val br0 = store.branches.firstOrNull { it.id == branchId } ?: store.branches.firstOrNull()
+    val modeOkLater = if (mode == "delivery") pc.delivery else pc.pickup
+    val preDays = if (later) com.example.data.model.PreOrder.days(pc) else emptyList()
+    if (later && day !in preDays) day = preDays.firstOrNull { com.example.data.model.PreOrder.times(pc, br0, mode, it).isNotEmpty() } ?: preDays.firstOrNull() ?: 0L
+    val preTimes = if (later && modeOkLater) com.example.data.model.PreOrder.times(pc, br0, mode, day) else emptyList()
+    val isFull = { x: com.example.data.model.PreSlot -> mode == "delivery" && (slotMap[store.uid]?.get(x.key) ?: 0) >= pc.slotCap }
+    if (slot != 0L && preTimes.none { it.t == slot && !isFull(it) }) slot = 0L
+    val blocked = isPaused || (closedNow && !later)
     LaunchedEffect(Unit) { vm.loadMyStats() }
     val myStats by vm.myStats.collectAsStateWithLifecycle()
     val blockedTill = if (cfg.feat("noshow")) cfg.noshow.blockedUntil(myStats, System.currentTimeMillis()) else 0L
@@ -310,6 +331,29 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                     }
                 }
             }
+            if (pre) {
+                Text("⏰ متى تبي طلبك؟", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !later, enabled = !closedNow, onClick = { whenLater = false }, label = { Text("⚡ الحين" + if (closedNow) " (مغلق)" else "") })
+                    FilterChip(selected = later, onClick = { whenLater = true }, label = { Text("📅 وقت لاحق") })
+                }
+                if (later) {
+                    if (!modeOkLater) Text(if (mode == "delivery") "المحل ما يوفر توصيل بموعد — اختر الاستلام" else "المحل ما يوفر استلام بموعد — اختر التوصيل", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else {
+                        if (preDays.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            preDays.forEach { d -> FilterChip(selected = d == day, onClick = { day = d; slot = 0L }, label = { Text(com.example.data.model.PreOrder.dayLabel(d)) }) }
+                        }
+                        if (preTimes.isEmpty()) Text("ما فيه أوقات متاحة ${com.example.data.model.PreOrder.dayLabel(day)}" + if (preDays.size > 1) " — جرّب يوم ثاني" else "", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        else FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            preTimes.forEach { x ->
+                                val full = isFull(x)
+                                FilterChip(selected = x.t == slot, enabled = !full, onClick = { slot = x.t },
+                                    label = { Text(com.example.data.model.PreOrder.timeOf(x.t) + (if (x.end > 0) " – ${com.example.data.model.PreOrder.timeOf(x.end)}" else "") + if (full) " (ممتلئة)" else "", fontSize = 12.sp) })
+                            }
+                        }
+                    }
+                }
+            }
             if (mode == "curbside") OutlinedTextField(car, { car = it.take(60) }, label = { Text("🚗 وصف سيارتك (عشان المحل يعرفك)") }, placeholder = { Text("مثال: كامري بيضاء") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             if (cfg.feat("payChoice")) Text("💳 الدفع عند الاستلام", fontWeight = FontWeight.Bold, fontSize = 13.sp)
             if (!cfg.feat("payChoice")) Unit else if (pays.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -332,7 +376,8 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                 }
             }
             if (!minOk) Text("أقل طلب للتوصيل ${money(store.deliveryMinOrder)} ر.س — أضف ${money(store.deliveryMinOrder - sub)} ر.س أو اختر الاستلام", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-            if (closedMsg != null) ClosedBanner(closedMsg)
+            if (blocked && closedMsg != null) ClosedBanner(closedMsg)
+            else if (closedNow) Text("🌙 المحل مغلق الحين — طلبك يوصله ويتجهّز على موعدك", fontSize = 13.sp, color = Color(0xFF10318F), fontWeight = FontWeight.Bold)
             if (err.isNotBlank()) Text(err, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             if (blockedTill > 0) Text("🚫 الطلب موقف عن حسابك مؤقتاً لين ${dm(blockedTill)} بسبب طلبات سابقة ما انستلمت. لو فيه خطأ تواصل معنا.", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
         }
@@ -346,16 +391,18 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                         !(phone.startsWith("05") && phone.length == 10) -> "اكتب رقم جوال صحيح مثل 05xxxxxxxx."
                         mode == "delivery" && loc == null -> "فعّل الموقع عشان التوصيل."
                         mode == "curbside" && car.isBlank() -> "اكتب وصف سيارتك (مثال: كامري بيضاء)."
+                        later && !modeOkLater -> if (mode == "delivery") "المحل ما يوفر توصيل بموعد — اختر الاستلام." else "المحل ما يوفر استلام بموعد."
+                        later && slot == 0L -> "اختر وقت طلبك."
                         else -> ""
                     }
-                    if (err.isBlank()) vm.sendOrder(store, store.branches.firstOrNull { it.id == branchId }, mode, name, "+966" + phone.drop(1), note, if (cfg.feat("payChoice")) pay else "", car) { url ->
+                    if (err.isBlank()) vm.sendOrder(store, store.branches.firstOrNull { it.id == branchId }, mode, name, "+966" + phone.drop(1), note, if (cfg.feat("payChoice")) pay else "", car, if (later) slot else 0L) { url ->
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                         onDismiss()
                     }
                 },
-                enabled = minOk && closedMsg == null && blockedTill == 0L, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                enabled = minOk && !blocked && blockedTill == 0L, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
-            ) { Text("📨 أرسل الطلب على واتساب", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp) }
+            ) { Text(if (later) "📅 أرسل الطلب المسبق على واتساب" else "📨 أرسل الطلب على واتساب", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp) }
           }
         }
       }
@@ -384,6 +431,96 @@ private fun waOf(phone: String) = phone.filter { it.isDigit() }.let { d -> when 
 @Composable
 private fun Note(text: String, bg: Color, fg: Color) {
     Surface(shape = RoundedCornerShape(10.dp), color = bg, modifier = Modifier.fillMaxWidth()) { Text(text, color = fg, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) }
+}
+
+/** 🛍️ جاهز للاستلام: ملاحظة للعميل (وين يستلم) */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReadyNoteDialog(o: HayynaOrder, vm: MerchantViewModel, onDismiss: () -> Unit) {
+    val recent by vm.readyNotes.collectAsStateWithLifecycle()
+    var note by remember(o.id) { mutableStateOf("") }
+    val picks = (recent + listOf("عند خدمة العملاء", "عند الكاشير", "كاشير رقم 1", "كاشير رقم 2", "كاشير رقم 3", if (o.isCurbside) "بنطلّعه لسيارتك" else "عند الباب")).distinct().take(9)
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("🛍️ طلب #${o.code} جاهز") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("تبي تكتب للعميل وين يستلم؟ (اختياري)", fontSize = 13.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { picks.forEach { p -> FilterChip(selected = note == p, onClick = { note = p }, label = { Text(p, fontSize = 12.sp) }) } }
+                OutlinedTextField(note, { note = it.take(80) }, placeholder = { Text("مثال: لدى كاشير رقم 3") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { Button(onClick = { vm.markReady(o, note); onDismiss() }) { Text("✅ جاهز — بلّغ العميل") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("رجوع") } })
+}
+
+/** 📅 إعدادات الطلب المسبق (صاحب المحل) */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PreorderSettingsDialog(vm: MerchantViewModel, onDismiss: () -> Unit) {
+    val cur by vm.myPre.collectAsStateWithLifecycle()
+    val profile by vm.merchantProfile.collectAsStateWithLifecycle()
+    val hasDelivery = profile?.delivery == true
+    var c by remember { mutableStateOf(cur) }
+    var daysTxt by remember { mutableStateOf(if (cur.maxDays > 0) cur.maxDays.toString() else "2") }
+    var capTxt by remember { mutableStateOf(cur.slotCap.toString()) }
+    var err by remember { mutableStateOf("") }
+    val digits = { t: String -> t.map { ch -> if (ch in '٠'..'٩') '0' + (ch - '٠') else ch }.filter { it.isDigit() }.joinToString("") }
+    FullDialog("📅 الطلب المسبق", onDismiss) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("الزبون يطلب الحين ويختار موعد لاحق — حتى لو المحل مغلق.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("تفعيل «اطلب مسبقاً»", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); Switch(c.on, { c = c.copy(on = it) }) }
+            if (c.on) {
+                Text("أبعد موعد يقدر الزبون يختاره", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(selected = c.maxDays == 0, onClick = { c = c.copy(maxDays = 0) }, label = { Text("نفس اليوم بس") })
+                    FilterChip(selected = c.maxDays > 0, onClick = { c = c.copy(maxDays = (digits(daysTxt).toIntOrNull() ?: 2).coerceIn(1, 14)) }, label = { Text("عدد أيام") })
+                }
+                if (c.maxDays > 0) OutlinedTextField(daysTxt, { daysTxt = it.take(2); c = c.copy(maxDays = (digits(it).toIntOrNull() ?: 1).coerceIn(1, 14)) },
+                    label = { Text("كم يوم قدام (لين 14)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                Text("⏱️ وقت التجهيز (أقرب موعد بعد كم؟)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    (listOf(15, 30, 45, 60, 90, 120) + c.prepMin).distinct().forEach { m -> FilterChip(selected = c.prepMin == m, onClick = { c = c.copy(prepMin = m) }, label = { Text("$m دقيقة") }) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("🏃 استلام بموعد", fontWeight = FontWeight.Bold); Text("الزبون يختار وقت داخل الدوام كل ربع ساعة", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(c.pickup, { c = c.copy(pickup = it) }) }
+                if (hasDelivery) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("🚚 توصيل بموعد", fontWeight = FontWeight.Bold); Text("فترات تحددها أنت", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(c.delivery, { c = c.copy(delivery = it) }) }
+                    if (c.delivery) Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("وقت التوصيل", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(selected = c.delFrom < 0, onClick = { c = c.copy(delFrom = -1, delTo = -1) }, label = { Text("حسب الدوام") })
+                                FilterChip(selected = c.delFrom >= 0, onClick = { if (c.delFrom < 0) c = c.copy(delFrom = 16 * 60, delTo = 23 * 60) }, label = { Text("أحدده") })
+                            }
+                            if (c.delFrom >= 0) {
+                                MinuteStepper("من", c.delFrom) { c = c.copy(delFrom = it) }
+                                MinuteStepper("لين", c.delTo) { c = c.copy(delTo = it) }
+                            }
+                            Text("طول الفترة", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf(30 to "نص ساعة", 60 to "ساعة", 120 to "ساعتين").forEach { (m, l) -> FilterChip(selected = c.slotMin == m, onClick = { c = c.copy(slotMin = m) }, label = { Text(l) }) } }
+                            OutlinedTextField(capTxt, { capTxt = it.take(2); c = c.copy(slotCap = (digits(it).toIntOrNull() ?: 1).coerceIn(1, 50)) },
+                                label = { Text("الحد الأقصى للطلبات في كل فترة") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            }
+            if (err.isNotBlank()) Text(err, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            Button(onClick = {
+                val out = c.copy(delivery = hasDelivery && c.delivery)
+                if (out.on && !out.pickup && !out.delivery) { err = "فعّل الاستلام أو التوصيل بموعد."; return@Button }
+                vm.saveMyPre(out, onDismiss)
+            }, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("حفظ ✓", fontWeight = FontWeight.ExtraBold) }
+        }
+    }
+}
+
+/** اختيار وقت بخطوات نص ساعة */
+@Composable
+private fun MinuteStepper(label: String, value: Int, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), fontSize = 13.sp)
+        OutlinedButton(onClick = { onChange((value - 30 + 1440) % 1440) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(40.dp)) { Text("−") }
+        Text(com.example.data.model.OfferTime.formatMinute(value), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp))
+        OutlinedButton(onClick = { onChange((value + 30) % 1440) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(40.dp)) { Text("+") }
+    }
 }
 
 /** ⏸️🌙 تنبيه «المحل مغلق / موقف الطلبات» */
@@ -427,6 +564,9 @@ fun OrdersDialog(
     var askFor by remember { mutableStateOf<HayynaOrder?>(null) }         // الزبون: طلب إلغاء
     var noshowFor by remember { mutableStateOf<HayynaOrder?>(null) }
     var curbFor by remember { mutableStateOf<HayynaOrder?>(null) }
+    var readyFor by remember { mutableStateOf<HayynaOrder?>(null) }
+    var preSettings by remember { mutableStateOf(false) }
+    val myPre by vm.myPre.collectAsStateWithLifecycle()
     // نحدّث «جاهز من X دقيقة» كل دقيقة
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); now = System.currentTimeMillis() } }
@@ -435,6 +575,13 @@ fun OrdersDialog(
     OrdersShell(embedded, title, onDismiss) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (asStore) PauseOrdersRow(vm)
+            if (asStore && cfg.feat("preorder") && staffMe == null) Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Color(0xFFC9D3F2)), color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth().clickable { preSettings = true }) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("📅 الطلب المسبق: ", fontSize = 13.sp, color = Color(0xFF10318F)); Text(if (myPre.on) "مفعّل" else "مقفل", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF10318F))
+                    Spacer(Modifier.weight(1f)); Text("إعدادات ‹", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (orders.isEmpty()) Text(if (asStore) "ما وصلتك طلبات للحين" else "ما طلبت شي للحين — ادخل صفحة أي متجر واطلب منه 🛍️", color = MaterialTheme.colorScheme.onSurfaceVariant)
             val card: @Composable (HayynaOrder) -> Unit = { o ->
                 val (bg, line) = orderTint(o.status)
@@ -444,6 +591,10 @@ fun OrdersDialog(
                         Text((if (asStore) listOf(o.customerName, o.customerPhone.let { p -> val d = p.filter { it.isDigit() }; if (d.startsWith("966")) "0" + d.drop(3) else p }).filter { it.isNotBlank() }.joinToString(" • ") else "🏪 ${o.storeName}") + if (o.createdAtMillis > 0) " • ${dm(o.createdAtMillis)}" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         val nsc = if (asStore && ns && o.isLive) cfg.noshow.recentCount(stats[o.customerUid], now) else 0
                         if (nsc > 0) Note("⚠️ هذا العميل عنده ${if (nsc == 1) "طلب" else "$nsc طلبات"} ما استلمها", Color(0xFFFEF3C7), Color(0xFF92400E))
+                        if (o.isScheduled && o.isLive) Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFEEF2FF), modifier = Modifier.fillMaxWidth()) {
+                            Text("📅 ${if (asStore) "الموعد" else "موعد طلبك"}: ${com.example.data.model.PreOrder.whenText(o.scheduledAtMillis, now)}", color = Color(0xFF10318F), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        if (asStore && o.readyNote.isNotBlank() && o.status == "ready") Text("📍 ${o.readyNote}", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         OrderStepper(o)
                         o.etaText(now)?.takeIf { com.example.data.model.CatalogFlags.eta }?.let { Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFE7F6EC)) { Text(it, color = CalmSagePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) } }
                         Text(o.items.joinToString("، ") { "${it.qty} × ${it.name}" }, fontSize = 13.sp)
@@ -520,6 +671,7 @@ fun OrdersDialog(
                                         "cancelled" -> cancelFor = o
                                         "noshow" -> noshowFor = o
                                         "ask" -> askFor = o
+                                        "ready" -> readyFor = o
                                         else -> vm.setOrderStatus(o.id, s)
                                     }
                                 }, border = if (s == "noshow") BorderStroke(1.dp, Color(0xFFF5C2C2)) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline), contentPadding = PaddingValues(horizontal = 10.dp)) {
@@ -536,7 +688,10 @@ fun OrdersDialog(
             }
             if (!asStore) orders.take(100).forEach { card(it) }
             else ORDER_GROUPS.forEach { g ->
-                val os = orders.filter { it.status in g.statuses }.take(100)
+                val prepMs = myPre.prepMin * 60_000L
+                val ahead = { o: HayynaOrder -> o.isScheduled && o.scheduledAtMillis - prepMs > now }
+                val os = orders.filter { it.status in g.statuses && when (g.key) { "sched" -> ahead(it); "new", "prep" -> !ahead(it); else -> true } }
+                    .let { l -> if (g.key == "sched") l.sortedBy { it.scheduledAtMillis } else l }.take(100)
                 if (os.isNotEmpty()) {
                     var openG by rememberSaveable(g.key) { mutableStateOf(g.open) }
                     Surface(shape = RoundedCornerShape(12.dp), color = g.head, modifier = Modifier.fillMaxWidth().clickable { openG = !openG }) {
@@ -552,6 +707,8 @@ fun OrdersDialog(
             }
         }
     }
+    readyFor?.let { o -> ReadyNoteDialog(o, vm) { readyFor = null } }
+    if (preSettings) PreorderSettingsDialog(vm) { preSettings = false }
     etaFor?.let { o ->
         AlertDialog(onDismissRequest = { etaFor = null }, title = { Text("👍 استلام الطلب #${o.code}") },
             text = {
@@ -894,6 +1051,7 @@ private fun ItemPayDialog(vm: MerchantViewModel, startKind: ItemKind, balance: L
 /** مجموعات طلبات المحل: اللي فيها شغل مفتوحة، والمنتهية والملغية مطوية */
 private class OrderGroup(val key: String, val title: String, val statuses: List<String>, val open: Boolean, val head: Color)
 private val ORDER_GROUPS = listOf(
+    OrderGroup("sched", "📅 مجدولة (موعدها لاحق)", listOf("sent", "received"), true, Color(0xFFEEF2FF)),
     OrderGroup("new", "🆕 الجديدة", listOf("sent"), true, Color(0xFFF4F5F2)),
     OrderGroup("prep", "👨‍🍳 جاري التجهيز", listOf("received"), true, Color(0xFFFFF1B8)),
     OrderGroup("ready", "🛍️ جاهز / 🚚 بالطريق", listOf("ready", "delivering"), true, Color(0xFFD6E8FF)),

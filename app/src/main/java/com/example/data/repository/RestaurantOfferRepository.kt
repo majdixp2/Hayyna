@@ -1053,7 +1053,8 @@ class RestaurantOfferRepository(
         readyAtMillis = (d.getTimestamp("readyAt") ?: d.getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE))?.toDate()?.time ?: 0L,
         cancelReq = d.getString("cancelReq").orEmpty(), cancelReqAns = d.getString("cancelReqAns").orEmpty(),
         cancelBy = d.getString("cancelBy").orEmpty(), cancelReason = d.getString("cancelReason").orEmpty(),
-        lat = (d.get("location") as? Map<String, Any?>)?.get("lat") as? Double, lng = (d.get("location") as? Map<String, Any?>)?.get("lng") as? Double
+        lat = (d.get("location") as? Map<String, Any?>)?.get("lat") as? Double, lng = (d.get("location") as? Map<String, Any?>)?.get("lng") as? Double,
+        scheduledAtMillis = d.getTimestamp("scheduledAt")?.toDate()?.time ?: 0L, slotKey = d.getString("slotKey").orEmpty(), readyNote = d.getString("readyNote").orEmpty()
     )
     fun myOrdersFlow(uid: String): Flow<List<com.example.data.model.HayynaOrder>> = callbackFlow {
         val l = db.collection("orders").whereEqualTo("customerUid", uid).addSnapshotListener { s, e ->
@@ -1084,13 +1085,43 @@ class RestaurantOfferRepository(
     suspend fun markArrived(id: String) {
         db.collection("orders").document(id).update(mapOf("arrivedAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp())).await()
     }
-    suspend fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0, extra: Map<String, Any> = emptyMap()) {
+    suspend fun setOrderStatus(id: String, status: String, etaMinutes: Int = 0, extra: Map<String, Any> = emptyMap(), slot: Pair<String, String>? = null) {
         val m = mutableMapOf<String, Any>("status" to status, "updatedAt" to FieldValue.serverTimestamp())
         if (etaMinutes > 0) m["etaAt"] = Timestamp(java.util.Date(System.currentTimeMillis() + etaMinutes * 60_000L))
         if (status == "ready") m["readyAt"] = FieldValue.serverTimestamp()
         m.putAll(extra)
-        db.collection("orders").document(id).update(m).await()
+        val ref = db.collection("orders").document(id)
+        // 📅 إلغاء طلب محجوز له فترة توصيل: نفك الحجز في نفس العملية
+        if (status == "cancelled" && slot != null) {
+            val ok = runCatching {
+                val sref = db.collection("slotCounts").document("${slot.first}_${slot.second}")
+                val n = (sref.get(com.google.firebase.firestore.Source.SERVER).await().getLong("n") ?: 0L)
+                if (n <= 0L) false else {
+                    db.batch().update(ref, m).set(sref, mapOf("storeId" to slot.first, "slotKey" to slot.second, "n" to n - 1, "last" to id)).commit().await(); true
+                }
+            }.onFailure { Log.w(TAG, "slot release: ${it.message}") }.getOrDefault(false)
+            if (ok) return
+        }
+        ref.update(m).await()
     }
+    // ===== 📅 اطلب مسبقاً =====
+    suspend fun preorderCfg(uid: String): com.example.data.model.PreorderCfg? = runCatching {
+        val d = runCatching { db.collection("preorderCfg").document(uid).get(com.google.firebase.firestore.Source.SERVER).await() }
+            .getOrElse { db.collection("preorderCfg").document(uid).get().await() }
+        if (!d.exists()) null else com.example.data.model.PreorderCfg(
+            d.getBoolean("on") == true, (d.getLong("maxDays") ?: 0L).toInt(), (d.getLong("prepMin") ?: 30L).toInt(),
+            d.getBoolean("pickup") != false, d.getBoolean("delivery") != false,
+            (d.getLong("delFrom") ?: -1L).toInt(), (d.getLong("delTo") ?: -1L).toInt(), (d.getLong("slotMin") ?: 60L).toInt(), (d.getLong("slotCap") ?: 1L).toInt())
+    }.getOrNull()
+    suspend fun savePreorderCfg(uid: String, c: com.example.data.model.PreorderCfg) {
+        db.collection("preorderCfg").document(uid).set(c.toMap() + ("updatedAt" to FieldValue.serverTimestamp())).await()
+    }
+    suspend fun slotCounts(storeId: String): Map<String, Int> = runCatching {
+        db.collection("slotCounts").whereEqualTo("storeId", storeId).get().await().documents.associate { it.getString("slotKey").orEmpty() to (it.getLong("n") ?: 0L).toInt() }
+    }.getOrDefault(emptyMap())
+    suspend fun slotCountNow(storeId: String, key: String): Int = runCatching {
+        (db.collection("slotCounts").document("${storeId}_$key").get(com.google.firebase.firestore.Source.SERVER).await().getLong("n") ?: 0L).toInt()
+    }.getOrDefault(0)
     /** 🙋 العميل يطلب الإلغاء (بعد ما يستلمه المحل) */
     suspend fun requestCancel(id: String, reason: String) {
         db.collection("orders").document(id).update(mapOf("cancelReq" to reason.take(200), "cancelReqAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp())).await()
@@ -1121,9 +1152,9 @@ class RestaurantOfferRepository(
         b.commit().await()
         return count
     }
-    suspend fun saveOrder(o: com.example.data.model.HayynaOrder, customerUid: String, branchId: String) {
+    suspend fun saveOrder(o: com.example.data.model.HayynaOrder, customerUid: String, branchId: String, slotN: Int = 0) {
         val ref = db.collection("orders").document()
-        ref.set(hashMapOf(
+        val data = hashMapOf<String, Any?>(
             "id" to ref.id, "code" to o.code, "storeId" to o.storeId, "storeName" to o.storeName, "branchId" to branchId, "branchName" to o.branchName,
             "customerUid" to customerUid, "customerName" to o.customerName, "customerPhone" to o.customerPhone,
             "items" to o.items.map { l ->
@@ -1136,7 +1167,14 @@ class RestaurantOfferRepository(
             "mode" to o.mode, "location" to (if (o.lat != null && o.lng != null) mapOf("lat" to o.lat, "lng" to o.lng) else null),
             "pay" to o.pay, "car" to o.car.take(60),
             "note" to o.note.take(300), "status" to "sent", "createdAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp()
-        )).await()
+        )
+        if (o.scheduledAtMillis > 0) data["scheduledAt"] = Timestamp(java.util.Date(o.scheduledAtMillis))
+        if (o.slotKey.isNotBlank()) {
+            data["slotKey"] = o.slotKey
+            db.batch().set(ref, data)
+                .set(db.collection("slotCounts").document("${o.storeId}_${o.slotKey}"), mapOf("storeId" to o.storeId, "slotKey" to o.slotKey, "n" to (slotN + 1).toLong(), "last" to ref.id))
+                .commit().await()
+        } else ref.set(data).await()
     }
 
     // ⚡ الخصم السريع على المنيو
