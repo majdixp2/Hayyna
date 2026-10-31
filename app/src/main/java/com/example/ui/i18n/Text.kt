@@ -65,6 +65,14 @@ fun Surface(
     tonalElevation = tonalElevation, shadowElevation = shadowElevation, border = border, content = content)
 
 @Composable
+fun Surface(
+    onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, shape: Shape = RectangleShape,
+    color: Color = MaterialTheme.colorScheme.surface, contentColor: Color = autoContent(color), tonalElevation: Dp = 0.dp,
+    shadowElevation: Dp = 0.dp, border: BorderStroke? = null, content: @Composable () -> Unit
+) = androidx.compose.material3.Surface(onClick = onClick, modifier = modifier, enabled = enabled, shape = shape, color = color,
+    contentColor = contentColor, tonalElevation = tonalElevation, shadowElevation = shadowElevation, border = border, content = content)
+
+@Composable
 private fun autoContent(c: Color): Color {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.3f
     return if (dark && c.isSpecified() && c.alpha > 0.5f && c.luminance() > 0.55f) Color(0xFF1F2937) else contentColorFor(c)
