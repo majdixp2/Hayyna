@@ -1112,7 +1112,8 @@ class MerchantViewModel(
             delay(5_000)
             while (true) {
                 if (catalogConfig.value.feat("preorder")) {
-                    val now = System.currentTimeMillis(), prep = myPre.value.prepMin * 60_000L
+                    val now = System.currentTimeMillis()
+                    val prep = myPre.value.prepMin * 60_000L
                     val seen = duePrefs.getStringSet("ids", emptySet()).orEmpty().toMutableSet()
                     storeOrders.value.filter { it.isScheduled && it.status in listOf("sent", "received") && it.id !in seen }
                         .filter { it.scheduledAtMillis - prep <= now && it.scheduledAtMillis > now - 3_600_000L }
