@@ -22,6 +22,7 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "config/app"), { catalog: { orderEnabled: true, features: {} } });
   await setDoc(doc(db, "storeStaff/cash"), { storeId: "own", code: "48213", n: 1, perms: ["orders", "stock"], active: true, createdAt: new Date() });
   await setDoc(doc(db, "storeStaff/stk"), { storeId: "own", code: "48213", n: 2, perms: ["stock"], active: true, createdAt: new Date() });
+  await setDoc(doc(db, "storeStaff/kb1"), { storeId: "own", code: "48213", n: 3, perms: ["orders"], active: true, branchIds: ["b1"], createdAt: new Date() });
 });
 
 console.log("إيقاف الطلبات");
@@ -33,6 +34,15 @@ await t("بعد الرجوع الزبون يطلب", () => assertSucceeds(setDoc
 await t("موظف المخزون ما يوقف الطلبات", () => assertFails(setDoc(doc(as("stk"), "storeStatus/own"), st(true))));
 await t("أحد غريب ما يوقف محل غيره", () => assertFails(setDoc(doc(as("rnd"), "storeStatus/own"), st(true))));
 await t("ما ينكتب حقل غريب", () => assertFails(setDoc(doc(as("own"), "storeStatus/own"), { ...st(true), x: 1 })));
+
+console.log("إيقاف فرع");
+const stb = (pausedBranches, paused = false) => ({ paused, pausedAt: serverTimestamp(), by: "x", pausedBranches });
+await t("صاحب المحل يوقف فرع b1", () => assertSucceeds(setDoc(doc(as("own"), "storeStatus/own"), stb(["b1"]))));
+await t("طلب لفرع b1 الموقف يترفض", () => assertFails(setDoc(doc(as("c1"), "orders/q1"), { ...order("q1", "own"), branchId: "b1" })));
+await t("طلب لفرع b2 يمشي", () => assertSucceeds(setDoc(doc(as("c1"), "orders/q2"), { ...order("q2", "own"), branchId: "b2" })));
+await t("موظف فرع b1 يرجّع فرعه", () => assertSucceeds(setDoc(doc(as("kb1"), "storeStatus/own"), stb([]))));
+await t("موظف فرع b1 ما يوقف فرع b2", () => assertFails(setDoc(doc(as("kb1"), "storeStatus/own"), stb(["b2"]))));
+await t("موظف فرع b1 ما يوقف المحل كله", () => assertFails(setDoc(doc(as("kb1"), "storeStatus/own"), stb([], true))));
 
 console.log(`\n${pass} نجح، ${fail} فشل`);
 await env.cleanup();
