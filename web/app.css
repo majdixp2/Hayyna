@@ -882,3 +882,24 @@ body.hideAdFar .zfar .mk.isad:not(.on){display:none}
 .br-filter small{opacity:.7}
 .promo-tag{display:inline-block;background:#E5484D;color:#fff;border-radius:8px;padding:1px 8px;font-size:11px;font-weight:800;margin-inline-start:4px}
 .spot-branches{margin-top:6px}
+
+/* 📣 إعلانات لكوفر */
+.ann-wrap{display:flex;flex-direction:column;gap:10px;margin:8px 0}
+.ann{border-radius:20px;overflow:hidden;color:#fff;box-shadow:0 10px 24px rgba(16,49,143,.18)}
+.ann-top{padding:14px 16px 12px}
+.ann-row{display:flex;align-items:center;gap:8px}
+.ann-logo{width:28px;height:28px;border-radius:8px;background:#fff;color:#10318F;display:inline-flex;align-items:center;justify-content:center;font:800 14px Montserrat,sans-serif}
+.ann-pill{background:#E5484D;color:#fff;font-weight:800;font-size:12px;padding:3px 10px;border-radius:8px;white-space:nowrap}
+.ann-h{font-weight:800;font-size:20px;line-height:1.4;margin:8px 0 2px}
+.ann-s{font-weight:600;font-size:14px;opacity:.92}
+.ann-cta{display:flex;align-items:center;gap:8px;width:100%;border:0;padding:11px 16px;font:inherit;font-weight:800;font-size:15px;color:inherit;cursor:pointer;text-align:start}
+.ann-cta i{width:20px;height:20px;border-radius:50%;background:#fff;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:12px}
+.ann-navy .ann-top{background:#10318F}.ann-navy .ann-cta{background:#0B2266}.ann-navy .ann-cta i{color:#0B2266}
+.ann-gold{color:#0B2266}.ann-gold .ann-top{background:#F4B400}.ann-gold .ann-cta{background:#E0A300}.ann-gold .ann-cta i{background:#0B2266;color:#F4B400}.ann-gold .ann-logo{background:#0B2266;color:#F4B400}.ann-gold .ann-pill{background:#0B2266}
+.ann-green .ann-top{background:#15803D}.ann-green .ann-cta{background:#106631}.ann-green .ann-cta i{color:#106631}.ann-green .ann-logo{color:#15803D}
+.ann-strip{pointer-events:auto;display:flex;align-items:center;gap:8px;max-width:640px;margin:6px auto 0;border-radius:14px;padding:7px 10px;color:#fff;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.15);cursor:pointer}
+.ann-strip b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ann-strip .ann-pill{font-size:11px;padding:2px 8px}
+.ann-strip.ann-navy{background:#10318F}.ann-strip.ann-gold{background:#F4B400;color:#0B2266}.ann-strip.ann-green{background:#15803D}
+.ann-x{border:0;background:rgba(255,255,255,.2);color:inherit;width:24px;height:24px;border-radius:50%;font-size:12px;cursor:pointer;flex:none}
+.ann-strip.hidden{display:none}

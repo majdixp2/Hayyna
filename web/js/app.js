@@ -12,6 +12,7 @@ import * as X from "./logic.js";
 import { createMap, placeDetails, searchPlaces } from "./map.js";
 import { canScout, mountAdForm } from "./scout.js";
 import { startI18n } from "./i18n.js";
+import { watchAnnouncements, renderAnnStrip, annAccountHtml, bindAnn } from "./announce.js";
 import { creditsOf, activeEffects, isPaidUp, exclusiveOf } from "./credits.js";
 import { renderStoreItems, openMyOrders, ordersOn, watchMyOrders, myOrdersClosed, renderStoreRatings, orderFromOffer, offerOrderable, restockBtn, bindRestock, checkRestock } from "./catalog-ui.js";
 startI18n();
@@ -341,6 +342,7 @@ function maybeSpotlight(list) {
 export function renderAll() {
   window.__hayynaNoCrop = (state.config?.catalog?.features || {}).crop === false;
   watchMyOrders(); // طلباتي تتحدّث لحظياً (وتنبيه لما تتغيّر الحالة)
+  renderAnnStrip();
   const list = filtered();
   renderMap(list);
   const car = $("carousel"), sl = car.scrollLeft;
@@ -916,6 +918,7 @@ export function renderAccount() {
         ${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت لكوفر على جوالك</button>` : ""}
         <div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div>
       </div>`;
+    { const a = annAccountHtml(); if (a) el.querySelector(".acc-hero")?.insertAdjacentHTML("afterend", `<div class="pad" style="padding-bottom:0">${a}</div>`); bindAnn(el); }
     el.querySelectorAll("[data-login]").forEach((b) => b.onclick = () => openLogin(b.dataset.login));
     $("staffLogin")?.addEventListener("click", async () => (await import("./staff.js")).openStaffLogin());
     $("contactBtn").onclick = openContact;
@@ -934,11 +937,13 @@ export function renderAccount() {
     <button class="icon-btn" id="editProfile" aria-label="تعديل البيانات">✎</button></div>`;
   const foot = `<div class="pad acc-foot">${canOfferInstall() ? `<button class="btn install-row" id="installAcc">📲 ثبّت لكوفر على جوالك</button>` : ""}<button class="btn call" id="settingsBtn">⚙️ الإعدادات</button><button class="btn ghost" id="logoutBtn">تسجيل الخروج</button><div class="legal"><a href="/privacy.html">سياسة الخصوصية</a></div></div>`;
   if (state.role === "merchant" || isAdmin) {
-    el.innerHTML = head + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
+    el.innerHTML = head + (annAccountHtml() ? `<div class="pad" style="padding-bottom:0">${annAccountHtml()}</div>` : "") + `<div id="merchantRoot" class="pad"><div class="spinner"></div></div>` + foot;
     import("./merchant.js").then((m) => m.renderMerchant($("merchantRoot"), { isAdmin, support, logout: doLogout, contact: openContact }));
   } else {
     renderCustomer(el, { name, pr, u, support, foot });
   }
+  if (state.role !== "merchant" && !isAdmin) { const a = annAccountHtml(); if (a) $("account").querySelector(".acc-user")?.insertAdjacentHTML("afterend", `<div class="pad" style="padding-bottom:0">${a}</div>`); }
+  bindAnn($("account"));
   $("editProfile").onclick = () => openProfileEdit();
   $("logoutBtn").onclick = doLogout;
   if ($("installAcc")) $("installAcc").onclick = doInstall;
@@ -1350,6 +1355,7 @@ function staffLink() {
 }
 
 // ---------------- البيانات ----------------
+watchAnnouncements(() => { renderAnnStrip(); if (state.tab === "account") renderAccount(); });
 onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; document.body.classList.toggle("hideAdFar", state.config.hideAdFar === true); staffLink(); renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); if (state.loaded) renderAll(); }, () => {});
 onSnapshot(query(collection(db, "boosts"), where("endsAt", ">", Timestamp.now())), (snap) => {
   state.boosts = snap.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.loaded) renderAll();

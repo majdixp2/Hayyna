@@ -5,7 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
   getFirestore, collection, doc, onSnapshot, query, where, orderBy, limit,
-  updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc
+  updateDoc, deleteDoc, setDoc, getDocs, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc, deleteField
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { EFFECTS, creditsOf, itemList, exclusiveOf, DEFAULT_ITEMS, rewardOf } from "/js/credits.js";
 import { KINDS, KIND_IDS, catalogOf, vatOf, baseKindOf, limitOf, itemVisible, itemPaidUp, riyal, ORDER_STATUS, FEATURES, feat, MODES, PAY, noshowOf, blockedUntil, noshowCount } from "/js/catalog.js";
@@ -243,12 +243,12 @@ function computed() {
 
 const TABS = [
   ["home", "🏠 الرئيسية"], ["review", "⏳ المراجعة"], ["stores", "🏪 المتاجر"],
-  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["ads", "📷 الإعلانات"], ["catalog", "🛍️ المنتجات"], ["credits", "💰 الرصيد"],
+  ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["ads", "📷 الإعلانات"], ["catalog", "🛍️ المنتجات"], ["credits", "💰 الرصيد"], ["promo", "📣 الإعلانات والعروض"],
   ["log", "📜 السجل"], ["team", "👥 الفريق"], ["settings", "⚙️ الإعدادات"],
 ];
 function tabAllowed(k) {
   return ({ home: true, log: true, review: can("review"), offers: can("review"), stores: canStores(), messages: can("messages"),
-    refs: can("merchants"), credits: can("credits"), catalog: can("review"), team: !!state.me?.owner, settings: !!state.me?.owner, ads: can("scout") })[k];
+    refs: can("merchants"), credits: can("credits"), promo: !!state.me?.owner, catalog: can("review"), team: !!state.me?.owner, settings: !!state.me?.owner, ads: can("scout") })[k];
 }
 
 function render() {
@@ -262,8 +262,9 @@ function render() {
   $("tabs").querySelectorAll(".tab").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; localStorage.setItem("hayyna_admin_tab", state.tab); render(); }));
   const focused = document.activeElement?.id;
   const caret = document.activeElement?.selectionStart;
-  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, catalog: catalogPage, settings, log: logPage, team, ads: adsPage }[state.tab] || home)(c);
+  $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, catalog: catalogPage, settings, log: logPage, team, ads: adsPage, promo: promoPage }[state.tab] || home)(c);
   if (state.tab === "ads") attachAdForm();
+  if (state.tab === "promo") attachPromo();
   bind();
   if (focused && $(focused)) { $(focused).focus(); try { $(focused).setSelectionRange(caret, caret); } catch {} }
 }
@@ -1214,7 +1215,8 @@ function bind() {
       itReset: () => { if (confirm("ترجع الخدمات والأسعار للافتراضي؟ (ما تنحفظ إلا لما تضغط حفظ)")) { state.itemsDraft = null; state.config = { ...state.config, credits: { ...(state.config.credits || {}), items: undefined } }; state.itemsDraft = itemList(DEFAULT_ITEMS).map((x) => ({ ...x })); render(); } },
       saveItems: async () => {
         const map = {};
-        itemsDraft().forEach((it, i) => { const id = it.id; map[id] = { name: String(it.name || "").trim().slice(0, 40) || "خدمة", effect: id === "publish" ? "publish" : it.effect, unit: it.unit === "day" ? "day" : "fixed", price: Math.max(1, it.price | 0), days: it.unit === "day" ? 1 : Math.min(90, Math.max(1, it.days | 0)), active: !!it.active, order: i }; });
+        const curItems = (state.config.credits || {}).items || {};
+        itemsDraft().forEach((it, i) => { const id = it.id; map[id] = { name: String(it.name || "").trim().slice(0, 40) || "خدمة", effect: id === "publish" ? "publish" : it.effect, unit: it.unit === "day" ? "day" : "fixed", price: Math.max(1, it.price | 0), days: it.unit === "day" ? 1 : Math.min(90, Math.max(1, it.days | 0)), active: !!it.active, order: i, ...(curItems[id]?.promo ? { promo: curItems[id].promo } : {}) }; });
         await updateDoc(doc(db, "config", "app"), { "credits.items": map }); state.itemsDraft = null;
       },
       pkAdd: () => { packsDraft().push({ points: 200, price: 195 }); render(); },
@@ -1262,3 +1264,112 @@ function bind() {
 
 $("viewerClose").onclick = () => $("viewer").classList.add("hidden");
 $("viewer").onclick = (e) => { if (e.target.id === "viewer") $("viewer").classList.add("hidden"); };
+
+// ===================== 📣 الإعلانات والعروض على أسعار لكوفر =====================
+const PR = { anns: [], unsub: null, color: "navy" };
+const dtv = (ms) => { if (!ms) return ""; const d = new Date(ms - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+const tsMs = (t) => (t && t.toMillis ? t.toMillis() : 0);
+const ACTIONS = [["publish", "يفتح «نشر عرض» (للتجار)"], ["credits", "يفتح شراء الرصيد"], ["url", "رابط خارجي"], ["offer", "يفتح عرض (رقم العرض)"], ["store", "يفتح متجر (رقم المتجر)"], ["none", "بدون زر"]];
+function promoPage() {
+  const cr = state.config.credits || {}, items = itemList(creditsOf(state.config).items);
+  const now = Date.now();
+  const promos = items.filter((it) => it.promo);
+  return `<h2>🏷️ عروض على أسعار لكوفر</h2>
+  <div class="card">
+    <p class="muted">خصم على سعر خدمة لفترة محددة (مثل اليوم الوطني). التاجر يشوف السعر القديم مشطوب والجديد، وسبب العرض، وكم باقي. لو عرضه حصري ناخذ الخصم الأكبر (ما نجمعهم). كل خدمة عليها عرض واحد.</p>
+    ${promos.length ? `<table class="tbl"><thead><tr><th>الخدمة</th><th>الخصم</th><th>السبب</th><th>الفترة</th><th>لمين</th><th>الحالة</th><th></th></tr></thead><tbody>${promos.map((it) => { const p = it.promo, st = tsMs(p.startsAt), en = tsMs(p.endsAt);
+      return `<tr><td>${esc(it.name)}</td><td><b>${p.pct}%</b></td><td>${esc(p.reason || "")}</td><td class="muted">${new Date(st).toLocaleString("ar-SA-u-ca-gregory-nu-latn")}<br>${new Date(en).toLocaleString("ar-SA-u-ca-gregory-nu-latn")}</td>
+        <td>${p.newDays > 0 ? `الجدد (أول ${p.newDays} يوم)` : "كل التجار"}</td><td>${now < st ? "🔜 قريباً" : now < en ? "🟢 شغّال" : "⏹️ منتهي"}</td><td><button class="btn danger" data-prdel="${esc(it.id)}">حذف</button></td></tr>`; }).join("")}</tbody></table>` : `<p class="muted">ما فيه عروض على الأسعار الحين.</p>`}
+    <h3>＋ عرض جديد</h3>
+    <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px">
+      <span>الخدمة</span><select id="prItem"><option value="*">كل الخدمات</option>${items.filter((it) => it.active).map((it) => `<option value="${esc(it.id)}">${esc(it.name)} (${it.price} نقطة)</option>`).join("")}</select>
+      <span>الخصم %</span><input type="number" id="prPct" min="1" max="100" value="50" style="width:70px">
+      <span>السبب</span><input type="text" id="prReason" maxlength="60" placeholder="🇸🇦 بمناسبة اليوم الوطني" style="min-width:220px">
+    </div>
+    <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px">
+      <span>من</span><input type="datetime-local" id="prFrom" value="${dtv(now)}">
+      <span>إلى</span><input type="datetime-local" id="prTo" value="${dtv(now + 7 * 864e5)}">
+      <label class="switch"><input type="checkbox" id="prNew"> للتجار الجدد بس، أول</label><input type="number" id="prNewDays" min="1" max="365" value="14" style="width:64px"> يوم من تسجيلهم
+    </div>
+    <label class="switch" style="margin-top:8px"><input type="checkbox" id="prAnn" checked> 📣 سوّ إعلان للتجار عن العرض (يتعبّى لحاله)</label>
+    <div class="actions"><button class="btn primary" id="prSave">حفظ العرض</button></div>
+    <h3>🛒 رابط عرض سلة (اختياري)</h3>
+    <p class="muted">لو سويت خصم على باقات الرصيد في سلة، حط الرابط هنا ويطلع للتاجر زر «اشترِ رصيد بخصم».</p>
+    <div class="row"><input type="url" id="prStore" value="${esc(cr.promoStoreUrl || "")}" placeholder="https://..." style="flex:1"><button class="btn" id="prStoreSave">حفظ</button></div>
+  </div>
+
+  <h2>📣 مستطيل إعلانات لكوفر</h2>
+  <div class="card">
+    <p class="muted">يطلع فوق الخريطة كسطر (الزبون يقدر يخفيه لين بكرة)، وفي «حسابي» ثابت. الشارة الحمراء تنحسب لحالها من تاريخ النهاية لو تركتها فاضية.</p>
+    ${PR.anns.length ? `<table class="tbl"><thead><tr><th>الإعلان</th><th>لمين / وين</th><th>الفترة</th><th>👁 مشاهدة</th><th>👆 ضغط</th><th>الحالة</th><th></th></tr></thead><tbody>${PR.anns.map((a) => { const st = tsMs(a.startsAt), en = tsMs(a.endsAt), on = a.active !== false;
+      return `<tr><td><b>${esc(a.title)}</b><br><small class="muted">${esc(a.sub || "")}</small></td><td>${{ all: "الكل", customers: "الزبائن", merchants: "التجار" }[a.audience] || "الكل"}<br><small>${[a.places?.map ? "فوق الخريطة" : "", a.places?.account ? "حسابي" : ""].filter(Boolean).join(" + ")}</small></td>
+        <td class="muted">${new Date(st).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn")} ← ${new Date(en).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn")}</td><td>${a.views || 0}</td><td>${a.clicks || 0}${a.views ? ` <small class="muted">(${Math.round(((a.clicks || 0) / a.views) * 100)}%)</small>` : ""}</td>
+        <td>${!on ? "⏸️ موقف" : now < st ? "🔜 قريباً" : now < en ? "🟢 شغّال" : "⏹️ منتهي"}</td>
+        <td><button class="btn" data-anon="${esc(a.id)}">${on ? "إيقاف" : "تشغيل"}</button> <button class="btn danger" data-andel="${esc(a.id)}">حذف</button></td></tr>`; }).join("")}</tbody></table>` : `<p class="muted">ما فيه إعلانات للحين.</p>`}
+    <h3>＋ إعلان جديد</h3>
+    <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div><p class="muted">العنوان الكبير *</p><input type="text" id="anTitle" maxlength="60" placeholder="🇸🇦 خصم 75% على نشر العروض" style="width:100%"></div>
+      <div><p class="muted">السطر الصغير</p><input type="text" id="anSub" maxlength="90" placeholder="بمناسبة اليوم الوطني — انشر بـ 25 نقطة بدل 100" style="width:100%"></div>
+      <div><p class="muted">نص الزر</p><input type="text" id="anCta" maxlength="30" placeholder="انشر عرضك الحين" style="width:100%"></div>
+      <div><p class="muted">الشارة الحمراء (اختياري)</p><input type="text" id="anBadge" maxlength="30" placeholder="فاضي = ينتهي خلال X أيام" style="width:100%"></div>
+      <div><p class="muted">الزر يسوي</p><select id="anAction" style="width:100%">${ACTIONS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>
+      <div><p class="muted">الرابط / رقم العرض / رقم المتجر</p><input type="text" id="anValue" maxlength="300" style="width:100%"></div>
+      <div><p class="muted">لمين</p><select id="anAud" style="width:100%"><option value="all">الكل</option><option value="customers">الزبائن</option><option value="merchants">التجار</option></select></div>
+      <div><p class="muted">اللون</p><div class="row" id="anColors">${[["navy", "كحلي — خصم"], ["gold", "ذهبي — حدث / ميزة"], ["green", "أخضر — عام"]].map(([k, l]) => `<label><input type="radio" name="anColor" value="${k}" ${PR.color === k ? "checked" : ""}> ${l}</label>`).join(" ")}</div></div>
+      <div><p class="muted">من</p><input type="datetime-local" id="anFrom" value="${dtv(now)}"></div>
+      <div><p class="muted">إلى</p><input type="datetime-local" id="anTo" value="${dtv(now + 7 * 864e5)}"></div>
+    </div>
+    <div class="row" style="margin-top:8px"><label class="switch"><input type="checkbox" id="anMap" checked> فوق الخريطة</label><label class="switch"><input type="checkbox" id="anAcc" checked> في «حسابي»</label></div>
+    <details style="margin-top:8px"><summary>🌐 النص بالإنجليزي (اختياري)</summary>
+      <div class="row" style="flex-wrap:wrap;gap:8px"><input type="text" id="anTitleEn" placeholder="Title" maxlength="60"><input type="text" id="anSubEn" placeholder="Subtitle" maxlength="90"><input type="text" id="anCtaEn" placeholder="Button" maxlength="30"></div></details>
+    <div class="actions"><button class="btn primary" id="anSave">نشر الإعلان</button></div>
+  </div>`;
+}
+function attachPromo() {
+  if (!PR.unsub) PR.unsub = onSnapshot(query(collection(db, "announcements"), orderBy("createdAt", "desc"), limit(50)), (s) => { PR.anns = s.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.tab === "promo") render(); }, (e) => console.warn(e));
+  const v = (id) => $(id)?.value?.trim() || "";
+  const ms = (id) => { const x = Date.parse($(id).value); return isNaN(x) ? 0 : x; };
+  $("prSave").onclick = async () => {
+    const pct = Math.min(100, Math.max(1, parseInt($("prPct").value, 10) || 0)), from = ms("prFrom"), to = ms("prTo"), item = $("prItem").value;
+    if (!(to > from)) return toast("تاريخ النهاية لازم بعد البداية");
+    const promo = { pct, reason: v("prReason").slice(0, 60), startsAt: Timestamp.fromMillis(from), endsAt: Timestamp.fromMillis(to), newDays: $("prNew").checked ? Math.max(1, parseInt($("prNewDays").value, 10) || 14) : 0 };
+    const ids = item === "*" ? itemList(creditsOf(state.config).items).filter((it) => it.active).map((it) => it.id) : [item];
+    const cur = (state.config.credits || {}).items;
+    const upd = {};
+    if (!cur) { const all = creditsOf(state.config).items; Object.entries(all).forEach(([k, it]) => { upd[`credits.items.${k}`] = ids.includes(k) ? { ...it, promo } : it; }); }
+    else ids.forEach((k) => { upd[`credits.items.${k}.promo`] = promo; });
+    try {
+      await updateDoc(doc(db, "config", "app"), upd); toast("انحفظ العرض ✅");
+      if ($("prAnn").checked) {
+        const name = item === "*" ? "كل الخدمات" : creditsOf(state.config).items[item]?.name || "";
+        await addDoc(collection(db, "announcements"), { title: `${promo.reason ? promo.reason.split(" ")[0] + " " : "🏷️ "}خصم ${pct}% على ${name}`.slice(0, 60), sub: promo.reason || "لفترة محدودة", cta: "انشر عرضك الحين",
+          action: "publish", value: "", color: "navy", badge: "", audience: "merchants", places: { map: true, account: true }, startsAt: promo.startsAt, endsAt: promo.endsAt, active: true, views: 0, clicks: 0, createdAt: serverTimestamp() });
+        toast("وسوّينا إعلان للتجار 📣 تقدر تعدّله تحت");
+      }
+    } catch (e) { console.error(e); toast("تعذّر الحفظ"); }
+  };
+  $("content").querySelectorAll("[data-prdel]").forEach((b) => b.onclick = async () => {
+    if (!confirm("حذف العرض؟ الأسعار ترجع طبيعية فوراً")) return;
+    try { await updateDoc(doc(db, "config", "app"), { [`credits.items.${b.dataset.prdel}.promo`]: deleteField() }); toast("انحذف"); } catch (e) { console.error(e); toast("تعذّر"); }
+  });
+  $("prStoreSave").onclick = () => updateDoc(doc(db, "config", "app"), { "credits.promoStoreUrl": v("prStore").slice(0, 300) }).then(() => toast("انحفظ ✅")).catch(() => toast("تعذّر"));
+  $("content").querySelectorAll('input[name="anColor"]').forEach((r) => r.onchange = () => { PR.color = r.value; });
+  $("anSave").onclick = async () => {
+    const from = ms("anFrom"), to = ms("anTo");
+    if (!v("anTitle")) return toast("اكتب العنوان");
+    if (!(to > from)) return toast("تاريخ النهاية لازم بعد البداية");
+    if (!$("anMap").checked && !$("anAcc").checked) return toast("اختر وين يطلع");
+    const action = $("anAction").value;
+    if (action === "url" && !/^https?:\/\//.test(v("anValue"))) return toast("اكتب رابط يبدأ بـ https://");
+    try {
+      await addDoc(collection(db, "announcements"), { title: v("anTitle"), sub: v("anSub"), cta: v("anCta") || (action === "none" ? "" : "اعرف أكثر"), badge: v("anBadge"), action, value: v("anValue"),
+        color: PR.color, audience: $("anAud").value, places: { map: $("anMap").checked, account: $("anAcc").checked },
+        titleEn: v("anTitleEn"), subEn: v("anSubEn"), ctaEn: v("anCtaEn"),
+        startsAt: Timestamp.fromMillis(from), endsAt: Timestamp.fromMillis(to), active: true, views: 0, clicks: 0, createdAt: serverTimestamp() });
+      toast("انتشر الإعلان ✅");
+    } catch (e) { console.error(e); toast("تعذّر النشر"); }
+  };
+  $("content").querySelectorAll("[data-anon]").forEach((b) => b.onclick = () => { const a = PR.anns.find((x) => x.id === b.dataset.anon); updateDoc(doc(db, "announcements", a.id), { active: a.active === false }).catch(() => toast("تعذّر")); });
+  $("content").querySelectorAll("[data-andel]").forEach((b) => b.onclick = () => { if (confirm("حذف الإعلان؟")) deleteDoc(doc(db, "announcements", b.dataset.andel)).catch(() => toast("تعذّر")); });
+}
+

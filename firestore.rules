@@ -508,6 +508,17 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (resource.data.storeId == request.auth.uid || isAdmin());
     }
 
+    // 📣 إعلانات لكوفر: الأدمن ينشرها، وأي أحد يزيد عدّاد المشاهدة أو الضغط بواحد
+    match /announcements/{id} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views'])
+          && request.resource.data.views == resource.data.get('views', 0) + 1)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clicks'])
+          && request.resource.data.clicks == resource.data.get('clicks', 0) + 1);
+    }
+
     // ⏸️ إيقاف استقبال الطلبات: صاحب المحل أو موظف الطلبات
     match /storeStatus/{storeUid} {
       allow read: if true;
