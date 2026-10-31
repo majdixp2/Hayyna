@@ -256,6 +256,7 @@ fun MerchantStoreScreen(
                                 } else emptyList(),
                                 onStoreClick = { viewModel.openStorePage(it) },
                                 showGooglePoi = poiConfig.showGooglePoi,
+                                hideAdFar = poiConfig.hideAdFar,
                                 onPoiClick = { viewModel.onPoiClick(it) },
                                 onMyLocationClick = { viewModel.clearBrowse() },
                                 scope = scope,

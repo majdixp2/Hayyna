@@ -222,10 +222,12 @@ function markerHtml(o, extra, on) {
   const bd = badge(o);
   const logo = o.logoUrl ? `<img class="lg" src="${esc(cld(o.logoUrl, 80))}" alt="">` : "";
   const ex = exclusiveOf(state.config);
-  return `<div class="mk${on ? " on" : ""}${isFeat(o) ? " feat" : ""}${isSpot(o) ? " spot" : ""}${o.postType === "new" ? " isnew" : ""}">${isSpot(o) && !on ? `<span class="mk-name">🚀 ${esc(o.restaurantName)}</span>` : ""}${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
+  return `<div class="mk${on ? " on" : ""}${o.source === "ad" ? " isad" : ""}${isFeat(o) ? " feat" : ""}${isSpot(o) ? " spot" : ""}${o.postType === "new" ? " isnew" : ""}">${isSpot(o) && !on ? `<span class="mk-name">🚀 ${esc(o.restaurantName)}</span>` : ""}${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
     + (extra > 0 ? `<span class="more">+${extra}</span>` : "")
     + (bd ? `<span class="pct${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : "") + `</div>`;
 }
+// ترتيب الأولوية على الخريطة: 🚀 سوبر ← ✨ مميز ← عادي ← 📷 عروض الإعلانات
+const rankOf = (o) => isSpot(o) ? 3 : isFeat(o) ? 2 : o.source === "ad" ? 0 : 1;
 function renderMap(list) {
   if (!map) return;
   const groups = new Map();
@@ -237,9 +239,9 @@ function renderMap(list) {
   }));
   const items = [];
   groups.forEach(({ b, items: arr }) => {
-    arr.sort((x, y) => (isFeat(y) ? 1 : 0) - (isFeat(x) ? 1 : 0) || effectivePercent(y) - effectivePercent(x));
+    arr.sort((x, y) => rankOf(y) - rankOf(x) || effectivePercent(y) - effectivePercent(x));
     const top = arr[0], on = state.selected === top.id;
-    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : isSpot(top) ? 700 : isFeat(top) ? 500 : 10,
+    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : [5, 10, 500, 700][rankOf(top)],
       onClick: () => { state.selected = top.id; state.branchPick = { sid: top.merchantId, id: b.id }; renderAll(); scrollCardIntoView(top.id); if (arr.length > 1) openGroup(arr); } });
   });
   map.setMarkers(items);
@@ -1345,7 +1347,7 @@ function staffLink() {
 }
 
 // ---------------- البيانات ----------------
-onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; staffLink(); renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); if (state.loaded) renderAll(); }, () => {});
+onSnapshot(doc(db, "config", "app"), (s) => { state.config = s.data() || {}; document.body.classList.toggle("hideAdFar", state.config.hideAdFar === true); staffLink(); renderChips(); map?.setShowShops(state.config.showGooglePoi !== false); if (state.loaded) renderAll(); }, () => {});
 onSnapshot(query(collection(db, "boosts"), where("endsAt", ">", Timestamp.now())), (snap) => {
   state.boosts = snap.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.loaded) renderAll();
 }, () => {});

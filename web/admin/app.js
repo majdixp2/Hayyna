@@ -986,6 +986,7 @@ function settings() {
     <h2 id="st-poi">📍 محلات Google على الخريطة</h2>
     <div class="card">
       <label class="switch"><input type="checkbox" id="poiOn" ${cfg.showGooglePoi !== false ? "checked" : ""}> إظهار نقاط المحلات (باهتة)</label>
+      <label class="switch"><input type="checkbox" id="hideAdFar" ${cfg.hideAdFar === true ? "checked" : ""}> 📷 إخفاء عروض الإعلانات لما الخريطة مصغّرة (لما تزدحم الخريطة)</label>
       <label class="switch" style="margin-top:8px"><input type="checkbox" id="inviteOn" ${cfg.poiInviteEnabled !== false ? "checked" : ""}> بطاقة "ادعه إلى لكوفر" عند الضغط</label>
       <p class="muted">نص الدعوة ({name} = اسم المحل)</p>
       <textarea id="inviteMsg">${esc(cfg.inviteMessage || 'السلام عليكم 👋 شفت محلكم "{name}" على خريطة لكوفر. سجّلوا محلكم مجاناً وانشروا عروضكم لأهل الحي، وخلّوا الزباين يوصلون لكم بسهولة 📍')}</textarea>
@@ -1080,6 +1081,7 @@ function bind() {
   const cfgSwitch = (key, val, label) => run(async () => { await actions.saveConfig({ [key]: val }); await audit(`${val ? "تشغيل" : "إيقاف"}: ${label}`, "settings"); }, "تم ✅");
   c.querySelectorAll("[data-cfg]").forEach((x) => (x.onchange = () => cfgSwitch(x.dataset.cfg, x.checked, x.parentElement.textContent.trim())));
   const poiOn = $("poiOn"); if (poiOn) poiOn.onchange = () => cfgSwitch("showGooglePoi", poiOn.checked, "نقاط محلات Google");
+  const hideAdFar = $("hideAdFar"); if (hideAdFar) hideAdFar.onchange = () => cfgSwitch("hideAdFar", hideAdFar.checked, "إخفاء عروض الإعلانات والخريطة مصغّرة");
   const invOn = $("inviteOn"); if (invOn) invOn.onchange = () => cfgSwitch("poiInviteEnabled", invOn.checked, "بطاقة ادعه إلى لكوفر");
   c.querySelectorAll("[data-catname]").forEach((x) => (x.oninput = () => { catDraft()[+x.dataset.catname].name = x.value; }));
   c.querySelectorAll("[data-cattype]").forEach((x) => (x.onchange = () => { catDraft()[+x.dataset.cattype].type = x.value; }));

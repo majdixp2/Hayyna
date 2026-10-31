@@ -458,7 +458,8 @@ class RestaurantOfferRepository(
                     showGooglePoi = snap?.getBoolean("showGooglePoi") ?: true,
                     inviteEnabled = snap?.getBoolean("poiInviteEnabled") ?: true,
                     inviteMessage = snap?.getString("inviteMessage")?.takeIf { it.isNotBlank() } ?: PoiConfig.DEFAULT_MESSAGE,
-                    appLink = snap?.getString("appLink").orEmpty()
+                    appLink = snap?.getString("appLink").orEmpty(),
+                    hideAdFar = snap?.getBoolean("hideAdFar") == true
                 )
             )
         }
@@ -1436,7 +1437,9 @@ data class PoiConfig(
     val showGooglePoi: Boolean = true,
     val inviteEnabled: Boolean = true,
     val inviteMessage: String = DEFAULT_MESSAGE,
-    val appLink: String = ""
+    val appLink: String = "",
+    /** 📷 إخفاء عروض الإعلانات لما الخريطة مصغّرة */
+    val hideAdFar: Boolean = false
 ) {
     companion object {
         const val DEFAULT_MESSAGE =
