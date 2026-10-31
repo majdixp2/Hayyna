@@ -43,7 +43,9 @@ fun RestaurantOffer.atBranch(branch: Branch): RestaurantOffer = copy(
     phone = branch.phone.ifBlank { phone },
     openMinute = if (branch.openMinute >= 0) branch.openMinute else openMinute,
     closeMinute = if (branch.closeMinute >= 0) branch.closeMinute else closeMinute,
-    selectedBranchId = branch.id
+    selectedBranchId = branch.id,
+    // 🚀 السوبر لكل فرع
+    spotlight = spotlight && (spotBranchIds.isEmpty() || branch.id in spotBranchIds)
 )
 
 /** فروع العرض؛ العروض القديمة (بدون فروع) تُعامل كفرع واحد من موقعها الأساسي. */

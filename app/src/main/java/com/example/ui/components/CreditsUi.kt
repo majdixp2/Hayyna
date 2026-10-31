@@ -1,5 +1,8 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -213,32 +216,41 @@ private fun ExclusiveOffer(head: String, text: String, button: String, onClick: 
     }
 }
 
-/** شراء خدمة لعرض: تمديد النشر / تمييز / إبراز */
+/** شراء خدمة لعرض: تمديد النشر / تمييز / سوبر (لكل فرع) — مع عروض لكوفر على الأسعار */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BoostDialog(
     offer: RestaurantOffer,
     balance: Long,
     items: List<CreditItem>,
-    priceOf: (itemId: String, days: Int) -> Pair<Long, Long>,
-    spotUsed: Int,
+    /** (السعر الكامل، السعر بعد الخصم، وصف العرض أو null) */
+    priceOf: (itemId: String, days: Int, nb: Int) -> Triple<Long, Long, String?>,
+    spotUsedAt: (district: String) -> Int,
     spotMax: Int,
-    spotActiveHere: Boolean,
-    onBuy: (itemId: String, days: Int) -> Unit,
+    spotBranches: Set<String>?,
+    onBuy: (itemId: String, days: Int, branchIds: List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
     val daysSel = remember { mutableStateMapOf<String, Int>() }
     var confirm by remember { mutableStateOf<Pair<CreditItem, Int>?>(null) }
+    val branches = offer.branches.filter { it.id.isNotBlank() }
+    val spotOn = { b: com.example.data.model.Branch -> offer.spotlight && (spotBranches == null || b.id in spotBranches) }
+    val sel = remember { mutableStateListOf<String>().apply { branches.firstOrNull { !spotOn(it) && spotUsedAt(it.district) < spotMax }?.let { add(it.id) } } }
+    val bn = { b: com.example.data.model.Branch -> b.name.ifBlank { b.district.ifBlank { "الفرع" } } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🚀 ${offer.offerTitle}", fontWeight = FontWeight.Bold, maxLines = 2) },
+        title = { androidx.compose.material3.Text("🚀 ${offer.offerTitle}", fontWeight = FontWeight.Bold, maxLines = 2) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("رصيدك: $balance نقطة", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 items.forEach { item ->
                     val isSpot = item.effect == "spotlight"
-                    val full = isSpot && !spotActiveHere && spotUsed >= spotMax
+                    val multi = isSpot && branches.size > 1
+                    val used1 = spotUsedAt(branches.firstOrNull()?.district ?: offer.district)
+                    val full = isSpot && !multi && !offer.spotlight && used1 >= spotMax
                     val d = daysSel[item.id] ?: if (item.unit == "day") 7 else item.days
-                    val (base, cost) = priceOf(item.id, d)
+                    val nb = if (multi) sel.size.coerceAtLeast(1) else 1
+                    val (base, cost, promo) = priceOf(item.id, d, nb)
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, if (isSpot) Color(0xFFF59E0B) else MaterialTheme.colorScheme.outlineVariant),
@@ -247,9 +259,21 @@ fun BoostDialog(
                         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             androidx.compose.material3.Text(item.name, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
                             Text(effectHint(item.effect), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (isSpot) Text(
-                                if (full) "⛔ الأماكن في ${offer.district.ifBlank { "حيّك" }} ممتلئة ($spotUsed/$spotMax)، جرّب بعد كم يوم"
-                                else "باقي ${spotMax - spotUsed} من $spotMax أماكن في ${offer.district.ifBlank { "حيّك" }}",
+                            if (multi) {
+                                Text("📍 اختر الفروع (السعر لكل فرع):", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                branches.forEach { b ->
+                                    val u = spotUsedAt(b.district); val on = spotOn(b); val dis = on || u >= spotMax
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f)) {
+                                            androidx.compose.material3.Text(bn(b), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                            Text(if (on) "🚀 سوبر الحين" else if (u >= spotMax) "⛔ الحي ممتلئ ($u/$spotMax)" else "باقي ${spotMax - u} من $spotMax", fontSize = 11.sp, color = Amber)
+                                        }
+                                        Checkbox(checked = b.id in sel, enabled = !dis, onCheckedChange = { c -> if (c) sel.add(b.id) else sel.remove(b.id) })
+                                    }
+                                }
+                            } else if (isSpot) Text(
+                                if (full) "⛔ الأماكن في ${offer.district.ifBlank { "حيّك" }} ممتلئة ($used1/$spotMax)، جرّب بعد كم يوم"
+                                else "باقي ${spotMax - used1} من $spotMax أماكن في ${offer.district.ifBlank { "حيّك" }}",
                                 fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Amber
                             )
                             if (item.unit == "day") Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -257,14 +281,18 @@ fun BoostDialog(
                                     FilterChip(selected = d == n, onClick = { daysSel[item.id] = n }, label = { Text("$n", fontSize = 12.sp) })
                                 }
                             }
+                            if (promo != null) Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFE5484D)) {
+                                Text("🏷️ $promo", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    (if (cost < base) "💎 " + (if (cost == 0L) "مجاني" else "$cost نقطة بدل $base") else "$base نقطة") +
-                                        " • ${if (item.unit == "day") d else item.days} ${if ((if (item.unit == "day") d else item.days) == 1) "يوم" else "أيام"}",
+                                    (if (cost < base) (if (cost == 0L) "مجاني" else "$cost نقطة بدل $base") else "$base نقطة") +
+                                        " • ${if (item.unit == "day") d else item.days} ${if ((if (item.unit == "day") d else item.days) == 1) "يوم" else "أيام"}" +
+                                        (if (multi) " • $nb ${if (nb == 1) "فرع" else "فروع"}" else ""),
                                     fontSize = 13.sp, modifier = Modifier.weight(1f)
                                 )
                                 Button(
-                                    onClick = { confirm = item to d }, enabled = !full,
+                                    onClick = { confirm = item to d }, enabled = !full && !(multi && sel.isEmpty()),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10318F))
                                 ) { Text(if (item.effect == "publish") "تمديد" else "اشترِ", fontSize = 13.sp) }
                             }
@@ -276,12 +304,14 @@ fun BoostDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("إغلاق") } }
     )
     confirm?.let { (item, d) ->
-        val cost = priceOf(item.id, d).second
+        val isSpot = item.effect == "spotlight"
+        val ids = if (isSpot && branches.size > 1) sel.toList() else if (isSpot) branches.take(1).map { it.id } else emptyList()
+        val cost = priceOf(item.id, d, ids.size.coerceAtLeast(1)).second
         AlertDialog(
             onDismissRequest = { confirm = null },
             title = { Text("تأكيد") },
-            text = { Text(if (cost == 0L) "${item.name} (مجاني لأن عرضك حصري 💎)؟" else "${item.name} بـ $cost نقطة؟\nرصيدك بعدها: ${balance - cost}") },
-            confirmButton = { TextButton(onClick = { confirm = null; onBuy(item.id, d) }, enabled = cost <= balance) { Text(if (cost <= balance) "تأكيد" else "رصيدك ما يكفي", fontWeight = FontWeight.Bold) } },
+            text = { androidx.compose.material3.Text(com.example.ui.i18n.I18n.tr(if (cost == 0L) "${item.name} (مجاني)؟" else "${item.name}${if (ids.size > 1) " لـ ${ids.size} فروع" else ""} بـ $cost نقطة؟\nرصيدك بعدها: ${balance - cost}")) },
+            confirmButton = { TextButton(onClick = { confirm = null; onBuy(item.id, d, ids) }, enabled = cost <= balance) { Text(if (cost <= balance) "تأكيد" else "رصيدك ما يكفي", fontWeight = FontWeight.Bold) } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("إلغاء") } }
         )
     }

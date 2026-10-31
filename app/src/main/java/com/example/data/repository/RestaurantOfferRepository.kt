@@ -411,7 +411,10 @@ class RestaurantOfferRepository(
                     id = id, name = (m["name"] as? String ?: id).let { n -> if (Regex("إبراز|مُبرز").containsMatchIn(n)) n.replace(Regex("🚀\\s*"), "").replace(Regex("الإبراز|إبراز|مُبرز"), "🚀 عرض سوبر") else n }, effect = m["effect"] as? String ?: "",
                     unit = m["unit"] as? String ?: "fixed", price = (m["price"] as? Number)?.toLong() ?: 0L,
                     days = (m["days"] as? Number)?.toInt() ?: 1, active = m["active"] as? Boolean ?: false,
-                    order = (m["order"] as? Number)?.toInt() ?: 0
+                    order = (m["order"] as? Number)?.toInt() ?: 0,
+                    promo = (m["promo"] as? Map<*, *>)?.let { p -> CreditPromo(
+                        (p["pct"] as? Number)?.toInt() ?: 0, p["reason"] as? String ?: "",
+                        (p["startsAt"] as? Timestamp)?.toDate()?.time ?: 0L, (p["endsAt"] as? Timestamp)?.toDate()?.time ?: 0L, (p["newDays"] as? Number)?.toInt() ?: 0) }
                 )
             }?.associateBy { it.id } ?: CreditItem.DEFAULTS
             trySend(
@@ -443,7 +446,8 @@ class RestaurantOfferRepository(
                         offerId = d.getString("offerId").orEmpty(),
                         effect = d.getString("effect").orEmpty(),
                         startsAt = d.getTimestamp("startsAt")?.toDate()?.time ?: 0L,
-                        endsAt = d.getTimestamp("endsAt")?.toDate()?.time ?: 0L
+                        endsAt = d.getTimestamp("endsAt")?.toDate()?.time ?: 0L,
+                        branchIds = (d.get("branchIds") as? List<*>)?.mapNotNull { it as? String }.orEmpty()
                     )
                 })
             }
@@ -812,7 +816,8 @@ class RestaurantOfferRepository(
      */
     suspend fun spendOnOffer(
         uid: String, balance: Long, charge: Boolean, offerId: String, item: CreditItem, days: Int, cost: Long, disc: Int,
-        startMillis: Long, note: String, offer: RestaurantOffer? = null, offerUpdate: Map<String, Any?>? = null
+        startMillis: Long, note: String, offer: RestaurantOffer? = null, offerUpdate: Map<String, Any?>? = null,
+        promo: Int = 0, branchIds: List<String> = emptyList()
     ): String {
         val b = db.batch()
         val offerRef = if (offerId.isNotBlank()) offersCollection.document(offerId) else offersCollection.document()
@@ -826,6 +831,8 @@ class RestaurantOfferRepository(
             "startsAt" to Timestamp(java.util.Date(start)), "endsAt" to Timestamp(java.util.Date(start + days * 86_400_000L))
         )
         if (disc > 0) boost["disc"] = disc.toLong()
+        if (promo > 0) boost["promo"] = promo.toLong()
+        if (branchIds.isNotEmpty() && item.effect == "spotlight") boost["branchIds"] = branchIds.take(50)
         b.set(boostRef, boost)
         if (charge && cost > 0) {
             val w = db.collection("wallets").document(uid)
@@ -1421,12 +1428,16 @@ data class CreditsConfig(
     val exclusiveIcon: String = "💎"
 )
 
-data class Boost(val offerId: String, val effect: String, val startsAt: Long, val endsAt: Long, val merchantId: String = "")
+data class Boost(val offerId: String, val effect: String, val startsAt: Long, val endsAt: Long, val merchantId: String = "", val branchIds: List<String> = emptyList())
+/** 🏷️ عرض لكوفر على سعر خدمة */
+data class CreditPromo(val pct: Int, val reason: String, val startsAt: Long, val endsAt: Long, val newDays: Int = 0) {
+    fun activeFor(now: Long, joinedAt: Long) = pct in 1..100 && now in startsAt until endsAt && (newDays <= 0 || (joinedAt > 0 && now - joinedAt <= newDays * 86_400_000L))
+}
 
 /** خدمة مدفوعة (من إعدادات الأدمن): effect = publish / feature / listTop / spotlight */
 data class CreditItem(
     val id: String, val name: String, val effect: String, val unit: String, val price: Long, val days: Int,
-    val active: Boolean, val order: Int = 0
+    val active: Boolean, val order: Int = 0, val promo: CreditPromo? = null
 ) {
     fun baseCost(d: Int): Long = if (unit == "day") price * d else price
     fun daysFor(d: Int): Int = if (unit == "day") d else days

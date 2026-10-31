@@ -1000,14 +1000,15 @@ fun MerchantStoreScreen(
         boostTarget?.let { o ->
             val spotHere = boostsAll.any { it.offerId == o.id && it.effect == "spotlight" && it.startsAt <= nowMillis && nowMillis < it.endsAt }
             com.example.ui.components.BoostDialog(
-                offer = o,
+                offer = o.copy(spotlight = spotHere),
                 balance = if (isAdmin) 999_999L else (walletBal ?: 0L).coerceAtLeast(0L),
                 items = creditsCfg.items.values.filter { it.active }.sortedBy { it.order },
-                priceOf = { id, d -> viewModel.priceFor(id, d, o.exclusive).let { p -> (p?.full ?: 0L) to (p?.cost ?: 0L) } },
-                spotUsed = viewModel.spotlightsInDistrict(o.district),
+                priceOf = { id, d, nb -> viewModel.priceFor(id, d, o.exclusive, nb).let { p ->
+                    Triple(p?.full ?: 0L, p?.cost ?: 0L, p?.takeIf { it.promo > 0 }?.let { pr -> (pr.reason.ifBlank { "خصم ${pr.promo}%" }) + " • " + promoLeft(pr.promoEnds) }) } },
+                spotUsedAt = { d -> viewModel.spotlightsInDistrict(d) },
                 spotMax = creditsCfg.spotlightMax,
-                spotActiveHere = spotHere,
-                onBuy = { id, d -> viewModel.buyBoost(o, id, d) },
+                spotBranches = viewModel.spotBranchesOf(o.id),
+                onBuy = { id, d, ids -> viewModel.buyBoost(o, id, d, ids) },
                 onDismiss = { viewModel.closeBoost() }
             )
         }
@@ -1150,3 +1151,8 @@ fun RoleTabButton(
     }
 }
 
+/** «ينتهي خلال 3 أيام» / «ينتهي بكرة» / «آخر يوم» */
+fun promoLeft(end: Long, now: Long = System.currentTimeMillis()): String {
+    val d = Math.ceil((end - now) / 86_400_000.0).toInt()
+    return when { d <= 1 && com.example.data.model.PreOrder.dayStart(end) == com.example.data.model.PreOrder.dayStart(now) -> "آخر يوم"; d <= 1 -> "ينتهي بكرة"; else -> "ينتهي خلال $d أيام" }
+}

@@ -10,7 +10,7 @@ import { createMap } from "./map.js";
 import { cropImage } from "./cropper.js";
 import { watchMerchantCatalog, catalogPanelHtml, bindCatalogPanel, loadMyItems, scopePickerHtml, bindScopePicker, scopeError } from "./catalog-ui.js";
 import { vatOf, validVatNumber, feat, catalogOf, DEAL_TYPES, KINDS, fmt } from "./catalog.js";
-import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict, rewardOf, discounted, rewardText } from "./credits.js";
+import { creditsOf, itemList, costOf, activeEffects, isPaidUp, graceEnd, exclusiveOf, EFFECTS, spotlightsInDistrict, rewardOf, discounted, rewardText, promoOf, leftText } from "./credits.js";
 
 const { esc, cld, thumb, priceLabel, districtLabel, money } = X;
 const DAILY_LIMIT = 3;
@@ -195,22 +195,29 @@ async function openHistory() {
 }
 /** يجهّز عملية صرف (خدمة + خصم) داخل batch. يرجّع null لو الرصيد ما يكفي. */
 /** تكلفة الخدمة على هالعرض (النشر عليه خصم لو العرض حصري ومكافأة الحصري شغّالة) */
-function priceFor(item, days, excl) {
+// 🏷️ عرض لكوفر على السعر + خصم الحصري: ناخذ الأكبر (ما نجمعهم). nb = عدد الفروع (للسوبر)
+function priceFor(item, days, excl, nb = 1) {
   const it = { ...cr().items[item], id: item };
   const d = it.unit === "day" ? days : (it.days || 1);
-  const full = costOf(it, d), r = rw();
-  const disc = it.effect === "publish" && excl && r.on ? r.percent : 0;
-  return { it, d, full, cost: disc ? discounted(full, disc) : full, disc };
+  const full = costOf(it, d) * Math.max(1, nb), r = rw();
+  const xd = it.effect === "publish" && excl && r.on ? r.percent : 0;
+  const pr = promoOf(it, Date.now(), X.ms(state.profile?.createdAt) || X.ms(m.profile?.createdAt) || 0);
+  if (pr && pr.pct >= xd) return { it, d, full, cost: discounted(full, pr.pct), disc: 0, promo: pr.pct, reason: pr.reason, endsAt: pr.endsAt };
+  return { it, d, full, cost: xd ? discounted(full, xd) : full, disc: xd, promo: 0 };
 }
-function addSpend(wb, { item, offerId, days, startsAt, note, excl = false }) {
-  const { it, d, cost, disc } = priceFor(item, days, excl);
+/** السعر للعرض: مشطوب + الجديد + سبب العرض */
+const priceHtml = (pr) => pr.cost < pr.full ? `<s>${pr.full}</s> <b>${pr.cost || "مجاني"}</b> ${pr.cost ? "نقطة" : ""}${pr.promo ? ` <span class="promo-tag">🏷️ ${esc(pr.reason || `خصم ${pr.promo}%`)} • ${esc(leftText(pr.endsAt))}</span>` : " 💎"}` : `${pr.full} نقطة`;
+function addSpend(wb, { item, offerId, days, startsAt, note, excl = false, branchIds = null }) {
+  const { it, d, cost, disc, promo } = priceFor(item, days, excl, branchIds?.length || 1);
   const admin = !!m.ctx?.isAdmin;
   if (!admin && bal() < cost) return null;
   const ref = doc(collection(db, "boosts"));
   const start = Math.max(Date.now(), startsAt || 0);
-  wb.set(ref, { id: ref.id, merchantId: m.uid, offerId, item, effect: it.effect, days: d, cost, ...(disc ? { disc } : {}), createdAt: serverTimestamp(),
+  wb.set(ref, { id: ref.id, merchantId: m.uid, offerId, item, effect: it.effect, days: d, cost, ...(disc ? { disc } : {}), ...(promo ? { promo } : {}),
+    ...(branchIds?.length && it.effect === "spotlight" ? { branchIds: branchIds.slice(0, 50) } : {}), createdAt: serverTimestamp(),
     startsAt: Timestamp.fromMillis(start), endsAt: Timestamp.fromMillis(start + d * X.DAY) });
   if (disc) note = `${note || it.name} (💎 ${disc >= 100 ? "مجاني" : `خصم ${disc}%`})`;
+  if (promo) note = `${note || it.name} (🏷️ خصم ${promo}%)`;
   if (!admin && cost > 0) {
     wb.set(doc(db, "wallets", m.uid), { balance: bal() - cost, lastOp: { kind: "spend", ref: ref.id }, updatedAt: serverTimestamp() });
     wb.set(doc(collection(db, "wallets", m.uid, "tx")), { kind: "spend", points: -cost, note: (note || it.name).slice(0, 120), ref: ref.id, at: serverTimestamp() });
@@ -220,31 +227,47 @@ function addSpend(wb, { item, offerId, days, startsAt, note, excl = false }) {
 function openBoost(o) {
   if (!o) return;
   const items = itemList(cr().items).filter((it) => it.active);
-  const now = Date.now(), ef = activeEffects(m.boosts, o.id, now);
-  const spotUsed = spotlightsInDistrict(state.boosts || [], state.offers, o.district, now), spotMax = cr().spotlightMax;
-  showSheet(`<div class="pad"><div class="section-title">🚀 ${esc(o.offerTitle)}</div>
+  const now = Date.now(), ef = activeEffects(m.boosts, o.id, now), spotMax = cr().spotlightMax;
+  const bs = (o.branches || []).filter((b) => b && b.id);
+  const bn = (b) => b.name || districtLabel(b.district) || "الفرع";
+  // 🚀 السوبر لكل فرع: الأماكن تنحسب في حي كل فرع
+  const used = (b) => spotlightsInDistrict(state.boosts || [], state.offers, b.district, now);
+  const spotOn = (b) => ef.spotAll || ef.spotBranches.has(b.id);
+  let sel = new Set(bs.filter((b) => !spotOn(b) && used(b) < spotMax).slice(0, 1).map((b) => b.id));
+  const draw = () => {
+    const nb = Math.max(1, sel.size);
+    showSheet(`<div class="pad"><div class="section-title">🚀 ${esc(o.offerTitle)}</div>
     <p class="desc tr">رصيدك: <b>${bal()}</b> نقطة</p>
     <div class="boost-list">${items.map((it) => {
-      const isPub = it.effect === "publish", isSpot = it.effect === "spotlight", full = isSpot && !ef.spotlight && spotUsed >= spotMax;
+      const isPub = it.effect === "publish", isSpot = it.effect === "spotlight";
+      const multi = isSpot && bs.length > 1;
+      const full = isSpot && !multi && !ef.spotlight && (bs[0] ? used(bs[0]) : spotlightsInDistrict(state.boosts || [], state.offers, o.district, now)) >= spotMax;
+      const pr = priceFor(it.id, it.days || 1, !!o.exclusive, isSpot ? nb : 1);
       return `<div class="boost-item${isSpot ? " spot" : ""}"><div><b>${esc(it.name)}</b><small>${esc(EFFECTS[it.effect]?.hint || "")}${isPub && ef.publishUntil > now ? ` • منشور لين ${fmtDate(ef.publishUntil)}` : ""}</small>
-        ${isSpot ? `<small class="spot-left">${full ? `⛔ الأماكن في ${esc(o.district || "حيّك")} ممتلئة (${spotUsed}/${spotMax})، جرّب بعد كم يوم` : `باقي ${spotMax - spotUsed} من ${spotMax} أماكن في ${esc(o.district || "حيّك")}`}</small>` : ""}</div>
-        ${it.unit === "day" ? `<select class="input bdays" data-bd="${it.id}">${[1, 3, 7, 14, 30].map((d) => { const pr = priceFor(it.id, d, !!o.exclusive); return `<option value="${d}">${d} ${d === 1 ? "يوم" : "أيام"} • ${pr.disc ? (pr.cost ? `${pr.cost} نقطة بدل ${pr.full} 💎` : "مجاني 💎") : `${pr.full} نقطة`}</option>`; }).join("")}</select>`
-          : `<span class="bprice">${it.price} نقطة • ${it.days} ${it.days === 1 ? "يوم" : "أيام"}</span>`}
-        <button class="btn dir" data-buy="${it.id}" ${full ? "disabled" : ""}>${isPub ? "تمديد النشر" : "اشترِ"}</button></div>`; }).join("")}</div>
+        ${multi ? `<div class="spot-branches"><small>📍 اختر الفروع (السعر لكل فرع):</small>${bs.map((b) => { const u = used(b), on = spotOn(b), dis = on || u >= spotMax;
+          return `<label class="switch-row sub"><span>${esc(bn(b))} <small>${on ? "🚀 سوبر الحين" : u >= spotMax ? `⛔ الحي ممتلئ (${u}/${spotMax})` : `باقي ${spotMax - u} من ${spotMax}`}</small></span><input type="checkbox" data-sb="${esc(b.id)}" ${sel.has(b.id) ? "checked" : ""} ${dis ? "disabled" : ""}></label>`; }).join("")}</div>`
+          : isSpot ? `<small class="spot-left">${full ? `⛔ الأماكن في ${esc(o.district || "حيّك")} ممتلئة، جرّب بعد كم يوم` : `باقي ${spotMax - (bs[0] ? used(bs[0]) : 0)} من ${spotMax} أماكن في ${esc(o.district || "حيّك")}`}</small>` : ""}</div>
+        ${it.unit === "day" ? `<select class="input bdays" data-bd="${it.id}">${[1, 3, 7, 14, 30].map((d) => { const p2 = priceFor(it.id, d, !!o.exclusive); return `<option value="${d}">${d} ${d === 1 ? "يوم" : "أيام"} • ${p2.cost < p2.full ? (p2.cost ? `${p2.cost} نقطة بدل ${p2.full}` : "مجاني") : `${p2.full} نقطة`}</option>`; }).join("")}</select>${pr.promo ? `<span class="promo-tag">🏷️ ${esc(pr.reason || `خصم ${pr.promo}%`)} • ${esc(leftText(pr.endsAt))}</span>` : ""}`
+          : `<span class="bprice">${priceHtml(pr)} • ${it.days} ${it.days === 1 ? "يوم" : "أيام"}${multi ? ` • ${nb} ${nb === 1 ? "فرع" : "فروع"}` : ""}</span>`}
+        <button class="btn dir" data-buy="${it.id}" ${full || (multi && !sel.size) ? "disabled" : ""}>${isPub ? "تمديد النشر" : "اشترِ"}</button></div>`; }).join("")}</div>
     <div id="bErr" class="err"></div></div>`);
-  $("sheetBody").querySelectorAll("[data-buy]").forEach((b) => b.onclick = async () => {
-    const id = b.dataset.buy, it = cr().items[id];
-    const days = it.unit === "day" ? +($("sheetBody").querySelector(`[data-bd="${id}"]`)?.value || 1) : it.days;
-    // التمديد يبدأ من نهاية النشر الحالي (أو نهاية فترة السماح للعروض القديمة)
-    const g = graceEnd(o, cr());
-    const start = it.effect === "publish" ? Math.max(now, ef.publishUntil, g === Infinity ? 0 : g) : now;
-    const wb = writeBatch(db), cost = addSpend(wb, { item: id, offerId: o.id, days, startsAt: start, note: `${it.name} — ${o.offerTitle}`, excl: !!o.exclusive });
-    if (cost == null) return $("bErr").textContent = `رصيدك ما يكفي (تحتاج ${priceFor(id, days, !!o.exclusive).cost} نقطة). اشحن رصيدك أول.`;
-    if (!confirm(cost === 0 ? `تأكيد: ${it.name} (مجاني لأن عرضك حصري 💎)؟` : `تأكيد: ${it.name} بـ ${cost} نقطة؟`)) return;
-    b.disabled = true;
-    try { await wb.commit(); hideSheet(); toast(cost ? `تم ✅ خصمنا ${cost} نقطة` : "تم ✅ مجاناً لأن عرضك حصري 💎", true); }
-    catch (e) { console.error(e); b.disabled = false; $("bErr").textContent = "تعذّرت العملية. حدّث الصفحة وجرّب مرة ثانية."; }
-  });
+    $("sheetBody").querySelectorAll("[data-sb]").forEach((x) => x.onchange = () => { x.checked ? sel.add(x.dataset.sb) : sel.delete(x.dataset.sb); draw(); });
+    $("sheetBody").querySelectorAll("[data-buy]").forEach((b) => b.onclick = async () => {
+      const id = b.dataset.buy, it = cr().items[id], isSpot = it.effect === "spotlight";
+      const days = it.unit === "day" ? +($("sheetBody").querySelector(`[data-bd="${id}"]`)?.value || 1) : it.days;
+      const brIds = isSpot && bs.length > 1 ? [...sel] : isSpot && bs[0] ? [bs[0].id] : null;
+      // التمديد يبدأ من نهاية النشر الحالي (أو نهاية فترة السماح للعروض القديمة)
+      const g = graceEnd(o, cr());
+      const start = it.effect === "publish" ? Math.max(now, ef.publishUntil, g === Infinity ? 0 : g) : now;
+      const wb = writeBatch(db), cost = addSpend(wb, { item: id, offerId: o.id, days, startsAt: start, note: `${it.name} — ${o.offerTitle}`, excl: !!o.exclusive, branchIds: brIds });
+      if (cost == null) return $("bErr").textContent = `رصيدك ما يكفي (تحتاج ${priceFor(id, days, !!o.exclusive, brIds?.length || 1).cost} نقطة). اشحن رصيدك أول.`;
+      if (!confirm(cost === 0 ? `تأكيد: ${it.name} (مجاني)؟` : `تأكيد: ${it.name}${brIds && brIds.length > 1 ? ` لـ ${brIds.length} فروع` : ""} بـ ${cost} نقطة؟`)) return;
+      b.disabled = true;
+      try { await wb.commit(); hideSheet(); toast(cost ? `تم ✅ خصمنا ${cost} نقطة` : "تم ✅ مجاناً", true); }
+      catch (e) { console.error(e); b.disabled = false; $("bErr").textContent = "تعذّرت العملية. حدّث الصفحة وجرّب مرة ثانية."; }
+    });
+  };
+  draw();
 }
 
 // =================== المسودات (العرض محفوظ، ينتظر الرصيد) ===================
@@ -624,7 +647,7 @@ export async function openOfferForm(editing) {
         ${X.DURATIONS.map((d, i) => paid && !d.days ? "" : `<button class="chip${!f.keepExpiry && f.durIdx === i ? " on" : ""}" data-dur="${i}">${d.label}</button>`).join("")}
         <button class="chip${!f.keepExpiry && f.durIdx === -1 ? " on" : ""}" data-dur="-1">✎ عدد أيام</button></div>
         ${!f.keepExpiry && f.durIdx === -1 ? `<input id="oDays" class="input" inputmode="numeric" maxlength="2" value="${esc(f.customDays)}" placeholder="كم يوم؟ مثال: 2">` : ""}`}
-      ${paid ? `<div class="cost-line" id="oCost">💰 تكلفة النشر: <b>${pr.disc ? (pr.cost ? `<s>${pr.full}</s> ${pr.cost} نقطة 💎` : `<s>${pr.full}</s> مجاني 💎`) : `${daysOf()} ${daysOf() === 1 ? "يوم" : "أيام"} × ${pubItem.price} = ${pr.full} نقطة`}</b>${m.ctx?.isAdmin ? "" : ` • رصيدك ${bal()}${bal() < pr.cost ? ` <span class="err">— ما يكفي، بس لا تشيل هم: نحفظ عرضك مسودة</span>` : ""}`}</div>` : ""}
+      ${paid ? `<div class="cost-line" id="oCost">💰 تكلفة النشر: <b>${pr.cost < pr.full ? priceHtml(pr) : `${daysOf()} ${daysOf() === 1 ? "يوم" : "أيام"} × ${pubItem.price} = ${pr.full} نقطة`}</b>${m.ctx?.isAdmin ? "" : ` • رصيدك ${bal()}${bal() < pr.cost ? ` <span class="err">— ما يكفي، بس لا تشيل هم: نحفظ عرضك مسودة</span>` : ""}`}</div>` : ""}
       <small class="hint">بعد انتهاء المدة يختفي العرض تلقائياً من الخريطة. ✨ التعبئة الذكية من الصورة متاحة في تطبيق أندرويد.</small>
     </div>`;
     const set = (id, k) => { const el = $(id); if (el) el.oninput = (ev) => { f[k] = ev.target.value; dirty = true; }; };

@@ -736,19 +736,25 @@ class MerchantViewModel(
         }
     }
 
-    data class Price(val item: com.example.data.repository.CreditItem, val days: Int, val full: Long, val cost: Long, val disc: Int)
+    data class Price(val item: com.example.data.repository.CreditItem, val days: Int, val full: Long, val cost: Long, val disc: Int,
+                     val promo: Int = 0, val reason: String = "", val promoEnds: Long = 0L)
 
     /** تكلفة خدمة على عرض (النشر عليه خصم لو العرض حصري ومكافأة الحصري شغّالة). null = الخدمة موقفة. */
-    fun priceFor(itemId: String, days: Int, excl: Boolean): Price? {
+    /** 🏷️ عرض لكوفر + خصم الحصري: ناخذ الأكبر. nb = عدد الفروع (للسوبر) */
+    fun priceFor(itemId: String, days: Int, excl: Boolean, nb: Int = 1): Price? {
         val cr = creditsConfig.value
         val it = cr.items[itemId]?.takeIf { it.active } ?: return null
         val d = it.daysFor(days.coerceIn(1, 90))
-        val full = it.baseCost(d)
-        val disc = if (it.effect == "publish" && excl && cr.rewardOn) cr.rewardPercent else 0
-        val cost = if (disc > 0) Math.ceil(full * (100 - disc) / 100.0).toLong() else full
-        return Price(it, d, full, cost, disc)
+        val full = it.baseCost(d) * nb.coerceAtLeast(1)
+        val xd = if (it.effect == "publish" && excl && cr.rewardOn) cr.rewardPercent else 0
+        val now = System.currentTimeMillis()
+        val joined = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.metadata?.creationTimestamp ?: 0L
+        val pr = it.promo?.takeIf { p -> p.activeFor(now, joined) }
+        if (pr != null && pr.pct >= xd) return Price(it, d, full, Math.ceil(full * (100 - pr.pct) / 100.0).toLong(), 0, pr.pct, pr.reason, pr.endsAt)
+        val cost = if (xd > 0) Math.ceil(full * (100 - xd) / 100.0).toLong() else full
+        return Price(it, d, full, cost, xd)
     }
-    private fun spendNote(note: String, disc: Int) = if (disc > 0) "$note (💎 ${if (disc >= 100) "مجاني" else "خصم $disc%"})" else note
+    private fun spendNote(note: String, disc: Int, promo: Int = 0) = if (promo > 0) "$note (🏷️ خصم $promo%)" else if (disc > 0) "$note (💎 ${if (disc >= 100) "مجاني" else "خصم $disc%"})" else note
 
     private fun publishDaysOf(o: RestaurantOffer): Int {
         if (o.dailyPercents.isNotEmpty()) return o.dailyPercents.size
@@ -805,7 +811,8 @@ class MerchantViewModel(
             repository.spendOnOffer(
                 uid = uid, balance = balance(), charge = !isAdmin.value, offerId = o.id, item = pr.item, days = pr.days,
                 cost = if (isAdmin.value) pr.full else pr.cost, disc = if (isAdmin.value) 0 else pr.disc, startMillis = start,
-                note = spendNote("📢 نشر: ${o.offerTitle}", if (isAdmin.value) 0 else pr.disc),
+                note = spendNote("📢 نشر: ${o.offerTitle}", if (isAdmin.value) 0 else pr.disc, if (isAdmin.value) 0 else pr.promo),
+                promo = if (isAdmin.value) 0 else pr.promo,
                 offerUpdate = mapOf(
                     "draft" to false, "exclusive" to excl,
                     "startsAt" to com.google.firebase.Timestamp(java.util.Date(start)),
@@ -821,16 +828,26 @@ class MerchantViewModel(
     fun openBoost(o: RestaurantOffer) { boostTarget.value = o }
     fun closeBoost() { boostTarget.value = null }
 
-    /** كم إبراز نشط في نفس الحي (للحد الأقصى) */
+    /** كم سوبر نشط في نفس الحي (للحد الأقصى) — السوبر لكل فرع ينحسب في حي فرعه */
     fun spotlightsInDistrict(district: String): Int {
         val now = System.currentTimeMillis(); val key = normalizeDistrict(district)
-        val ids = activeBoostsAll.value.filter { it.effect == "spotlight" && it.startsAt <= now && now < it.endsAt }.map { it.offerId }.toSet()
-        return (approvedOffers.value + merchantOffers.value).distinctBy { it.id }.count { it.id in ids && normalizeDistrict(it.district) == key }
+        val offers = (approvedOffers.value + merchantOffers.value).distinctBy { it.id }
+        return activeBoostsAll.value.filter { it.effect == "spotlight" && it.startsAt <= now && now < it.endsAt }.sumOf { b ->
+            val o = offers.firstOrNull { it.id == b.offerId } ?: return@sumOf 0
+            if (b.branchIds.isNotEmpty()) o.branches.count { it.id in b.branchIds && normalizeDistrict(it.district) == key }
+            else if (normalizeDistrict(o.district) == key) 1 else 0
+        }
+    }
+    /** فروع العرض اللي عليها سوبر الحين (null = كل الفروع) */
+    fun spotBranchesOf(offerId: String): Set<String>? {
+        val now = System.currentTimeMillis()
+        val bs = activeBoostsAll.value.filter { it.offerId == offerId && it.effect == "spotlight" && it.startsAt <= now && now < it.endsAt }
+        return if (bs.any { it.branchIds.isEmpty() }) null else bs.flatMap { it.branchIds }.toSet()
     }
 
-    fun buyBoost(o: RestaurantOffer, itemId: String, days: Int) {
+    fun buyBoost(o: RestaurantOffer, itemId: String, days: Int, branchIds: List<String> = emptyList()) {
         val uid = currentUser.value?.uid ?: return
-        val pr = priceFor(itemId, days, o.exclusive) ?: return
+        val pr = priceFor(itemId, days, o.exclusive, branchIds.size.coerceAtLeast(1)) ?: return
         if (!isAdmin.value && balance() < pr.cost) { toast("رصيدك ما يكفي (تحتاج ${pr.cost} نقطة)."); return }
         val now = System.currentTimeMillis()
         val pubUntil = activeBoostsAll.value.filter { it.offerId == o.id && it.effect == "publish" }.maxOfOrNull { it.endsAt } ?: 0L
@@ -844,7 +861,8 @@ class MerchantViewModel(
             repository.spendOnOffer(
                 uid = uid, balance = balance(), charge = !isAdmin.value, offerId = o.id, item = pr.item, days = pr.days,
                 cost = if (isAdmin.value) pr.full else pr.cost, disc = if (isAdmin.value) 0 else pr.disc, startMillis = start,
-                note = spendNote("${pr.item.name} — ${o.offerTitle}", if (isAdmin.value) 0 else pr.disc)
+                note = spendNote("${pr.item.name} — ${o.offerTitle}", if (isAdmin.value) 0 else pr.disc, if (isAdmin.value) 0 else pr.promo),
+                promo = if (isAdmin.value) 0 else pr.promo, branchIds = branchIds
             )
             toast(if (pr.cost == 0L || isAdmin.value) "تم ✅" else "تم ✅ خصمنا ${pr.cost} نقطة")
         }
@@ -1319,8 +1337,10 @@ class MerchantViewModel(
                 if (!paidUp) return@mapNotNull null
                 val active = bs.filter { it.startsAt <= now && now < it.endsAt }
                 val spot = active.any { it.effect == "spotlight" }
+                val spotAll = active.any { it.effect == "spotlight" && it.branchIds.isEmpty() }
+                val spotBr = if (spotAll) emptyList() else active.filter { it.effect == "spotlight" }.flatMap { it.branchIds }.distinct()
                 val featured = spot || active.any { it.effect == "feature" }
-                if ((featured && !o.isFeatured) || spot) o.copy(isFeatured = o.isFeatured || featured, spotlight = spot) else o
+                if ((featured && !o.isFeatured) || spot) o.copy(isFeatured = o.isFeatured || featured, spotlight = spot, spotBranchIds = spotBr) else o
             }
             withDistance(visible, loc)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -1849,7 +1869,8 @@ class MerchantViewModel(
                     repository.spendOnOffer(
                         uid = user.uid, balance = balance(), charge = !isAdmin.value, offerId = "", item = pr.item, days = pr.days,
                         cost = if (isAdmin.value) pr.full else pr.cost, disc = if (isAdmin.value) 0 else pr.disc, startMillis = start,
-                        note = spendNote("📢 نشر: ${fresh.offerTitle}", pr.disc), offer = fresh
+                        note = spendNote("📢 نشر: ${fresh.offerTitle}", pr.disc, pr.promo), offer = fresh,
+                        promo = if (isAdmin.value) 0 else pr.promo
                     )
                 } else if (isUpdate) {
                     // تعديل التاجر غير الموثوق يرجّع العرض للمراجعة

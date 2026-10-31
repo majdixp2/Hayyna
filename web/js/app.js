@@ -144,6 +144,8 @@ const isFresh = (o, now = Date.now()) => { const t = X.ms(o.startsAt) || X.ms(o.
 const isFeat = (o) => !!o.isFeatured || activeEffects(state.boosts, o.id).feature;
 const isListTop = (o) => activeEffects(state.boosts, o.id).listTop;
 const isSpot = (o) => activeEffects(state.boosts, o.id).spotlight;
+// 🚀 السوبر على هالفرع؟ (السوبر صار لكل فرع؛ القديم يشمل كل الفروع)
+const isSpotAt = (o, bid) => { const e = activeEffects(state.boosts, o.id); return e.spotlight && (e.spotAll || !bid || e.spotBranches.has(bid)); };
 const spotPill = (o) => isSpot(o) ? `<span class="pill spot">🚀 عرض سوبر</span>` : "";
 const exclBadge = (o, cls = "") => { const ex = exclusiveOf(state.config); return o.exclusive && ex.enabled ? `<span class="xbadge ${cls}" style="background:${esc(ex.color)}">${esc(ex.icon)} ${esc(ex.label)}</span>` : ""; };
 function filtered({ ignoreQuery = false } = {}) {
@@ -218,16 +220,17 @@ function renderScope(count) {
 
 // ---------------- الخريطة ----------------
 let map = null, fitted = false;
-function markerHtml(o, extra, on) {
+function markerHtml(o, extra, on, bid) {
+  const sp = bid === undefined ? isSpot(o) : isSpotAt(o, bid);
   const bd = badge(o);
   const logo = o.logoUrl ? `<img class="lg" src="${esc(cld(o.logoUrl, 80))}" alt="">` : "";
   const ex = exclusiveOf(state.config);
-  return `<div class="mk${on ? " on" : ""}${o.source === "ad" ? " isad" : ""}${isFeat(o) ? " feat" : ""}${isSpot(o) ? " spot" : ""}${o.postType === "new" ? " isnew" : ""}">${isSpot(o) && !on ? `<span class="mk-name">🚀 ${esc(o.restaurantName)}</span>` : ""}${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
+  return `<div class="mk${on ? " on" : ""}${o.source === "ad" ? " isad" : ""}${isFeat(o) ? " feat" : ""}${sp ? " spot" : ""}${o.postType === "new" ? " isnew" : ""}">${sp && !on ? `<span class="mk-name">🚀 ${esc(o.restaurantName)}</span>` : ""}${o.exclusive && ex.enabled ? `<span class="xdot" style="background:${esc(ex.color)}">${esc(ex.icon)}</span>` : ""}<div class="ring"><img src="${esc(thumb(o, 140))}" alt="" loading="lazy"></div>${logo}`
     + (extra > 0 ? `<span class="more">+${extra}</span>` : "")
     + (bd ? `<span class="pct${bd.soon ? " soon" : bd.isNew ? " new" : ""}">${esc(bd.t)}</span>` : "") + `</div>`;
 }
 // ترتيب الأولوية على الخريطة: 🚀 سوبر ← ✨ مميز ← عادي ← 📷 عروض الإعلانات
-const rankOf = (o) => isSpot(o) ? 3 : isFeat(o) ? 2 : o.source === "ad" ? 0 : 1;
+const rankOf = (o, bid) => (bid === undefined ? isSpot(o) : isSpotAt(o, bid)) ? 3 : isFeat(o) ? 2 : o.source === "ad" ? 0 : 1;
 function renderMap(list) {
   if (!map) return;
   const groups = new Map();
@@ -239,9 +242,9 @@ function renderMap(list) {
   }));
   const items = [];
   groups.forEach(({ b, items: arr }) => {
-    arr.sort((x, y) => rankOf(y) - rankOf(x) || effectivePercent(y) - effectivePercent(x));
+    arr.sort((x, y) => rankOf(y, b.id) - rankOf(x, b.id) || effectivePercent(y) - effectivePercent(x));
     const top = arr[0], on = state.selected === top.id;
-    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on), z: on ? 1000 : [5, 10, 500, 700][rankOf(top)],
+    items.push({ lat: b.latitude, lng: b.longitude, html: markerHtml(top, arr.length - 1, on, b.id), z: on ? 1000 : [5, 10, 500, 700][rankOf(top, b.id)],
       onClick: () => { state.selected = top.id; state.branchPick = { sid: top.merchantId, id: b.id }; renderAll(); scrollCardIntoView(top.id); if (arr.length > 1) openGroup(arr); } });
   });
   map.setMarkers(items);
@@ -308,8 +311,8 @@ function maybeSpotlight(list) {
   // قريب منك: بالموقع (3 كم)، وإلا بالحي اللي يتصفحه أو حي حسابه
   const ref = state.me || state.browse;
   const dist = state.profile?.district || "";
-  const near = list.filter(({ o, d }) => isSpot(o) && (ref ? branchesOf(o).some((b) => km(ref, { lat: b.latitude, lng: b.longitude }) <= 3) || (d != null && d <= 3)
-    : dist && branchesOf(o).some((b) => b.district === dist)));
+  const near = list.filter(({ o }) => isSpot(o) && (ref ? branchesOf(o).some((b) => isSpotAt(o, b.id) && km(ref, { lat: b.latitude, lng: b.longitude }) <= 3)
+    : dist && branchesOf(o).some((b) => isSpotAt(o, b.id) && b.district === dist)));
   if (!near.length) return;
   spotShown = true; // ما نعيد الاختيار في نفس الجلسة
   const { o, d } = near[Math.floor(Math.random() * near.length)];

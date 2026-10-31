@@ -73,6 +73,9 @@ data class RestaurantOffer(
     // 🚀 مُبرز (يُحسب من الخدمات المدفوعة النشطة، ما يُحفظ في العرض)
     @get:com.google.firebase.firestore.Exclude
     val spotlight: Boolean = false,
+    // 🚀 الفروع اللي عليها سوبر (فاضي مع spotlight = كل الفروع — سوبر قديم)
+    @get:com.google.firebase.firestore.Exclude
+    val spotBranchIds: List<String> = emptyList(),
     // وسوم الأصناف للبحث: شاورما، برجر، بروست
     val tags: List<String> = emptyList(),
     // التوصيل (نسخة من ملف المتجر)

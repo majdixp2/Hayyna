@@ -43,12 +43,16 @@ const ms = (t) => (t && t.toMillis ? t.toMillis() : (typeof t === "number" ? t :
 
 /** خدمات العرض النشطة الحين من قائمة boosts. */
 export function activeEffects(boosts, offerId, now = Date.now()) {
-  const out = { feature: false, listTop: false, spotlight: false, publishUntil: 0 };
+  // spotBranches: الفروع اللي عليها سوبر (null = كل الفروع — سوبر قديم قبل «لكل فرع»)
+  const out = { feature: false, listTop: false, spotlight: false, publishUntil: 0, spotBranches: new Set(), spotAll: false };
   for (const b of boosts) {
     if (b.offerId !== offerId) continue;
     const s = ms(b.startsAt), e = ms(b.endsAt);
     if (b.effect === "publish") out.publishUntil = Math.max(out.publishUntil, e);
-    else if (s <= now && now < e) out[b.effect] = true;
+    else if (s <= now && now < e) {
+      out[b.effect] = true;
+      if (b.effect === "spotlight") { if (b.branchIds?.length) b.branchIds.forEach((id) => out.spotBranches.add(id)); else out.spotAll = true; }
+    }
   }
   if (out.spotlight) out.feature = true; // الإبراز يشمل التمييز
   return out;
@@ -56,10 +60,25 @@ export function activeEffects(boosts, offerId, now = Date.now()) {
 
 /** كم إبراز نشط في نفس الحي (للحد الأقصى) */
 export function spotlightsInDistrict(boosts, offers, district, now = Date.now()) {
-  const key = String(district || "").replace(/^حي\s+/, "").trim();
-  const ids = new Set(boosts.filter((b) => b.effect === "spotlight" && ms(b.startsAt) <= now && now < ms(b.endsAt)).map((b) => b.offerId));
-  return offers.filter((o) => ids.has(o.id) && String(o.district || "").replace(/^حي\s+/, "").trim() === key).length;
+  const norm = (x) => String(x || "").replace(/^حي\s+/, "").trim(), key = norm(district);
+  let n = 0;
+  for (const b of boosts) {
+    if (b.effect !== "spotlight" || !(ms(b.startsAt) <= now && now < ms(b.endsAt))) continue;
+    const o = offers.find((x) => x.id === b.offerId); if (!o) continue;
+    // السوبر لكل فرع: كل فرع ينحسب في حيّه
+    if (b.branchIds?.length) n += (o.branches || []).filter((br) => b.branchIds.includes(br.id) && norm(br.district) === key).length;
+    else if (norm(o.district) === key) n++;
+  }
+  return n;
 }
+/** 🏷️ عرض لكوفر شغّال على خدمة؟ {pct, reason, endsAt} أو null */
+export function promoOf(it, now = Date.now(), joinedAt = 0) {
+  const p = it?.promo; if (!p || !(+p.pct >= 1)) return null;
+  if (!(ms(p.startsAt) <= now && now < ms(p.endsAt))) return null;
+  if (+p.newDays > 0 && !(joinedAt && now - joinedAt <= p.newDays * 864e5)) return null; // للتجار الجدد بس
+  return { pct: Math.min(100, Math.round(+p.pct)), reason: p.reason || "", endsAt: ms(p.endsAt) };
+}
+export const leftText = (end, now = Date.now()) => { const d = Math.ceil((end - now) / 864e5); return d <= 1 ? (end - now < 864e5 && new Date(end).getDate() === new Date(now).getDate() ? "آخر يوم" : "ينتهي بكرة") : `ينتهي خلال ${d} أيام`; };
 
 /** عرض منشور قبل تشغيل الرصيد: مجاني لين نهاية فترة السماح (0 = مو منها). */
 export function graceEnd(o, credits) {
