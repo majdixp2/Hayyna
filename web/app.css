@@ -846,3 +846,9 @@ body.staff-mode .bottomnav, body.staff-mode .top, body.staff-mode .install { dis
 .osec.ended > summary .cnt { background: #6B7280; }
 .osec .mlist { margin-top: 8px; }
 [data-theme="dark"] .osec > summary { color: #9DB4FF; }
+
+/* ⏸️🌙 المحل مغلق / موقف الطلبات */
+.closed-bar{background:#FFF4DA;color:#8A5A00;border:1.5px solid #F4B400;border-radius:14px;padding:10px 12px;font-weight:800;margin:8px 0;text-align:center}
+.pause-row{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#E7F6EC;color:#15803D;border-radius:14px;padding:8px 10px;margin:6px 0 10px;font-weight:700}
+.pause-row.on{background:#FDE8E6;color:#B42318}
+.pause-row .btn.small{width:auto;padding:6px 12px;margin:0;min-height:0}

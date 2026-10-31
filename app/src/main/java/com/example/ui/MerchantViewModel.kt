@@ -1073,6 +1073,41 @@ class MerchantViewModel(
         val uid = currentUser.value?.uid ?: return
         viewModelScope.launch { runCatching { repository.deleteQuickDeal(uid) }.onSuccess { toast("وقّفنا الخصم ⏹️"); done() }.onFailure { toast("تعذّر الإيقاف") } }
     }
+    // ⏸️🌙 هل المحل يستقبل طلبات الحين؟ (إيقاف يدوي أو خارج الدوام)
+    val pausedStores = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    suspend fun refreshStorePause(sid: String): Boolean {
+        val p = repository.storePausedNow(sid)
+        pausedStores.value = pausedStores.value + (sid to p)
+        return p
+    }
+    fun refreshStorePauseAsync(sid: String) { viewModelScope.launch { refreshStorePause(sid) } }
+    /** branchId = null: المحل مغلق لو كل فروعه مغلقة. الفرع بدون دوام = مفتوح. */
+    fun orderBlock(store: com.example.data.model.StoreProfile, branchId: String?, paused: Boolean = pausedStores.value[store.uid] == true): String? {
+        if (paused) return "⏸️ المحل موقف استقبال الطلبات مؤقتاً — جرّب بعد شوي"
+        val bs = store.branches
+        if (bs.isEmpty()) return null
+        val many = branchId != null && bs.size > 1
+        val pick = if (branchId != null) listOf(bs.firstOrNull { it.id == branchId } ?: bs.first()) else bs
+        if (pick.any { OfferTime.isOpenNow(it) != false }) return null
+        return "🌙 ${if (many) "هذا الفرع" else "المحل"} مغلق الحين — يفتح ${OfferTime.formatMinute(pick.first().openMinute)}" + if (many) " (جرّب فرع ثاني)" else ""
+    }
+    /** حالة الإيقاف لمتجري (صاحب المحل أو موظف الطلبات) */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val myStorePaused: StateFlow<Boolean> = storeIdFlow { it.canOrders }
+        .flatMapLatest { sid -> if (sid == null) flowOf(false) else repository.storePaused(sid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    fun toggleStorePause() {
+        val u = currentUser.value ?: return
+        val st = staffMe.value
+        val staff = com.example.data.model.StoreStaff.isStaffEmail(u.email)
+        val sid = if (staff) st?.storeId ?: return else u.uid
+        val to = !myStorePaused.value
+        viewModelScope.launch {
+            runCatching { repository.setStorePaused(sid, to, if (staff) st?.name?.ifBlank { "موظف ${st.n}" } ?: "موظف" else "صاحب المحل") }
+                .onSuccess { toast(if (to) "⏸️ وقّفنا الطلبات — الزبائن يشوفون إن المحل موقف مؤقتاً" else "▶️ رجع استقبال الطلبات") }
+                .onFailure { toast("تعذّر التغيير: ${it.message ?: ""}") }
+        }
+    }
     /** طلب مباشر لعرض (المتجر ما عنده منيو مفتوح) */
     val directCheckout = MutableStateFlow<com.example.data.model.StoreProfile?>(null)
     /** 🛒 اطلب من شاشة العرض: لو المتجر عنده منيو مفتوح نضيفه للسلة ونفتح المتجر، وإلا نطلبه مباشرة */
@@ -1081,6 +1116,7 @@ class MerchantViewModel(
         viewModelScope.launch {
             val st = approvedStores.value.firstOrNull { it.uid == o.merchantId } ?: runCatching { repository.getStore(o.merchantId) }.getOrNull()
             if (st == null) { toast("صفحة المتجر مو جاهزة"); return@launch }
+            orderBlock(st, null, refreshStorePause(st.uid))?.let { toast(it); return@launch }
             val items = loadStoreCatalog(st.uid)
             val d = com.example.data.model.OfferDeal.from(o.deal) ?: return@launch
             when (d.type) {
@@ -1142,6 +1178,8 @@ class MerchantViewModel(
         if (digits.isBlank()) { toast("المحل ما عنده رقم واتساب."); return }
         val url = "https://wa.me/$digits?text=" + java.net.URLEncoder.encode(o.text(), "UTF-8").replace("+", "%20")
         viewModelScope.launch {
+            // ⏸️ نتأكد من السيرفر إن المحل ما أوقف الطلبات، وإن الفرع مفتوح
+            orderBlock(store, branch?.id, refreshStorePause(store.uid))?.let { toast(it); return@launch }
             // ❌ نتأكد من السيرفر إن العروض اللي في السلة ما نفدت (يمكن الموظف علّمها الحين)
             val sold = lines.filter { it.id.startsWith("deal_") }.filter { repository.offerSoldOutNow(it.id.removePrefix("deal_")) }
             if (sold.isNotEmpty()) {
@@ -1149,7 +1187,8 @@ class MerchantViewModel(
                 toast("❌ «${sold.first().name}» نفد اليوم — شلناه من سلتك")
                 return@launch
             }
-            currentUser.value?.uid?.let { uid -> runCatching { repository.saveOrder(o, uid, branch?.id.orEmpty()) }.onFailure { Log.w(TAG, "order: ${it.message}") } }
+            val saveErr = currentUser.value?.uid?.let { uid -> runCatching { repository.saveOrder(o, uid, branch?.id.orEmpty()) }.onFailure { Log.w(TAG, "order: ${it.message}") }.exceptionOrNull() }
+            if (saveErr != null && refreshStorePause(store.uid)) { toast(orderBlock(store, null, true) ?: ""); return@launch }
             carts.value = carts.value - store.uid
             toast("انرسل طلبك #${o.code} ✅ كمّل في واتساب")
             onUrl(url)
