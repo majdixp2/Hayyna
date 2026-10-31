@@ -99,7 +99,7 @@ const D = {
   "💬 تواصل معنا": "💬 Contact us", "⚙️ الإعدادات": "⚙️ Settings", "الإعدادات": "Settings", "سياسة الخصوصية": "Privacy policy",
   "تسجيل الخروج": "Sign out", "سجّلت خروج": "Signed out", "من أهل الحي 🏡": "Neighbor 🏡", "🏡 من أهل الحي": "🏡 Neighbor", "من أهل الحي": "Neighbor",
   "صاحب محل 🏪": "Shop owner 🏪", "🏪 صاحب محل": "🏪 Shop owner", "من أهل": "Neighbor of", "تعديل البيانات": "Edit profile",
-  "❤️ مفضلتي": "❤️ My favorites", "مفضلتي ❤️": "My favorites ❤️", "عرض الكل ‹": "See all ›", "📍 عروض حولك": "📍 Offers near you",
+  "❤️ مفضلتي": "❤️ My favorites", "مفضلتي ❤️": "My favorites ❤️", "عرض الكل ‹": "See all ›",
   "حدّد موقعك": "Set location", "مفضلتك فاضية": "Your favorites are empty",
   "اضغط القلب على أي عرض يعجبك، ويظهر هنا عشان ترجع له بسرعة": "Tap the heart on any offer you like and it'll show up here",
   "خلال 24 ساعة — لا يفوتك": "within 24 hours — don't miss it",

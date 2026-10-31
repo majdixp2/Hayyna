@@ -147,6 +147,7 @@ dependencies {
   implementation(libs.firebase.appcheck.playintegrity)
   implementation(libs.kotlinx.coroutines.android)
   implementation("com.google.zxing:core:3.5.3") // QR دخول الموظفين
+  implementation("androidx.exifinterface:exifinterface:1.3.7") // اتجاه الصور (يدعم الأجهزة القديمة)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)

@@ -6,6 +6,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.NoCredentialException
 import com.example.R
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -43,6 +44,10 @@ object GoogleSignInHelper {
         } catch (e: GetCredentialCancellationException) {
             Log.d(TAG, "تم إلغاء تسجيل الدخول بواسطة المستخدم: ${e.message}")
             Result.success(FirebaseAuth.getInstance().currentUser)
+        } catch (e: NoCredentialException) {
+            // ما فيه حساب Google على الجهاز
+            Log.w(TAG, "no credential: ${e.message}")
+            Result.failure(Exception("ما فيه حساب Google على جوالك. أضف حساب من إعدادات الجوال وجرّب مرة ثانية."))
         } catch (e: Exception) {
             Log.e(TAG, "فشل تسجيل الدخول: ${e.message}", e)
             Result.failure(e)
