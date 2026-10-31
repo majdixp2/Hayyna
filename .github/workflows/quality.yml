@@ -49,8 +49,10 @@ jobs:
         working-directory: tests/web
         run: npm install --no-audit --no-fund > install.log 2>&1 && npx playwright install --with-deps chromium > pw.log 2>&1
       - name: ESLint (JavaScript errors)
-        working-directory: tests/web
-        run: npx eslint -c eslint.config.mjs "../../web/**/*.js" -f json -o eslint.json || true; node report-eslint.mjs
+        run: |
+          cp tests/web/eslint.config.mjs web/eslint.config.mjs && ln -sfn ../tests/web/node_modules web/node_modules
+          (cd web && ./node_modules/.bin/eslint . -f json -o ../tests/web/eslint.json) || true
+          cd tests/web && node report-eslint.mjs
       - name: Open live pages and record errors
         working-directory: tests/web
         run: node smoke.mjs
