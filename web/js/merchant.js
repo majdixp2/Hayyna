@@ -64,6 +64,7 @@ function draw() {
     ${hasStore ? `<button class="btn call" id="viewStore">👀 شوف صفحة متجري مثل ما يشوفها الزبون</button>` : ""}
     ${hasStore ? catalogPanelHtml(p.cuisineType) : ""}
     ${hasStore ? staffCardHtml() : ""}
+    ${dupPhones(m.profile?.branches).length ? `<div class="banner red">📞 عندك فروع بنفس الرقم — طلبات كل فرع لازم تروح لرقمه. افتح «صفحة متجري» وعدّل أرقام الفروع</div>` : ""}
     ${m.offers.some((o) => o.adminNote) ? `<div class="banner red">↩️ عندك ${m.offers.filter((o) => o.adminNote).length === 1 ? "عرض يحتاج تعديل" : m.offers.filter((o) => o.adminNote).length + " عروض تحتاج تعديل"} من فريق لكوفر — شوف الملاحظة تحت العرض واضغط ✎</div>` : ""}
     <div class="section-title">عروضي (${m.offers.length})</div>
     ${m.offers.length ? (() => {
@@ -363,16 +364,16 @@ export function openStoreForm(claim = null) {
     $("sCover").onchange = async (e) => { const fl = e.target.files[0]; e.target.value = ""; if (!fl) return; const c = await cropImage(fl, { aspect: 2, title: "قص صورة الواجهة" }); if (c) { f.coverFile = c; dirty = true; render(); } };
     $("sMenu")?.addEventListener("change", (e) => { [...e.target.files].slice(0, 10 - f.menu.length).forEach((file) => f.menu.push({ file })); dirty = true; render(); });
     body.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { f.menu.splice(+b.dataset.rm.replace("menu", ""), 1); dirty = true; render(); });
-    body.querySelectorAll("[data-be]").forEach((b) => b.onclick = () => branchEditor(f.branches[+b.dataset.be], (nb) => { f.branches[+b.dataset.be] = nb; dirty = true; render(); }));
+    body.querySelectorAll("[data-be]").forEach((b) => b.onclick = () => branchEditor(f.branches[+b.dataset.be], (nb) => { f.branches[+b.dataset.be] = nb; dirty = true; render(); }, false, f.branches));
     body.querySelectorAll("[data-bd]").forEach((b) => b.onclick = () => { f.branches.splice(+b.dataset.bd, 1); dirty = true; render(); });
-    $("addBranch").onclick = () => branchEditor(null, (nb) => { f.branches.push(nb); dirty = true; render(); });
+    $("addBranch").onclick = () => branchEditor(null, (nb) => { f.branches.push(nb); dirty = true; render(); }, false, f.branches);
   };
   openPage("صفحة متجري", "", `<div id="sErr" class="err"></div><button class="btn dir big" id="sSave">حفظ صفحة المتجر ✓</button>`,
     () => (dirty && !saving ? confirm("في تعديلات ما انحفظت. تطلع بدون حفظ؟") : true));
   render();
   if (claim) {
     const addClaim = () => branchEditor({ id: "b" + Date.now().toString(36), name: f.branches.length ? (claim.name || "") : "الفرع الرئيسي", latitude: claim.lat, longitude: claim.lng,
-      district: "", region: "", phone: state.profile?.phone || "", openMinute: 720, closeMinute: 0, landmark: "" }, (nb) => { f.branches.push(nb); dirty = true; render(); }, true);
+      district: "", region: "", phone: f.branches.length ? "" : (state.profile?.phone || ""), openMinute: 720, closeMinute: 0, landmark: "" }, (nb) => { f.branches.push(nb); dirty = true; render(); }, true, f.branches);
     if (!f.branches.length) addClaim();
     else {
       // الحساب عنده متجر من قبل: نوضّح إن المحل بينضاف كفرع (مو متجر جديد) بدل ما يختلط مع موقع المتجر الحالي
@@ -390,6 +391,8 @@ export function openStoreForm(claim = null) {
     if (!f.name.trim()) return err("اكتب اسم المتجر.");
     if (!f.category) return err("اختر تصنيف المتجر.");
     if (!f.branches.length) return err("حدد موقع محلك (فرع واحد على الأقل).");
+    const dp = dupPhones(f.branches);
+    if (dp.length) return err(`فرع ${brLabel(dp[0][0])} وفرع ${brLabel(dp[0][1])} بنفس الرقم — كل فرع لازم يكون له رقمه.`);
     const vatNo = f.vatReg ? String(f.vatNumber).replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c)).replace(/\D/g, "") : "";
     if (f.vatReg && !validVatNumber(vatNo)) return err("الرقم الضريبي لازم 15 رقم يبدأ وينتهي بـ 3.");
     saving = true; $("sSave").disabled = true; $("sSave").textContent = "جاري الحفظ…"; err("");
@@ -454,7 +457,10 @@ async function syncOffers(profile, direct) {
   }
 }
 
-function branchEditor(branch, onDone, asNew = false) {
+// 📞 أرقام مكررة بين فروع نفس المحل
+export const dupPhones = (branches) => { const seen = new Map(), dup = []; (branches || []).forEach((b) => { const p = X.normalizeSaudiPhone(b.phone || "") || ""; if (!p) return; if (seen.has(p)) dup.push([seen.get(p), b]); else seen.set(p, b); }); return dup; };
+const brLabel = (b) => b.name || districtLabel(b.district) || "الفرع";
+function branchEditor(branch, onDone, asNew = false, others = []) {
   const b = branch ? { ...branch } : { id: "b" + Date.now().toString(36), name: "", latitude: 0, longitude: 0, district: "", region: "", phone: "", openMinute: 720, closeMinute: 0, landmark: "" };
   const open24 = b.openMinute >= 0 && b.openMinute === b.closeMinute;
   showSheet(`<div class="pad form">
@@ -488,6 +494,8 @@ function branchEditor(branch, onDone, asNew = false) {
     if (!pos) return err("حدد موقع المحل على الخريطة.");
     if (!district) return err("اكتب اسم الحي.");
     if (!phone) return err("اكتب رقم جوال صحيح مثل 05xxxxxxxx.");
+    const same = others.find((x) => x.id !== b.id && X.normalizeSaudiPhone(x.phone || "") === phone);
+    if (same) return err(`الرقم هذا مسجّل لفرع ${brLabel(same)}، أدخل رقم ثاني.`);
     const is24 = $("b24").checked;
     onDone({ ...b, name: $("bName").value.trim(), latitude: pos.lat, longitude: pos.lng, district, region: $("bRegion").value.trim(),
       landmark: $("bLandmark").value.trim().slice(0, 80), phone, openMinute: is24 ? 0 : +$("bOpen").value, closeMinute: is24 ? 0 : +$("bClose").value });

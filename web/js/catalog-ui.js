@@ -1053,7 +1053,13 @@ function openCheckout(sid) {
     .then((r) => { slotN.clear(); r.docs.forEach((d) => slotN.set(d.data().slotKey, d.data().n | 0)); if ($("coSend")) { keep?.(); draw(); } }).catch(() => {});
   if (F("preorder")) loadSlots();
   let keep = null;
-  const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: (branches.find((b) => X.openNow(b) !== false) || branches[0])?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null, when: "now", day: 0, slot: 0 };
+  // 📍 الفرع: اللي اختاره الزبون من الخريطة/العرض، وإلا أقرب فرع مفتوح، وإلا أول فرع
+  const ref = state.me || state.browse;
+  const byDist = [...branches].sort((a, b) => ref ? X.km(ref, { lat: a.latitude, lng: a.longitude }) - X.km(ref, { lat: b.latitude, lng: b.longitude }) : 0);
+  const picked = state.branchPick?.sid === sid ? branches.find((b) => b.id === state.branchPick.id) : null;
+  const firstBr = picked || byDist.find((b) => X.openNow(b) !== false) || byDist[0];
+  let pickOpen = false;
+  const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: firstBr?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null, when: "now", day: 0, slot: 0 };
   const draw = () => {
     if (!Object.values(cart).length) { openStore(sid, false); return; }
     const T = cartTotals(Object.values(cart), storeCache[sid].D), lines = T.lines, sub = T.sub;
@@ -1075,7 +1081,12 @@ function openCheckout(sid) {
     const times = later && modeOkLater ? X.preTimes(pc, br0, f.mode, f.day) : [];
     if (!times.some((x) => x.t === f.slot && !isFull(x))) f.slot = 0;
     const blocked = paused || (closedNow && !later);
+    const brName = (b) => b?.name || X.districtLabel(b?.district) || "الفرع";
+    const brMeta = (b) => [state.me ? X.distText(X.km(state.me, { lat: b.latitude, lng: b.longitude })) + " منك" : "", X.openNow(b) === true ? "مفتوح" : X.openNow(b) === false ? "مغلق" : ""].filter(Boolean).join(" • ");
     showSheet(`<div class="pad form checkout"><div class="section-title">🧾 طلبك من ${esc(s.name)}</div>
+      ${br0 ? `<div class="co-branch"><div class="cb-main"><small>📍 طلبك من</small><b>فرع ${esc(brName(br0))}</b>${brMeta(br0) ? `<small>${esc(brMeta(br0))}</small>` : ""}</div>
+        ${branches.length > 1 ? `<button class="chip" id="coBrChange">${pickOpen ? "إغلاق" : "تغيير"}</button>` : ""}</div>
+        ${pickOpen ? `<div class="co-brlist">${byDist.map((b) => `<button class="co-bropt${b.id === f.branch ? " on" : ""}" data-br="${esc(b.id)}"><b>فرع ${esc(brName(b))}</b><small>${esc(brMeta(b))}</small></button>`).join("")}</div>` : ""}` : ""}
       ${lines.map((l) => `<div class="co-line"><span>${esc(l.name)}${l.was > l.price ? ` <s>${fmt(l.was)}</s>` : ""}${l.bogo ? `<small class="deal-pct bogo">${esc(l.bogo)}${l.off > 0 ? ` −${fmt(l.off)}` : " (أضف واحد ثاني)"}</small>` : ""}</span><div class="qty"><button data-dec="${esc(l.id)}">−</button><b>${l.qty}</b><button data-inc="${esc(l.id)}">＋</button></div><b>${fmt(l.qty * l.price - l.off)}</b></div>`).join("")}
       ${T.saved > 0 ? `<div class="saved-line">🔥 وفّرت <b>${fmt(T.saved)} ر.س</b> بالعروض</div>` : ""}
       <label class="label">طريقة الاستلام</label>
@@ -1099,7 +1110,7 @@ function openCheckout(sid) {
       ${!F("payChoice") ? "" : `<label class="label">💳 الدفع عند الاستلام</label>`}
       ${!F("payChoice") ? "" : pays.length > 1 ? `<div class="chips">${pays.map((p) => `<button class="chip${f.pay === p ? " on" : ""}" data-pay="${p}">${PAY[p].icon} ${PAY[p].label}</button>`).join("")}</div>`
         : `<div class="hint-box">${PAY[pays[0]].icon} ${PAY[pays[0]].label} عند الاستلام (المحل يقبل هذي الطريقة بس)</div>`}
-      ${branches.length > 1 ? `<label class="label">الفرع</label><select id="coBr" class="input">${branches.map((b) => `<option value="${esc(b.id)}" ${f.branch === b.id ? "selected" : ""}>${esc(b.name || X.districtLabel(b.district) || "فرع")}</option>`).join("")}</select>` : ""}
+
       ${f.mode === "delivery" ? `<button class="btn call" id="coLoc">📍 ${f.loc ? "موقعي محدد ✓ (حدّثه)" : "حدد موقعي للتوصيل"}</button>` : ""}
       <div class="row2"><div><label class="label">اسمك</label><input id="coName" class="input" maxlength="60" value="${esc(f.name)}"></div>
         <div><label class="label">جوالك</label><input id="coPhone" class="input" inputmode="tel" maxlength="14" value="${esc(f.phone)}" placeholder="05xxxxxxxx"></div></div>
@@ -1113,9 +1124,9 @@ function openCheckout(sid) {
       ${!state.user ? `<small class="hint">💡 سجّل دخولك عشان تنحفظ طلباتك وتقدر تعيدها بضغطة.</small>` : ""}
       ${blocked ? `<div class="closed-bar">${esc(blk)}</div>` : closedNow ? `<div class="hint-box">🌙 المحل مغلق الحين — طلبك يوصله ويتجهّز على موعدك</div>` : ""}
       <div id="coErr" class="err"></div>
-      <button class="btn wa big" id="coSend" ${minOk && !blocked && !blockedUntil(myStats, state.config) ? "" : "disabled"}>${later ? "📅 أرسل الطلب المسبق على واتساب" : "📨 أرسل الطلب على واتساب"}</button>
+      <button class="btn wa big" id="coSend" ${minOk && !blocked && !blockedUntil(myStats, state.config) ? "" : "disabled"}>${(later ? "📅 أرسل الطلب المسبق" : "📨 أرسل الطلب") + (branches.length > 1 && br0 ? ` لفرع ${esc(brName(br0))}` : " على واتساب")}</button>
       <button class="btn ghost" id="coBack">‹ رجوع للمتجر</button></div>`);
-    keep = () => { f.name = $("coName").value; f.phone = $("coPhone").value; f.note = $("coNote").value; if ($("coBr")) f.branch = $("coBr").value; if ($("coCar")) f.car = $("coCar").value; };
+    keep = () => { f.name = $("coName").value; f.phone = $("coPhone").value; f.note = $("coNote").value; if ($("coCar")) f.car = $("coCar").value; };
     const b = $("sheetBody");
     b.querySelectorAll("[data-inc]").forEach((x) => x.onclick = () => { keep(); cart[x.dataset.inc].qty = Math.min(99, cart[x.dataset.inc].qty + 1); saveCarts(); draw(); });
     b.querySelectorAll("[data-dec]").forEach((x) => x.onclick = () => { keep(); const l = cart[x.dataset.dec]; l.qty--; if (l.qty <= 0) delete cart[x.dataset.dec]; saveCarts(); draw(); });
@@ -1125,7 +1136,8 @@ function openCheckout(sid) {
     b.querySelectorAll("[data-day]").forEach((x) => x.onclick = () => { keep(); f.day = +x.dataset.day; f.slot = 0; draw(); });
     b.querySelectorAll("[data-slot]").forEach((x) => x.onclick = () => { keep(); f.slot = +x.dataset.slot; draw(); });
     $("coMore")?.addEventListener("click", () => openStore(sid, false));
-    $("coBr")?.addEventListener("change", () => { keep(); draw(); });
+    $("coBrChange")?.addEventListener("click", () => { keep(); pickOpen = !pickOpen; draw(); });
+    b.querySelectorAll("[data-br]").forEach((x) => x.onclick = () => { keep(); f.branch = x.dataset.br; state.branchPick = { sid, id: f.branch }; pickOpen = false; f.slot = 0; draw(); });
     $("coLoc")?.addEventListener("click", () => { keep(); navigator.geolocation?.getCurrentPosition((p) => { f.loc = { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6) }; draw(); }, () => toast("ما قدرنا نحدد موقعك")); });
     $("coBack").onclick = () => openStore(sid, false);
     $("coSend").onclick = async () => {

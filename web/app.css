@@ -865,3 +865,13 @@ body.staff-mode .bottomnav, body.staff-mode .top, body.staff-mode .install { dis
 .pre-set{display:flex;width:100%;align-items:center;gap:6px;border:1.5px dashed #C9D3F2;background:var(--card);border-radius:14px;padding:8px 12px;margin:0 0 10px;font:600 13px Cairo,sans-serif;color:var(--green);cursor:pointer}
 .pre-set span{margin-inline-start:auto;color:#5B6785}
 .pre-del{border:1px solid var(--line);border-radius:14px;padding:10px;margin-top:6px}
+
+/* 📍 الفرع في صفحة الطلب */
+.co-branch{display:flex;align-items:center;gap:10px;border:2px solid var(--green);background:var(--green-soft);border-radius:16px;padding:10px 12px;margin:4px 0 8px}
+.co-branch .cb-main{flex:1;display:flex;flex-direction:column}
+.co-branch .cb-main b{font-size:17px;color:var(--green)}
+.co-branch small{color:var(--muted);font-size:12px}
+.co-brlist{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}
+.co-bropt{display:flex;flex-direction:column;align-items:flex-start;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:8px 12px;font:inherit;cursor:pointer;text-align:start}
+.co-bropt.on{border-color:var(--green)}
+.co-bropt small{color:var(--muted);font-size:12px}

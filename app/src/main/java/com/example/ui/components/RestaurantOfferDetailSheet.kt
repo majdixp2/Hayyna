@@ -80,6 +80,8 @@ fun RestaurantOfferDetailSheet(
     // 🛒 اطلب العرض (باقة / 1+1 / خصم المنيو) — null = العرض ما ينطلب
     orderLabel: String? = null,
     onOrder: () -> Unit = {},
+    /** الفرع المعروض وقت الضغط على «اطلب» */
+    onOrderBranch: (String) -> Unit = {},
     // 📷 عرض من إعلان: «أنا صاحب المحل»
     onClaimAd: (() -> Unit)? = null,
     // 🔔 ذكّرني لما يتوفر (العرض نفد اليوم)
@@ -492,7 +494,7 @@ fun RestaurantOfferDetailSheet(
 
             if (orderLabel != null && !isOwner) {
                 Button(
-                    onClick = onOrder,
+                    onClick = { onOrderBranch(shown.selectedBranchId); onOrder() },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309)),
                     shape = RoundedCornerShape(12.dp)

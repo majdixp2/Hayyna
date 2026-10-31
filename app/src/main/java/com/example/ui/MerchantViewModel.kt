@@ -1162,11 +1162,24 @@ class MerchantViewModel(
                 .onFailure { toast("تعذّر التغيير: ${it.message ?: ""}") }
         }
     }
+    /** 📍 الفرع اللي اختاره الزبون (من الخريطة/العرض) لكل متجر: storeId to branchId */
+    val branchPick = MutableStateFlow<Pair<String, String>?>(null)
+    /** الفرع الافتراضي وقت الطلب: المختار، وإلا أقرب فرع مفتوح، وإلا أول فرع */
+    fun defaultBranch(store: com.example.data.model.StoreProfile): com.example.data.model.Branch? {
+        val bs = store.branches
+        branchPick.value?.takeIf { it.first == store.uid }?.let { p -> bs.firstOrNull { it.id == p.second }?.let { return it } }
+        val loc = userLocation.value
+        val sorted = if (loc == null) bs else bs.sortedBy { b -> FloatArray(1).also { android.location.Location.distanceBetween(loc.latitude, loc.longitude, b.latitude, b.longitude, it) }[0] }
+        return sorted.firstOrNull { OfferTime.isOpenNow(it) != false } ?: sorted.firstOrNull()
+    }
+    fun branchDistanceKm(b: com.example.data.model.Branch): Double? = userLocation.value?.let { loc ->
+        FloatArray(1).also { android.location.Location.distanceBetween(loc.latitude, loc.longitude, b.latitude, b.longitude, it) }[0] / 1000.0 }
     /** طلب مباشر لعرض (المتجر ما عنده منيو مفتوح) */
     val directCheckout = MutableStateFlow<com.example.data.model.StoreProfile?>(null)
     /** 🛒 اطلب من شاشة العرض: لو المتجر عنده منيو مفتوح نضيفه للسلة ونفتح المتجر، وإلا نطلبه مباشرة */
     fun orderFromOffer(o: RestaurantOffer) {
         if (o.isSoldOut()) { toast("❌ هذا العرض نفد اليوم"); return }
+        if (branchPick.value?.first != o.merchantId && o.selectedBranchId.isNotBlank()) branchPick.value = o.merchantId to o.selectedBranchId
         viewModelScope.launch {
             val st = approvedStores.value.firstOrNull { it.uid == o.merchantId } ?: runCatching { repository.getStore(o.merchantId) }.getOrNull()
             if (st == null) { toast("صفحة المتجر مو جاهزة"); return@launch }

@@ -759,6 +759,7 @@ fun MerchantStoreScreen(
                                 onEditOffer = { viewModel.startEditOffer(it) },
                                 onDeleteAccount = { viewModel.deleteAccount() },
                                 branchesCount = merchantProfile?.branches?.size ?: 0,
+                                dupPhones = merchantProfile?.branches.orEmpty().mapNotNull { com.example.ui.components.normalizeSaudiPhone(it.phone) }.let { it.size != it.toSet().size },
                                 onManageBranches = { viewModel.openBranchesPage() },
                                 isSuspended = myStatus?.suspended == true,
                                 isTrusted = isAdmin || (myStatus?.trusted == true && myStatus?.suspended != true),
@@ -878,6 +879,7 @@ fun MerchantStoreScreen(
                 isVerified = approvedStores.firstOrNull { it.uid == offer.merchantId }?.verified == true,
                 orderLabel = viewModel.offerOrderLabel(offer),
                 onOrder = { viewModel.orderFromOffer(offer) },
+                onOrderBranch = { id -> if (id.isNotBlank()) viewModel.branchPick.value = offer.merchantId to id },
                 onClaimAd = { viewModel.closeOfferDetail(); viewModel.claimAdOffer(offer) },
                 restockOn = offer.id in restockIds,
                 onRestock = { viewModel.toggleRestock(offer) }

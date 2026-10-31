@@ -247,7 +247,8 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     val pays = listOfNotNull(if (store.payCash) "cash" else null, if (store.payCard) "card" else null).ifEmpty { listOf("cash") }
     var pay by remember { mutableStateOf(pays.first()) }
     var car by remember { mutableStateOf("") }
-    var branchId by remember { mutableStateOf((store.branches.firstOrNull { com.example.data.model.OfferTime.isOpenNow(it) != false } ?: store.branches.firstOrNull())?.id.orEmpty()) }
+    var branchId by remember { mutableStateOf(vm.defaultBranch(store)?.id.orEmpty()) }
+    var pickBranch by remember { mutableStateOf(false) }
     LaunchedEffect(store.uid) { vm.refreshStorePause(store.uid); vm.loadSlotCounts(store.uid) }
     val paused by vm.pausedStores.collectAsStateWithLifecycle()
     val preMap by vm.preCfgs.collectAsStateWithLifecycle()
@@ -288,6 +289,31 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     FullDialog("🧾 طلبك من ${store.name}", onDismiss) {
       Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 📍 الفرع: واضح أول الصفحة عشان الزبون يتأكد منه
+            val brName = { b: com.example.data.model.Branch -> b.name.ifBlank { b.district.ifBlank { "الفرع" } } }
+            val brMeta = { b: com.example.data.model.Branch -> listOfNotNull(vm.branchDistanceKm(b)?.let { d -> (if (d < 1) "${(d * 1000).toInt()} متر" else String.format(java.util.Locale.US, "%.1f كم", d)) + " منك" },
+                when (com.example.data.model.OfferTime.isOpenNow(b)) { true -> "مفتوح"; false -> "مغلق"; else -> null }).joinToString(" • ") }
+            br0?.let { b ->
+                Surface(shape = RoundedCornerShape(16.dp), color = CalmSagePrimary.copy(alpha = 0.08f), border = BorderStroke(2.dp, CalmSagePrimary), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("📍 طلبك من", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row { Text("فرع ", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = CalmSagePrimary); androidx.compose.material3.Text(brName(b), fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = CalmSagePrimary) }
+                            brMeta(b).takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
+                        if (store.branches.size > 1) OutlinedButton(onClick = { pickBranch = !pickBranch }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (pickBranch) "إغلاق" else "تغيير", fontSize = 13.sp) }
+                    }
+                }
+            }
+            if (pickBranch) store.branches.forEach { b ->
+                Surface(shape = RoundedCornerShape(12.dp), border = BorderStroke(1.5.dp, if (b.id == branchId) CalmSagePrimary else MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth().clickable { branchId = b.id; vm.branchPick.value = store.uid to b.id; pickBranch = false; slot = 0L }) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Row { Text("فرع ", fontWeight = FontWeight.Bold); androidx.compose.material3.Text(brName(b), fontWeight = FontWeight.Bold) }
+                        brMeta(b).takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+            }
             lines.forEach { l ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -360,9 +386,6 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                 FilterChip(selected = pay == "cash", onClick = { pay = "cash" }, label = { Text("💵 كاش") })
                 FilterChip(selected = pay == "card", onClick = { pay = "card" }, label = { Text("💳 بطاقة / شبكة") })
             } else Text(if (pays.first() == "card") "💳 بطاقة / شبكة عند الاستلام (المحل يقبلها بس)" else "💵 كاش عند الاستلام (المحل يقبله بس)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (store.branches.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                store.branches.forEach { b -> FilterChip(selected = branchId == b.id, onClick = { branchId = b.id }, label = { Text(b.name.ifBlank { b.district.ifBlank { "فرع" } }, fontSize = 12.sp) }) }
-            }
             if (mode == "delivery") Text(if (loc != null) "📍 بنرسل موقعك الحالي للمحل" else "📍 فعّل الموقع عشان نرسل مكانك للتوصيل", fontSize = 13.sp, color = if (loc != null) CalmSagePrimary else MaterialTheme.colorScheme.error)
             OutlinedTextField(name, { name = it.take(60) }, label = { Text("اسمك") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(phone, { phone = it.filter { c -> c.isDigit() }.take(10) }, label = { Text("جوالك") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
@@ -402,7 +425,7 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                 },
                 enabled = minOk && !blocked && blockedTill == 0L, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
-            ) { Text(if (later) "📅 أرسل الطلب المسبق على واتساب" else "📨 أرسل الطلب على واتساب", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp) }
+            ) { Text((if (later) "📅 أرسل الطلب المسبق" else "📨 أرسل الطلب") + if (store.branches.size > 1 && br0 != null) " لفرع ${br0.name.ifBlank { br0.district.ifBlank { "الفرع" } }}" else " على واتساب", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp) }
           }
         }
       }
