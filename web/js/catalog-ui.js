@@ -320,6 +320,23 @@ const ORDER_GROUPS = [
 const groupOpen = new Map();
 const REMIND_MIN = 30; // تذكير المحل لو الطلب جاهز وما انستلم
 /** شاشة طلبات المحل. opts.el = ترسمها داخل عنصر (شاشة الموظف) بدل النافذة */
+// ⏸️ زر إيقاف استقبال الطلبات (صاحب المحل + موظف الطلبات)
+let pauseUnsub = null, pauseSid = "", myPaused = false, pauseRedraw = null;
+const mySid = () => state.staff?.storeId || state.user?.uid || "";
+function watchMyPause(redraw) {
+  pauseRedraw = redraw;
+  const sid = mySid();
+  if (!sid || pauseSid === sid) return;
+  pauseUnsub?.(); pauseSid = sid;
+  pauseUnsub = onSnapshot(doc(db, "storeStatus", sid), (d) => { myPaused = d.exists() && d.data().paused === true; pauseCache[sid] = myPaused; pauseRedraw?.(); }, (e) => console.warn("storeStatus", e));
+}
+async function togglePause() {
+  const sid = mySid(); if (!sid) return;
+  const by = state.staff ? (state.staff.name || "موظف " + state.staff.n) : "صاحب المحل";
+  try { await setDoc(doc(db, "storeStatus", sid), { paused: !myPaused, pausedAt: serverTimestamp(), by: String(by).slice(0, 60) }); toast(!myPaused ? "▶️ رجع استقبال الطلبات" : "⏸️ وقّفنا الطلبات — الزبائن يشوفون إن المحل موقف مؤقتاً", true); }
+  catch (e) { console.error(e); toast("تعذّر التغيير"); }
+}
+
 export function openStoreOrders(opts = {}) {
   ordersOpen = true;
   const target = opts.el || null;
@@ -329,9 +346,12 @@ export function openStoreOrders(opts = {}) {
   const showMain = (html) => { if (target) target.innerHTML = html; else showSheet(html); };
   const draw = () => {
     if (!ordersOpen) return;
+    watchMyPause(() => { if (ordersOpen && visible()) draw(); });
     const list = M.orders;
     const scroll = target ? null : $("sheetBody").scrollTop;
     showMain(`<div class="pad"><div class="section-title">🧾 الطلبات (${list.length})</div>
+      <div class="pause-row${myPaused ? " on" : ""}"><span>${myPaused ? "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" : "🟢 تستقبل طلبات"}</span>
+        <button class="btn small ${myPaused ? "dir" : "ghost"}" id="pauseBtn">${myPaused ? "▶️ رجّع الاستقبال" : "⏸️ أوقف الطلبات"}</button></div>
       ${list.length ? ORDER_GROUPS.map((g) => {
         const os = list.filter((o) => g.st.includes(o.status)).slice(0, 100);
         if (!os.length) return "";
@@ -340,6 +360,7 @@ export function openStoreOrders(opts = {}) {
       }).join("") : `<div class="empty-inline">ما وصلتك طلبات للحين</div>`}</div>`);
     if (scroll != null) $("sheetBody").scrollTop = scroll;
     const b = box();
+    b.querySelector("#pauseBtn")?.addEventListener("click", togglePause);
     b.querySelectorAll("details[data-g]").forEach((d) => d.addEventListener("toggle", () => groupOpen.set(d.dataset.g, d.open)));
     b.querySelectorAll("[data-os]").forEach((x) => x.onclick = () => {
       const o = M.orders.find((y) => y.id === x.dataset.oid), st = x.dataset.os;
@@ -745,8 +766,9 @@ export async function renderStoreItems(s) {
   if (!box || !c.enabled) return;
   let items = [], passes = [];
   try {
-    [items, passes] = await Promise.all([
+    [items, , passes] = await Promise.all([
       getDocs(query(collection(db, "items"), where("merchantId", "==", s.uid), where("approved", "==", true))).then((r) => r.docs.map((d) => ({ ...d.data(), id: d.id }))),
+      c.orderEnabled ? fetchStoreStatus(s.uid).then(() => []) : [],
       c.pricing.enabled ? getDocs(query(collection(db, "itemPasses"), where("merchantId", "==", s.uid))).then((r) => r.docs.map((d) => d.data())) : [],
     ]);
   } catch (e) { console.warn("items", e); return; }
@@ -762,10 +784,10 @@ function drawStoreItems(sid) {
   const box = $("storeItems"), data = storeCache[sid];
   if (!box || !data) return;
   const { s, items, D } = data, c = cat(), base = baseKindOf(state.config, s.category), cart = cartOf(sid);
-  const order = c.orderEnabled, packs = order ? D.packs : [];
+  const blk = c.orderEnabled ? orderBlock(s, sid) : "", order = c.orderEnabled && !blk, packs = c.orderEnabled ? D.packs : [];
   if (!items.length && !packs.length) { box.innerHTML = ""; return; }
-  const qtyBtns = (id, q) => q ? `<div class="qty"><button data-dec="${esc(id)}">−</button><b>${q}</b><button data-inc="${esc(id)}">＋</button></div>` : `<button class="add-btn" data-inc="${esc(id)}">＋ أضف</button>`;
-  box.innerHTML = (D.banners.length ? `<div class="deal-bar">${D.banners.map((b) => `<span class="deal-chip${b.quick ? " quick" : ""}">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : "")
+  const qtyBtns = (id, q) => !order ? "" : q ? `<div class="qty"><button data-dec="${esc(id)}">−</button><b>${q}</b><button data-inc="${esc(id)}">＋</button></div>` : `<button class="add-btn" data-inc="${esc(id)}">＋ أضف</button>`;
+  box.innerHTML = (blk ? `<div class="closed-bar">${esc(blk)}</div>` : "") + (D.banners.length ? `<div class="deal-bar">${D.banners.map((b) => `<span class="deal-chip${b.quick ? " quick" : ""}">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : "")
     + (packs.length ? `<div class="kind-sec deal-sec"><div class="ks-title">🎁 عروض تقدر تطلبها <small>(${packs.length})</small></div>${packs.map((p) => `<div class="icard deal">
         ${p.imageUrl ? `<img src="${esc(cld(p.imageUrl, 240))}" data-full="${esc(cld(p.imageUrl, 1400))}" alt="">` : `<div class="iph">🎁</div>`}
         <div class="ic-main"><b>${esc(p.name)}</b>${p.desc ? `<small>${esc(p.desc)}</small>` : ""}<div class="ic-price">${fmt(p.price)} ر.س${p.was ? ` <s>${fmt(p.was)}</s>` : ""}</div></div>
@@ -841,6 +863,9 @@ export async function orderFromOffer(o) {
   if (X.isSoldOut(o)) return toast("❌ هذا العرض نفد اليوم");
   const sid = o.merchantId, s = state.stores.find((x) => x.uid === sid), d = o.deal || {};
   if (!s) return toast("صفحة المتجر مو جاهزة");
+  await fetchStoreStatus(sid);
+  const blk = orderBlock(s, sid);
+  if (blk) return toast(blk, true);
   const c = cat();
   let items = [];
   if (c.enabled) {
@@ -871,6 +896,24 @@ export const offerOrderable = (o) => {
   return null;
 };
 
+// ⏸️🌙 هل المحل يستقبل طلبات الحين؟ (إيقاف يدوي من المحل/الموظف، أو خارج الدوام)
+const pauseCache = {};
+export async function fetchStoreStatus(sid) {
+  try { const d = await getDocFromServer(doc(db, "storeStatus", sid)); pauseCache[sid] = d.exists() && d.data().paused === true; }
+  catch { try { const d = await getDoc(doc(db, "storeStatus", sid)); pauseCache[sid] = d.exists() && d.data().paused === true; } catch {} }
+  return !!pauseCache[sid];
+}
+// branchId محدد = نفحص هذا الفرع؛ بدونه = المحل مغلق لو كل فروعه مغلقة. الفرع اللي ما حدد دوامه = مفتوح.
+export function orderBlock(s, sid, branchId) {
+  if (pauseCache[sid]) return "⏸️ المحل موقف استقبال الطلبات مؤقتاً — جرّب بعد شوي";
+  const bs = (s.branches || []).filter(Boolean);
+  if (!bs.length) return "";
+  const pick = branchId != null ? [bs.find((x) => x.id === branchId) || bs[0]] : bs;
+  if (pick.some((b) => X.openNow(b) !== false)) return "";
+  const b = pick[0];
+  return `🌙 ${branchId != null && bs.length > 1 ? "هذا الفرع" : "المحل"} مغلق الحين — يفتح ${X.fmtMinute(b.openMinute)}${branchId != null && bs.length > 1 ? " (جرّب فرع ثاني)" : ""}`;
+}
+
 function openCheckout(sid) {
   const { s } = storeCache[sid], cart = cartOf(sid), vat = vatOf(state.config);
   const branches = s.branches || [];
@@ -878,7 +921,9 @@ function openCheckout(sid) {
   let savedCar = ""; try { savedCar = localStorage.getItem("hayyna_car") || ""; } catch {}
   let myStats = null;
   if (state.user && F("noshow")) getDoc(doc(db, "custStats", state.user.uid)).then((d) => { myStats = d.exists() ? d.data() : null; if (myStats && blockedUntil(myStats, state.config) && $("coSend")) draw(); }).catch(() => {});
-  const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: branches[0]?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null };
+  fetchStoreStatus(sid).then(() => { if ($("coSend")) { keep?.(); draw(); } });
+  let keep = null;
+  const f = { mode: "pickup", pay: pays[0], car: savedCar, branch: (branches.find((b) => X.openNow(b) !== false) || branches[0])?.id || "", name: state.profile?.name || state.user?.displayName || "", phone: X.toLocalPhone(state.profile?.phone || ""), note: "", loc: state.me || null };
   const draw = () => {
     if (!Object.values(cart).length) { openStore(sid, false); return; }
     const T = cartTotals(Object.values(cart), storeCache[sid].D), lines = T.lines, sub = T.sub;
@@ -887,6 +932,7 @@ function openCheckout(sid) {
     const total = Math.round((sub + fee) * 100) / 100, vatNo = vat.enabled && validVatNumber(s.vatNumber) ? s.vatNumber : "";
     const { vat: vatAmt, net } = vatSplit(total, vat.rate);
     const minOk = f.mode !== "delivery" || !(s.deliveryMinOrder > 0) || sub >= s.deliveryMinOrder;
+    const blk = orderBlock(s, sid, f.branch);
     showSheet(`<div class="pad form checkout"><div class="section-title">🧾 طلبك من ${esc(s.name)}</div>
       ${lines.map((l) => `<div class="co-line"><span>${esc(l.name)}${l.was > l.price ? ` <s>${fmt(l.was)}</s>` : ""}${l.bogo ? `<small class="deal-pct bogo">${esc(l.bogo)}${l.off > 0 ? ` −${fmt(l.off)}` : " (أضف واحد ثاني)"}</small>` : ""}</span><div class="qty"><button data-dec="${esc(l.id)}">−</button><b>${l.qty}</b><button data-inc="${esc(l.id)}">＋</button></div><b>${fmt(l.qty * l.price - l.off)}</b></div>`).join("")}
       ${T.saved > 0 ? `<div class="saved-line">🔥 وفّرت <b>${fmt(T.saved)} ر.س</b> بالعروض</div>` : ""}
@@ -915,16 +961,18 @@ function openCheckout(sid) {
       ${!minOk ? `<div class="err">أقل طلب للتوصيل ${fmt(s.deliveryMinOrder)} ر.س — أضف ${fmt(s.deliveryMinOrder - sub)} ر.س أو اختر الاستلام</div>` : ""}
       ${blockedUntil(myStats, state.config) ? `<div class="err">🚫 الطلب موقف عن حسابك مؤقتاً لين ${new Date(blockedUntil(myStats, state.config)).toLocaleDateString("ar-SA-u-ca-gregory")} بسبب طلبات سابقة ما انستلمت. لو فيه خطأ تواصل معنا.</div>` : ""}
       ${!state.user ? `<small class="hint">💡 سجّل دخولك عشان تنحفظ طلباتك وتقدر تعيدها بضغطة.</small>` : ""}
+      ${blk ? `<div class="closed-bar">${esc(blk)}</div>` : ""}
       <div id="coErr" class="err"></div>
-      <button class="btn wa big" id="coSend" ${minOk && !blockedUntil(myStats, state.config) ? "" : "disabled"}>📨 أرسل الطلب على واتساب</button>
+      <button class="btn wa big" id="coSend" ${minOk && !blk && !blockedUntil(myStats, state.config) ? "" : "disabled"}>📨 أرسل الطلب على واتساب</button>
       <button class="btn ghost" id="coBack">‹ رجوع للمتجر</button></div>`);
-    const keep = () => { f.name = $("coName").value; f.phone = $("coPhone").value; f.note = $("coNote").value; if ($("coBr")) f.branch = $("coBr").value; if ($("coCar")) f.car = $("coCar").value; };
+    keep = () => { f.name = $("coName").value; f.phone = $("coPhone").value; f.note = $("coNote").value; if ($("coBr")) f.branch = $("coBr").value; if ($("coCar")) f.car = $("coCar").value; };
     const b = $("sheetBody");
     b.querySelectorAll("[data-inc]").forEach((x) => x.onclick = () => { keep(); cart[x.dataset.inc].qty = Math.min(99, cart[x.dataset.inc].qty + 1); saveCarts(); draw(); });
     b.querySelectorAll("[data-dec]").forEach((x) => x.onclick = () => { keep(); const l = cart[x.dataset.dec]; l.qty--; if (l.qty <= 0) delete cart[x.dataset.dec]; saveCarts(); draw(); });
     b.querySelectorAll("[data-mode]").forEach((x) => x.onclick = () => { keep(); f.mode = x.dataset.mode; draw(); });
     b.querySelectorAll("[data-pay]").forEach((x) => x.onclick = () => { keep(); f.pay = x.dataset.pay; draw(); });
     $("coMore")?.addEventListener("click", () => openStore(sid, false));
+    $("coBr")?.addEventListener("change", () => { keep(); draw(); });
     $("coLoc")?.addEventListener("click", () => { keep(); navigator.geolocation?.getCurrentPosition((p) => { f.loc = { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6) }; draw(); }, () => toast("ما قدرنا نحدد موقعك")); });
     $("coBack").onclick = () => openStore(sid, false);
     $("coSend").onclick = async () => {
@@ -938,6 +986,10 @@ function openCheckout(sid) {
       const br = branches.find((x) => x.id === f.branch) || branches[0] || {};
       const to = X.waDigits(br.phone || s.phone || "");
       if (!to) return $("coErr").textContent = "المحل ما عنده رقم واتساب.";
+      // ⏸️ تأكد من السيرفر إن المحل ما أوقف الطلبات، وإن الفرع مفتوح
+      await fetchStoreStatus(sid);
+      const blk2 = orderBlock(s, sid, br.id ?? null);
+      if (blk2) { toast(blk2, true); return draw(); }
       // ❌ تأكد من السيرفر إن العروض اللي في السلة ما نفدت (يمكن الموظف علّمها الحين)
       const dealIds = Object.keys(cart).filter((id) => id.startsWith("deal_")).map((id) => id.slice(5));
       for (const oid of dealIds) {
@@ -960,7 +1012,13 @@ function openCheckout(sid) {
         note: f.note.trim().slice(0, 300), status: "sent" };
       const url = `https://wa.me/${to}?text=${encodeURIComponent(orderText(o))}`;
       const w = window.open("", "_blank"); // نفتح النافذة الحين (قبل الانتظار) عشان المتصفح ما يمنعها
-      if (state.user) { try { await setDoc(ref, { ...o, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }); } catch (e) { console.warn("order save", e); } }
+      if (state.user) {
+        try { await setDoc(ref, { ...o, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }); }
+        catch (e) {
+          console.warn("order save", e);
+          if (e?.code === "permission-denied" && await fetchStoreStatus(sid)) { w?.close(); toast(orderBlock(s, sid), true); return draw(); }
+        }
+      }
       if (w) w.location = url; else location.href = url;
       carts[sid] = {}; saveCarts();
       hideSheet(); toast(`انرسل طلبك #${o.code} ✅ كمّل في واتساب`, true);

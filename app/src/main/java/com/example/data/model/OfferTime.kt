@@ -63,6 +63,17 @@ object OfferTime {
         }
     }
 
+    /** هل الفرع مفتوح الآن؟ null إذا ما حدد دوامه. */
+    fun isOpenNow(b: com.example.data.model.Branch, calendar: Calendar = Calendar.getInstance()): Boolean? {
+        if (!(b.openMinute in 0..1439 && b.closeMinute in 0..1439)) return null
+        val now = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+        return when {
+            b.openMinute == b.closeMinute -> true
+            b.openMinute < b.closeMinute -> now in b.openMinute until b.closeMinute
+            else -> now >= b.openMinute || now < b.closeMinute
+        }
+    }
+
     fun formatMinute(minute: Int): String {
         val h24 = minute / 60
         val m = minute % 60

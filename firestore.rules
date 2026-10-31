@@ -420,6 +420,10 @@ service cloud.firestore {
     }
     // ===== 👥 موظفين المتجر: دخول برقم المتجر + رقم الموظف + رمز سري (حساب داخلي بدون إيميل حقيقي) =====
     function staffPath() { return /databases/$(database)/documents/storeStaff/$(request.auth.uid); }
+    function storePaused(store) {
+      return exists(/databases/$(database)/documents/storeStatus/$(store))
+        && get(/databases/$(database)/documents/storeStatus/$(store)).data.paused == true;
+    }
     function isStoreStaff(store, perm) {
       return isAuthenticated() && featureOn('staff')
         && exists(staffPath())
@@ -472,6 +476,16 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.n == resource.data.n && request.resource.data.code == resource.data.code;
       allow delete: if isAuthenticated() && (resource.data.storeId == request.auth.uid || isAdmin());
+    }
+
+    // ⏸️ إيقاف استقبال الطلبات: صاحب المحل أو موظف الطلبات
+    match /storeStatus/{storeUid} {
+      allow read: if true;
+      allow write: if (isAuthenticated() && (request.auth.uid == storeUid || isStoreStaff(storeUid, 'orders')))
+        && request.resource.data.keys().hasOnly(['paused', 'pausedAt', 'by'])
+        && request.resource.data.paused is bool
+        && request.resource.data.pausedAt == request.time
+        && request.resource.data.by is string && request.resource.data.by.size() <= 60;
     }
 
     match /items/{itemId} {
@@ -543,6 +557,7 @@ service cloud.firestore {
         && (request.resource.data.mode != 'curbside' || featureOn('curbside'))
         && request.resource.data.status == 'sent'
         && request.resource.data.createdAt == request.time
+        && !storePaused(request.resource.data.storeId)
         && !noshowBlocked(request.auth.uid);
       allow read: if can('merchants')
         || (isAuthenticated() && (resource.data.customerUid == request.auth.uid || resource.data.storeId == request.auth.uid))

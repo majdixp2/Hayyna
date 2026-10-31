@@ -927,6 +927,22 @@ class RestaurantOfferRepository(
         val d = db.collection("offers").document(id).get(com.google.firebase.firestore.Source.SERVER).await()
         (d.getTimestamp("soldOutUntil")?.toDate()?.time ?: 0L) > System.currentTimeMillis()
     }.getOrDefault(false)
+    // ⏸️ إيقاف استقبال الطلبات (storeStatus/{storeUid})
+    suspend fun storePausedNow(storeId: String): Boolean = runCatching {
+        db.collection("storeStatus").document(storeId).get(com.google.firebase.firestore.Source.SERVER).await().getBoolean("paused") == true
+    }.recoverCatching {
+        db.collection("storeStatus").document(storeId).get().await().getBoolean("paused") == true
+    }.getOrDefault(false)
+    fun storePaused(storeId: String): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.callbackFlow {
+        val reg = db.collection("storeStatus").document(storeId).addSnapshotListener { d, e ->
+            if (e != null) { Log.w("Repo", "storeStatus: ${e.message}"); return@addSnapshotListener }
+            trySend(d?.getBoolean("paused") == true)
+        }
+        awaitClose { reg.remove() }
+    }
+    suspend fun setStorePaused(storeId: String, paused: Boolean, by: String) {
+        db.collection("storeStatus").document(storeId).set(mapOf("paused" to paused, "pausedAt" to FieldValue.serverTimestamp(), "by" to by.take(60))).await()
+    }
     /** 👥 موظف «نفد اليوم»: يغيّر التوفر بس */
     suspend fun setItemAvailable(id: String, available: Boolean) {
         db.collection("items").document(id).update(mapOf("available" to available, "updatedAt" to FieldValue.serverTimestamp())).await()

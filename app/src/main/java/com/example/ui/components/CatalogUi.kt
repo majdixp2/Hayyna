@@ -117,7 +117,12 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
     if (!cfg.enabled || (items.isEmpty() && packs.isEmpty())) return
     val cart = carts[store.uid].orEmpty()
     val base = cfg.baseKind(store.category)
+    LaunchedEffect(store.uid, cfg.orderEnabled) { if (cfg.orderEnabled) vm.refreshStorePause(store.uid) }
+    val pausedMap by vm.pausedStores.collectAsStateWithLifecycle()
+    val closedMsg = if (cfg.orderEnabled) vm.orderBlock(store, null, pausedMap[store.uid] == true) else null
+    val canOrder = cfg.orderEnabled && closedMsg == null
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        if (closedMsg != null) ClosedBanner(closedMsg)
         // 🔥 شريط العروض الشغّالة
         if (deals.banners.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             deals.banners.forEach { b -> Surface(shape = RoundedCornerShape(50), color = Color(0xFFFFF1E3), border = BorderStroke(1.dp, Color(0xFFF8C9A0))) { Text(b, color = Color(0xFFC2410C), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)) } }
@@ -148,6 +153,7 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
                             Text(if (on) "🔔 بنذكّرك ✓" else "🔔 ذكّرني", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+                    else if (!canOrder) Unit
                     else if (q == 0) OutlinedButton(onClick = { vm.cartAddPack(store.uid, p, 1) }, border = BorderStroke(1.dp, Color(0xFFB45309)), contentPadding = PaddingValues(horizontal = 10.dp)) { Text("＋ أضف", color = Color(0xFFB45309), fontWeight = FontWeight.Bold) }
                     else QtyControl(q, Color(0xFFB45309), onMinus = { vm.cartAddPack(store.uid, p, -1) }, onPlus = { vm.cartAddPack(store.uid, p, 1) })
                 }
@@ -177,7 +183,7 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
                         }
                         when {
                             !it.available -> Text("نفد", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            !cfg.orderEnabled -> Unit
+                            !canOrder -> Unit
                             q == 0 -> OutlinedButton(onClick = { vm.cartAdd(store.uid, it, 1) }, border = BorderStroke(1.dp, k.color), contentPadding = PaddingValues(horizontal = 10.dp)) { Text("＋ أضف", color = k.color, fontWeight = FontWeight.Bold) }
                             else -> QtyControl(q, k.color, onMinus = { vm.cartAdd(store.uid, it, -1) }, onPlus = { vm.cartAdd(store.uid, it, 1) })
                         }
@@ -185,7 +191,7 @@ fun StoreCatalogSection(store: StoreProfile, vm: MerchantViewModel) {
                 }
             }
         }
-        if (cfg.orderEnabled && cart.isNotEmpty()) {
+        if (canOrder && cart.isNotEmpty()) {
             Button(
                 onClick = { checkout = true }, colors = ButtonDefaults.buttonColors(containerColor = CalmSagePrimary),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(top = 6.dp)
@@ -239,7 +245,10 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
     val pays = listOfNotNull(if (store.payCash) "cash" else null, if (store.payCard) "card" else null).ifEmpty { listOf("cash") }
     var pay by remember { mutableStateOf(pays.first()) }
     var car by remember { mutableStateOf("") }
-    var branchId by remember { mutableStateOf(store.branches.firstOrNull()?.id.orEmpty()) }
+    var branchId by remember { mutableStateOf((store.branches.firstOrNull { com.example.data.model.OfferTime.isOpenNow(it) != false } ?: store.branches.firstOrNull())?.id.orEmpty()) }
+    LaunchedEffect(store.uid) { vm.refreshStorePause(store.uid) }
+    val paused by vm.pausedStores.collectAsStateWithLifecycle()
+    val closedMsg = vm.orderBlock(store, branchId.ifBlank { null }, paused[store.uid] == true)
     var name by remember { mutableStateOf(userName) }
     var phone by remember { mutableStateOf(userPhone.let { p -> val d = p.filter { it.isDigit() }; if (d.startsWith("966")) "0" + d.drop(3) else d }) }
     var note by remember { mutableStateOf("") }
@@ -323,6 +332,7 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                 }
             }
             if (!minOk) Text("أقل طلب للتوصيل ${money(store.deliveryMinOrder)} ر.س — أضف ${money(store.deliveryMinOrder - sub)} ر.س أو اختر الاستلام", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            if (closedMsg != null) ClosedBanner(closedMsg)
             if (err.isNotBlank()) Text(err, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             if (blockedTill > 0) Text("🚫 الطلب موقف عن حسابك مؤقتاً لين ${dm(blockedTill)} بسبب طلبات سابقة ما انستلمت. لو فيه خطأ تواصل معنا.", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
         }
@@ -343,7 +353,7 @@ private fun CheckoutDialog(store: StoreProfile, vm: MerchantViewModel, onDismiss
                         onDismiss()
                     }
                 },
-                enabled = minOk && blockedTill == 0L, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                enabled = minOk && closedMsg == null && blockedTill == 0L, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
             ) { Text("📨 أرسل الطلب على واتساب", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp) }
           }
@@ -376,6 +386,27 @@ private fun Note(text: String, bg: Color, fg: Color) {
     Surface(shape = RoundedCornerShape(10.dp), color = bg, modifier = Modifier.fillMaxWidth()) { Text(text, color = fg, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) }
 }
 
+/** ⏸️🌙 تنبيه «المحل مغلق / موقف الطلبات» */
+@Composable
+fun ClosedBanner(text: String, modifier: Modifier = Modifier) {
+    Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFFFF4DA), border = BorderStroke(1.5.dp, Color(0xFFF4B400)), modifier = modifier.fillMaxWidth()) {
+        Text(text, color = Color(0xFF8A5A00), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(12.dp))
+    }
+}
+
+/** ⏸️ زر إيقاف استقبال الطلبات (صاحب المحل + موظف الطلبات) */
+@Composable
+fun PauseOrdersRow(vm: MerchantViewModel) {
+    val paused by vm.myStorePaused.collectAsStateWithLifecycle()
+    Surface(shape = RoundedCornerShape(14.dp), color = if (paused) Color(0xFFFDE8E6) else Color(0xFFE7F6EC), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (paused) "⏸️ الطلبات موقفة — الزبائن ما يقدرون يطلبون" else "🟢 تستقبل طلبات", Modifier.weight(1f), color = if (paused) Color(0xFFB42318) else Color(0xFF15803D), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            if (paused) Button(onClick = { vm.toggleStorePause() }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("▶️ رجّع الاستقبال", fontSize = 13.sp) }
+            else OutlinedButton(onClick = { vm.toggleStorePause() }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("⏸️ أوقف الطلبات", fontSize = 13.sp) }
+        }
+    }
+}
+
 private const val REMIND_MIN = 30
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -403,6 +434,7 @@ fun OrdersDialog(
     val open = { u: String -> runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } }
     OrdersShell(embedded, title, onDismiss) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (asStore) PauseOrdersRow(vm)
             if (orders.isEmpty()) Text(if (asStore) "ما وصلتك طلبات للحين" else "ما طلبت شي للحين — ادخل صفحة أي متجر واطلب منه 🛍️", color = MaterialTheme.colorScheme.onSurfaceVariant)
             val card: @Composable (HayynaOrder) -> Unit = { o ->
                 val (bg, line) = orderTint(o.status)
