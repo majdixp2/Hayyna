@@ -37,6 +37,9 @@ await env.withSecurityRulesDisabled(async (ctx) => {
 console.log("رقم المتجر ودليل الدخول");
 await t("صاحب المحل ياخذ رقم متجر", () => assertSucceeds(setDoc(doc(OWN(), "storeCodes/12345"), { uid: "own", at: serverTimestamp() })));
 await t("ما ياخذ رقم مأخوذ", () => assertFails(setDoc(doc(OWN(), "storeCodes/55555"), { uid: "own", at: serverTimestamp() })));
+const ADM = () => env.authenticatedContext("adm", { email: "majdixp2@gmail.com", email_verified: true }).firestore();
+await t("الأدمن يشوف أرقام المتاجر", () => assertSucceeds(getDocs(collection(ADM(), "storeCodes"))));
+await t("غيره ما يشوف أرقام المتاجر كلها", () => assertFails(getDocs(collection(RND(), "storeCodes"))));
 await t("ما ياخذ رقم باسم غيره", () => assertFails(setDoc(doc(OWN(), "storeCodes/23456"), { uid: "oth", at: serverTimestamp() })));
 await t("يضيف دليل دخول لموظفه", () => assertSucceeds(setDoc(doc(OWN(), "staffLogin/48213-4"), { email: "48213-4-zz99@staff.lacover.app", storeId: "own", n: 4 })));
 await t("ما يضيف دليل لمتجر غيره", () => assertFails(setDoc(doc(OWN(), "staffLogin/55555-1"), { email: "55555-1-zz99@staff.lacover.app", storeId: "own", n: 1 })));

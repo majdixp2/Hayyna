@@ -476,7 +476,7 @@ service cloud.firestore {
     }
     // رقم المتجر (5 أرقام) — ما يتكرر لأن الإنشاء يفشل لو الرقم مأخوذ
     match /storeCodes/{code} {
-      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow read: if (isAuthenticated() && resource.data.uid == request.auth.uid) || canStores();
       allow create: if isAuthenticated() && featureOn('staff') && code.matches('^[1-9][0-9]{4}$')
         && request.resource.data.keys().hasOnly(['uid', 'at'])
         && request.resource.data.uid == request.auth.uid && request.resource.data.at == request.time;
