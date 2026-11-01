@@ -803,20 +803,24 @@ fun AddRestaurantOfferSheet(
                                     TextButton(onClick = onManageBranches) { Text("إدارة الفروع") }
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = allBranches, onCheckedChange = { allBranches = it })
+                                    Checkbox(checked = allBranches, onCheckedChange = { allBranches = it; selectedIds.clear(); if (it) selectedIds.addAll(profileBranches.map { b -> b.id }) })
                                     Text("كل الفروع (${profileBranches.size})", fontWeight = FontWeight.Bold)
                                 }
-                                if (!allBranches) {
-                                    profileBranches.forEach { b ->
-                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp)) {
-                                            Checkbox(
-                                                checked = b.id in selectedIds,
-                                                onCheckedChange = { checked -> if (checked) selectedIds.add(b.id) else selectedIds.remove(b.id) }
-                                            )
-                                            Column {
-                                                androidx.compose.material3.Text(b.displayName, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                Text(b.region, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                // القائمة دايم ظاهرة وكلها معلّمة — يشيل العلامة عن الفرع اللي ما يبيه
+                                if (profileBranches.size > 1) profileBranches.forEach { b ->
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp)) {
+                                        Checkbox(
+                                            checked = allBranches || b.id in selectedIds,
+                                            onCheckedChange = { checked ->
+                                                if (allBranches) { allBranches = false; selectedIds.clear(); selectedIds.addAll(profileBranches.map { it.id }) }
+                                                if (checked) { if (b.id !in selectedIds) selectedIds.add(b.id) } else selectedIds.remove(b.id)
+                                                if (selectedIds.size == profileBranches.size) allBranches = true
                                             }
+                                        )
+                                        Column {
+                                            androidx.compose.material3.Text(b.displayName, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            androidx.compose.material3.Text(listOf(b.district.takeIf { it.isNotBlank() && it != b.displayName }, b.region.takeIf { it.isNotBlank() }).filterNotNull().joinToString(" • "),
+                                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                                         }
                                     }
                                 }

@@ -760,6 +760,58 @@ class RestaurantOfferRepository(
         }
     }
 
+    /** 📷 طلب نقل عروض الإعلانات لمتجر سجّل («أنا صاحب المحل»). */
+    suspend fun saveAdClaim(uid: String, storeName: String, placeIds: List<String>, groups: List<String>, count: Int) {
+        db.collection("adClaims").document(uid).set(mapOf(
+            "uid" to uid, "storeName" to storeName.take(100), "placeIds" to placeIds.take(50), "groups" to groups.take(20),
+            "count" to count.coerceIn(0, 200), "status" to "pending", "at" to FieldValue.serverTimestamp()
+        )).await()
+    }
+
+    /**
+     * الأدمن: ينقل عروض الإعلانات اللي في طلب المتجر (لما يتوثّق). كل مجموعة تصير عرض واحد على فروعه.
+     * يرجّع عدد العروض اللي انتقلت.
+     */
+    suspend fun approveAdClaim(uid: String): Int {
+        val claimRef = db.collection("adClaims").document(uid)
+        val c = claimRef.get().await()
+        if (!c.exists() || c.getString("status") != "pending") return 0
+        val placeIds = (c.get("placeIds") as? List<*>).orEmpty().filterIsInstance<String>()
+        val groups = (c.get("groups") as? List<*>).orEmpty().filterIsInstance<String>()
+        val found = LinkedHashMap<String, DocumentSnapshot>()
+        placeIds.chunked(30).forEach { ch -> db.collection("offers").whereEqualTo("source", "ad").whereIn("placeId", ch).get().await().documents.forEach { found[it.id] = it } }
+        groups.chunked(30).forEach { ch -> if (ch.isNotEmpty()) db.collection("offers").whereEqualTo("source", "ad").whereIn("adGroup", ch).get().await().documents.forEach { found[it.id] = it } }
+        val store = storesCollection.document(uid).get().await()
+        val storeName = store.getString("name").orEmpty()
+        @Suppress("UNCHECKED_CAST")
+        val sb = (store.get("branches") as? List<Map<String, Any?>>).orEmpty()
+        fun num(m: Map<String, Any?>, k: String) = (m[k] as? Number)?.toDouble() ?: 0.0
+        fun brOf(o: DocumentSnapshot): Map<String, Any?> {
+            val lat = o.getDouble("latitude") ?: 0.0; val lng = o.getDouble("longitude") ?: 0.0
+            return sb.map { it to Math.hypot(num(it, "latitude") - lat, (num(it, "longitude") - lng) * Math.cos(lat * Math.PI / 180)) * 111 }
+                .filter { it.second < 0.3 }.minByOrNull { it.second }?.first
+                ?: mapOf("id" to "b_" + o.id.take(10), "name" to (o.getString("restaurantName") ?: ""), "latitude" to lat, "longitude" to lng,
+                    "district" to (o.getString("district") ?: ""), "region" to (o.getString("region") ?: ""), "phone" to (o.getString("phone") ?: ""),
+                    "openMinute" to -1, "closeMinute" to -1, "landmark" to "")
+        }
+        val batch = db.batch()
+        found.values.groupBy { it.getString("adGroup")?.takeIf { g -> g.isNotBlank() } ?: it.id }.values.forEach { g ->
+            val keep = g.first()
+            val branches = g.map { brOf(it) }.distinctBy { it["id"] }
+            fun sum(k: String) = g.sumOf { (it.getLong(k) ?: 0L) }
+            batch.update(keep.reference, mapOf(
+                "merchantId" to uid, "source" to "claimed", "restaurantName" to storeName.ifBlank { keep.getString("restaurantName") ?: "" }.take(100),
+                "logoUrl" to (store.getString("logoUrl") ?: ""), "branches" to (if (branches.size > 1) branches.take(50) else emptyList()),
+                "viewsCount" to sum("viewsCount"), "directionsCount" to sum("directionsCount"), "whatsappCount" to sum("whatsappCount"),
+                "adGroup" to FieldValue.delete()
+            ))
+            g.drop(1).forEach { batch.delete(it.reference) }
+        }
+        batch.update(claimRef, "status", "approved")
+        batch.commit().await()
+        return found.size
+    }
+
     /** الأدمن: يعتمد/يخفي صفحة متجر (لو موجودة). */
     suspend fun setStoreApproved(uid: String, approved: Boolean) {
         val ref = storesCollection.document(uid)

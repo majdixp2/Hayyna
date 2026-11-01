@@ -704,7 +704,7 @@ async function openPoi({ placeId, lat, lng }) {
   });
   $("poiClaim")?.addEventListener("click", () => {
     poiLog(placeId, "claims");
-    try { sessionStorage.setItem("hayyna_claim", JSON.stringify({ name, lat, lng })); } catch {}
+    try { sessionStorage.setItem("hayyna_claim", JSON.stringify({ name, lat, lng, placeId })); } catch {}
     hideSheet();
     if (!state.user) { setTab("account"); openLogin("merchant"); return; }
     setTab("account");

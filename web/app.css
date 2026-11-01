@@ -926,3 +926,10 @@ body:has(#tab-map.on.ann-on) .otr.m-bar{bottom:calc(var(--nav) + 52px)}
 .ann-dots{display:flex;justify-content:center;gap:5px;margin-top:8px}
 .ann-dots i{width:6px;height:6px;border-radius:3px;background:#C9CEDA;transition:width .2s}
 .ann-dots i.on{width:16px;background:#10318F}
+
+/* ➕ أضف عدة فروع */
+.bpin{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 6px;border-radius:12px;background:#10318F;color:#fff;font:800 12px Montserrat,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.25);border:2px solid #fff;flex:none}
+.bk-row{border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:10px;background:var(--card)}
+.bk-row .label{margin-top:6px}
+.bk-h{display:flex;align-items:center;justify-content:space-between}
+.bk-on{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px}

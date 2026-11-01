@@ -129,6 +129,8 @@ export async function saveAdOffer(db, user, f) {
     discountPercent: 0, dailyPercents: [], itemsScope: "", grandOpening: false, exclusive: false,
     tags: (f.tags || []).slice(0, 12), delivery: false, logoUrl: "", branches: [], deal: null,
     isApproved: true, isFeatured: false,
+    // 👥 إعلان واحد لعدة فروع: نفس المجموعة (تعديل/حذف/نقل مع بعض، ولما المحل يسجّل تنضاف فروعه كلها)
+    ...(f.adGroup ? { adGroup: String(f.adGroup).slice(0, 40) } : {}),
   };
   if (f.editId) await setDoc(ref, data, { merge: true });
   else await setDoc(ref, { ...data, viewsCount: 0, directionsCount: 0, whatsappCount: 0, reportsCount: 0, createdAt: serverTimestamp() });
@@ -160,6 +162,8 @@ function css() {
 .adf-res{display:flex;flex-direction:column;gap:6px}
 .adf-res button{display:block;width:100%;text-align:start;border:1px solid #10318F22;border-radius:12px;background:transparent;padding:9px 12px;cursor:pointer;color:inherit}
 .adf-res button:hover{background:#10318F0D}.adf-res small{display:block;opacity:.7}
+.adf .adf-chk{flex-direction:row;align-items:flex-start;gap:10px;border:1px solid #10318F22;border-radius:12px;padding:9px 12px;cursor:pointer;font-weight:400}
+.adf .adf-chk input{width:20px;height:20px;flex:none;margin-top:2px;accent-color:#10318F;padding:0}.adf .adf-chk b{display:block}.adf .adf-chk small{display:block;opacity:.7}
 .adf label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700}
 .adf input,.adf textarea,.adf select{font:inherit;font-weight:400;font-size:15px;padding:10px 12px;border-radius:12px;border:1px solid #8884;background:transparent;color:inherit;width:100%;box-sizing:border-box}
 .adf textarea{min-height:64px;resize:vertical}
@@ -187,12 +191,13 @@ export function mountAdForm(el, opts) {
   const { db, fbApp, user, config = {}, mapsKey, categories = [], toast = () => {}, onDone = () => {} } = opts;
   const aiOn = !!config.aiAutofillEnabled;
   const f = {
-    file: null, preview: "", place: opts.place || null, name: opts.place?.name || "", title: "", price: "", orig: "", desc: "",
+    file: null, preview: "", place: opts.place || null, places: opts.place ? [opts.place] : [], adding: false, saved: 0, name: opts.place?.name || "", title: "", price: "", orig: "", desc: "",
     phone: opts.place?.phone || "", category: categories[0] || "", days: adDays(config), tags: [], city: "", district: "",
     q: "", results: null, searching: false, ai: "idle", aiMsg: "", saving: false,
   };
   const fixedPlace = !!opts.place;
-  const ready = () => f.file && f.place && f.title.trim();
+  const ready = () => f.file && f.places.length && f.title.trim();
+  const pid = (x) => x.placeId;
 
   const draw = () => {
     const p = f.place;
@@ -204,11 +209,16 @@ export function mountAdForm(el, opts) {
       ${f.file ? (aiOn ? `<button class="adf-ai" id="adfAi" ${f.ai === "busy" ? "disabled" : ""}>${f.ai === "busy" ? `<span class="spin"></span> نقرأ الإعلان…` : f.ai === "done" ? "✨ اقرأه مرة ثانية" : "✨ اقرأ الإعلان بالذكاء الاصطناعي"}</button>`
         : `<div class="adf-note">✨ القراءة الذكية موقفة من الإعدادات — عبّي البيانات يدوي</div>`) : ""}
       ${f.aiMsg ? `<div class="adf-note ${f.ai === "done" ? "ok" : f.ai === "err" ? "err" : ""}">${esc(f.aiMsg)}</div>` : ""}
-      ${p ? `<div class="adf-place"><span class="ic">📍</span><div class="t"><b>${esc(p.name || "المحل")}</b><small>${esc(p.address || [p.district, p.city].filter(Boolean).join("، "))}</small></div>
-          ${fixedPlace ? "" : `<button class="adf-lnk" id="adfPlaceChg">تغيير</button>`}</div>
-          ${fixedPlace ? "" : `<a class="adf-lnk" style="font-size:13px" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}&query_place_id=${encodeURIComponent(p.placeId)}">تأكد من الموقع في Google Maps ↗</a>`}`
-      : `<label>📍 وين المحل؟<div class="adf-search"><input id="adfQ" placeholder="اسم المحل + المدينة أو الحي" value="${esc(f.q)}"><button id="adfFind">${f.searching ? `<span class="spin"></span>` : "بحث"}</button></div></label>
-        ${f.results ? (f.results.length ? `<div class="adf-res">${f.results.map((r, i) => `<button data-r="${i}"><b>${esc(r.name)}</b><small>${esc(r.address)}</small></button>`).join("")}</div>`
+      ${f.places.length ? `${f.places.length > 1 ? `<b style="font-size:13px">📍 الفروع (${f.places.length}) — العرض ينزل لها كلها مرة وحدة</b>` : ""}
+          ${f.places.map((x, i) => `<div class="adf-place"><span class="ic">📍</span><div class="t"><b>${esc(x.name || "المحل")}</b><small>${esc(x.address || [x.district, x.city].filter(Boolean).join("، "))}</small></div>
+            ${fixedPlace && i === 0 ? "" : `<button class="adf-lnk" data-unpl="${i}">✕</button>`}</div>`).join("")}
+          ${f.places.length === 1 && !fixedPlace ? `<a class="adf-lnk" style="font-size:13px" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}&query_place_id=${encodeURIComponent(p.placeId)}">تأكد من الموقع في Google Maps ↗</a>` : ""}
+          ${f.adding ? "" : `<button class="adf-lnk" id="adfMore">＋ فروع ثانية لنفس المحل</button>`}` : ""}
+      ${f.places.length && !f.adding ? "" : `<label>📍 ${f.places.length ? "دوّر على فروعه" : "وين المحل؟"}<div class="adf-search"><input id="adfQ" placeholder="اسم المحل + المدينة أو الحي" value="${esc(f.q)}"><button id="adfFind">${f.searching ? `<span class="spin"></span>` : "بحث"}</button></div></label>
+        ${f.results ? (f.results.length ? `<small style="opacity:.7">علّم على الفروع اللي عليها الإعلان (تقدر تختار أكثر من فرع)</small>
+          <label class="adf-chk"><input type="checkbox" id="adfAll" ${f.results.every((r) => f.places.some((x) => pid(x) === pid(r))) ? "checked" : ""}><span><b>اختر الكل (${f.results.length})</b></span></label>
+          <div class="adf-res">${f.results.map((r, i) => `<label class="adf-chk"><input type="checkbox" data-r="${i}" ${f.places.some((x) => pid(x) === pid(r)) ? "checked" : ""}><span><b>${esc(r.name)}</b><small>${esc([r.district && "حي " + String(r.district).replace(/^حي\s+/, ""), r.address].filter(Boolean).join(" — "))}</small></span></label>`).join("")}</div>
+          ${f.adding ? `<button class="adf-lnk" id="adfDoneAdd">تم ✓</button>` : ""}`
           : `<div class="adf-note">ما لقينا المحل في Google. جرّب اسم ثاني أو أضف المدينة.</div>`) : ""}`}
       <label>اسم المحل<input id="adfName" value="${esc(f.name)}" maxlength="100"></label>
       <label>عنوان العرض *<input id="adfTitle" value="${esc(f.title)}" maxlength="150" placeholder="مثال: عرض الوطن الجامبو"></label>
@@ -218,8 +228,8 @@ export function mountAdForm(el, opts) {
       <div class="adf-row"><label>جوال المحل<input id="adfPhone" inputmode="tel" value="${esc(f.phone)}"></label>
         <label>يختفي بعد (أيام)<input id="adfDays" type="number" min="1" max="${AD_MAX_DAYS}" value="${esc(f.days)}"></label></div>
       ${categories.length ? `<label>التصنيف</label><div class="adf-chips">${categories.map((c) => `<button data-cat="${esc(c)}" class="${f.category === c ? "on" : ""}">${esc(c)}</button>`).join("")}</div>` : ""}
-      <button class="adf-save" id="adfSave" ${ready() && !f.saving ? "" : "disabled"}>${f.saving ? `<span class="spin"></span> ننشر…` : "🚀 انشر على الخريطة"}</button>
-      ${!ready() ? `<small style="opacity:.65;text-align:center">${!f.file ? "اختر صورة الإعلان" : !f.place ? "حدّد موقع المحل" : "اكتب عنوان العرض"} عشان تقدر تنشر</small>` : ""}
+      <button class="adf-save" id="adfSave" ${ready() && !f.saving ? "" : "disabled"}>${f.saving ? `<span class="spin"></span> ننشر${f.places.length > 1 ? ` (${f.saved}/${f.places.length})` : ""}…` : f.places.length > 1 ? `🚀 انشر على ${f.places.length} فروع` : "🚀 انشر على الخريطة"}</button>
+      ${!ready() ? `<small style="opacity:.65;text-align:center">${!f.file ? "اختر صورة الإعلان" : !f.places.length ? "حدّد موقع المحل" : "اكتب عنوان العرض"} عشان تقدر تنشر</small>` : ""}
     </div>`;
     bind();
   };
@@ -234,7 +244,7 @@ export function mountAdForm(el, opts) {
   async function find() {
     keep(); if (!f.q.trim()) return;
     f.searching = true; draw();
-    try { f.results = await searchPlaces(mapsKey, f.q.trim(), opts.near); }
+    try { f.results = await searchPlaces(mapsKey, f.q.trim(), opts.near || (f.places[0] ? { lat: f.places[0].lat, lng: f.places[0].lng } : null), 20); }
     catch (e) { console.warn(e); f.results = []; toast("تعذّر البحث في Google Maps"); }
     f.searching = false; draw();
   }
@@ -251,11 +261,20 @@ export function mountAdForm(el, opts) {
     $("adfAi")?.addEventListener("click", runAi);
     $("adfFind")?.addEventListener("click", find);
     $("adfQ")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find(); } });
-    $("adfPlaceChg")?.addEventListener("click", () => { keep(); f.place = null; f.results = null; draw(); });
-    el.querySelectorAll("[data-r]").forEach((b) => b.onclick = () => {
-      keep(); const r = f.results[+b.dataset.r]; f.place = r;
-      if (!f.name.trim()) f.name = r.name; if (!f.phone.trim()) f.phone = r.phone; draw();
+    const syncPlace = () => { f.place = f.places[0] || null; };
+    el.querySelectorAll("[data-r]").forEach((c) => c.onchange = () => {
+      keep(); const r = f.results[+c.dataset.r];
+      if (c.checked) { if (!f.places.some((x) => pid(x) === pid(r))) f.places.push(r); }
+      else f.places = f.places.filter((x, i) => (fixedPlace && i === 0) || pid(x) !== pid(r));
+      syncPlace(); if (!f.name.trim()) f.name = r.name; if (!f.phone.trim() && f.places.length === 1) f.phone = r.phone || ""; draw();
     });
+    $("adfAll")?.addEventListener("change", (e) => { keep();
+      if (e.target.checked) f.results.forEach((r) => { if (!f.places.some((x) => pid(x) === pid(r))) f.places.push(r); });
+      else f.places = f.places.filter((x, i) => (fixedPlace && i === 0) || !f.results.some((r) => pid(r) === pid(x)));
+      syncPlace(); if (!f.name.trim() && f.places[0]) f.name = f.places[0].name; draw(); });
+    el.querySelectorAll("[data-unpl]").forEach((b) => b.onclick = (e) => { e.preventDefault(); keep(); f.places.splice(+b.dataset.unpl, 1); syncPlace(); draw(); });
+    $("adfMore")?.addEventListener("click", (e) => { e.preventDefault(); keep(); f.adding = true; if (!f.q) f.q = f.name || ""; f.results = null; draw(); if (f.q) find(); });
+    $("adfDoneAdd")?.addEventListener("click", (e) => { e.preventDefault(); keep(); f.adding = false; f.results = null; draw(); });
     el.querySelectorAll("[data-cat]").forEach((b) => b.onclick = (e) => { e.preventDefault(); keep(); f.category = b.dataset.cat; draw(); });
     ["adfTitle"].forEach((id) => $(id)?.addEventListener("input", () => { const ok = !!(f.file && f.place && $(id).value.trim()); $("adfSave").disabled = !ok || f.saving; }));
     $("adfSave").onclick = save;
@@ -278,7 +297,7 @@ export function mountAdForm(el, opts) {
       const where = [d.district && "حي " + d.district, d.city].filter(Boolean).join(" ");
       f.ai = "done";
       f.aiMsg = `✅ قرأنا الإعلان${d.storeName ? `: ${d.storeName}` : ""}${!d.isOffer ? " (إعلان خدمة بدون سعر)" : ""}. راجع البيانات قبل النشر.`;
-      if (!f.place && (d.storeName || d.address)) {
+      if (!f.places.length && (d.storeName || d.address)) {
         f.q = [d.storeName || d.storeNameEn, d.address && !d.address.includes(d.city) ? d.address : "", where].filter(Boolean).join(" ").slice(0, 150);
         draw(); await find(); return;
       }
@@ -290,9 +309,16 @@ export function mountAdForm(el, opts) {
     keep(); if (!ready() || f.saving) return;
     f.saving = true; draw();
     try {
-      const id = await saveAdOffer(db, user, f);
-      toast("انتشر العرض على الخريطة ✅");
-      onDone(id, f);
+      // الصورة تنرفع مرة وحدة، وكل فرع ياخذ عرضه على موقعه (بنفس المجموعة)
+      const imageUrl = f.imageUrl || await upload(f.file);
+      const many = f.places.length > 1, group = many ? "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) : "";
+      const ids = []; f.saved = 0;
+      for (const place of f.places) {
+        ids.push(await saveAdOffer(db, user, { ...f, place, imageUrl, adGroup: group, phone: many ? (place.phone || f.phone) : (f.phone || place.phone) }));
+        f.saved++; if (many) draw();
+      }
+      toast(many ? `انتشر العرض على ${ids.length} فروع ✅` : "انتشر العرض على الخريطة ✅");
+      onDone(ids[0], f, ids);
     } catch (e) {
       console.error(e); f.saving = false; draw();
       toast(/permission/i.test(String(e?.message)) ? "ما عندك صلاحية رفع عروض الإعلانات" : (e?.message || "تعذّر النشر، جرّب مرة ثانية"));

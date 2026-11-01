@@ -1045,6 +1045,8 @@ fun MerchantStoreScreen(
         }
 
         // صفحة مطعمي وفروعي (الشعار + الفروع)
+        val claimPresetRows by viewModel.claimPreset.collectAsStateWithLifecycle()
+        val adClaimInfo by viewModel.pendingAdClaim.collectAsStateWithLifecycle()
         if (isBranchesPageOpen) {
             com.example.ui.components.BranchesPage(
                 profile = (merchantProfile ?: com.example.data.model.MerchantProfile(restaurantName = merchantRestaurantName)).let { p ->
@@ -1066,6 +1068,8 @@ fun MerchantStoreScreen(
                 onSave = { p, logo -> viewModel.saveBranches(p, logo) },
                 onClose = { viewModel.closeBranchesPage() },
                 claimMode = pendingClaim != null && verifyConfig.enabled && myStatus?.verified != true,
+                claimPreset = claimPresetRows,
+                claimLead = adClaimInfo?.let { c -> "لقينا لمحلك ${claimPresetRows?.size ?: 0} فروع و${c.count} عروض على لكوفر. علّم على فروعك وكمّل أرقامها — العروض تنتقل لمتجرك بعد ما توثّق إنك صاحب المحل." },
                 categories = categories,
                 claimBranch = pendingClaim?.let { claim ->
                     val p = merchantProfile

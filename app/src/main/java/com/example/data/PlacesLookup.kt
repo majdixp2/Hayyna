@@ -66,14 +66,14 @@ object PlacesLookup {
         }.getOrNull()
     }
 
-    data class Found(val placeId: String, val name: String, val address: String, val lat: Double, val lng: Double)
+    data class Found(val placeId: String, val name: String, val address: String, val lat: Double, val lng: Double, val district: String = "", val city: String = "")
 
     /** بحث عن محلات بالاسم في خرائط Google (Text Search) — قريب من موقع معيّن لو متوفر. */
-    suspend fun searchText(context: Context, query: String, lat: Double?, lng: Double?): List<Found> = withContext(Dispatchers.IO) {
+    suspend fun searchText(context: Context, query: String, lat: Double?, lng: Double?, max: Int = 8): List<Found> = withContext(Dispatchers.IO) {
         runCatching {
             val key = mapsKey(context) ?: return@runCatching emptyList()
             val body = JSONObject().apply {
-                put("textQuery", query); put("languageCode", "ar"); put("regionCode", "SA"); put("maxResultCount", 8)
+                put("textQuery", query); put("languageCode", "ar"); put("regionCode", "SA"); put("maxResultCount", max.coerceIn(1, 20))
                 if (lat != null && lng != null) put("locationBias", JSONObject().put("circle", JSONObject()
                     .put("center", JSONObject().put("latitude", lat).put("longitude", lng)).put("radius", 30000.0)))
             }
@@ -81,7 +81,7 @@ object PlacesLookup {
                 .url("https://places.googleapis.com/v1/places:searchText")
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
                 .header("X-Goog-Api-Key", key)
-                .header("X-Goog-FieldMask", "places.id,places.displayName,places.formattedAddress,places.location")
+                .header("X-Goog-FieldMask", "places.id,places.displayName,places.formattedAddress,places.location,places.addressComponents")
                 .header("X-Android-Package", context.packageName)
                 .apply { certSha1(context)?.let { header("X-Android-Cert", it) } }
                 .build()
@@ -92,12 +92,27 @@ object PlacesLookup {
                 (0 until arr.length()).mapNotNull { i ->
                     val p = arr.optJSONObject(i) ?: return@mapNotNull null
                     val loc = p.optJSONObject("location") ?: return@mapNotNull null
+                    val comps = p.optJSONArray("addressComponents")
+                    fun comp(type: String): String {
+                        if (comps == null) return ""
+                        for (k in 0 until comps.length()) {
+                            val c = comps.optJSONObject(k) ?: continue
+                            val types = c.optJSONArray("types") ?: continue
+                            if ((0 until types.length()).any { types.optString(it) == type }) return c.optString("longText")
+                        }
+                        return ""
+                    }
                     Found(p.optString("id"), p.optJSONObject("displayName")?.optString("text").orEmpty(),
-                        p.optString("formattedAddress"), loc.optDouble("latitude"), loc.optDouble("longitude"))
+                        p.optString("formattedAddress"), loc.optDouble("latitude"), loc.optDouble("longitude"),
+                        district = comp("sublocality_level_1").ifBlank { comp("sublocality") }.ifBlank { comp("neighborhood") },
+                        city = comp("locality").ifBlank { comp("administrative_area_level_2") })
                 }.filter { it.placeId.isNotBlank() && !it.lat.isNaN() }
             }
         }.getOrDefault(emptyList())
     }
+
+    /** «حي الحمدانية» → «الحمدانية» (للاسم التلقائي للفرع) */
+    fun cleanDistrict(d: String): String = d.trim().removePrefix("حي ").trim()
 
     /** رقم جوال سعودي (عليه واتساب غالباً) بصيغة 9665xxxxxxxx، وإلا null. */
     fun saudiMobile(phone: String): String? {
