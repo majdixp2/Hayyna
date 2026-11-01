@@ -611,7 +611,7 @@ export function bulkBranches(storeName, existing, onAdd, opts = {}) {
         <div class="section-title">➕ أضف عدة فروع</div>
         <div class="seg"><button data-bm="google" class="${S.mode === "google" ? "on" : ""}">🔎 من Google</button><button data-bm="map" class="${S.mode === "map" ? "on" : ""}">📍 من الخريطة</button></div>
         ${S.mode === "google" ? `<p class="hint">اكتب اسم محلك والمدينة، وعلّم على فروعك من القائمة.</p>
-          <div class="row2" style="grid-template-columns:1fr auto"><input id="bkQ" class="input" value="${esc(S.q)}" placeholder="مثال: كنتاكي جدة"><button class="btn dir" id="bkFind">${S.busy ? "…" : "بحث"}</button></div>
+          <div style="display:flex;gap:8px;align-items:center"><input id="bkQ" class="input" style="flex:1" value="${esc(S.q)}" placeholder="مثال: كنتاكي جدة"><button class="btn dir" id="bkFind" style="width:auto;padding:12px 18px">${S.busy ? "…" : "بحث"}</button></div>
           ${S.results ? (res.length ? `<label class="switch-row"><span>اختر الكل (${res.filter((r) => !r.dup).length})</span><input type="checkbox" id="bkAll" ${res.filter((r) => !r.dup).every((r) => S.sel.has(r.placeId)) ? "checked" : ""}></label>
             <div class="pick-list" style="max-height:340px">${res.map((r) => `<label class="switch-row sub" style="margin-inline-start:0"><span><b>${esc(r.name)}</b><br><small>${esc(r.dup ? "✅ مضاف من قبل" : [cleanDistrict(r.district) && "حي " + cleanDistrict(r.district), r.address].filter(Boolean).join(" — "))}</small></span>
               <input type="checkbox" data-pl="${esc(r.placeId)}" ${r.dup ? "disabled" : S.sel.has(r.placeId) ? "checked" : ""}></label>`).join("")}</div>`
