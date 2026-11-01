@@ -667,10 +667,21 @@ function credits() {
 
     <h2 id="cr-wallets">👛 أرصدة التجار</h2>
     <p class="muted">تعديل يدوي للرصيد (تعويض، هدية، تصحيح خطأ): اكتب عدد النقاط — رقم عادي للإضافة (20) أو بالسالب للخصم (‎-10) — واكتب السبب، يظهر للتاجر في «الحركات».</p>
-    ${state.wallets.length ? `<div class="card"><table class="tbl"><thead><tr><th>التاجر</th><th>الرصيد</th><th>تعديل يدوي</th></tr></thead><tbody>
-      ${[...state.wallets].sort((a, b) => (b.balance || 0) - (a.balance || 0)).map((w) => `<tr><td><b>${esc(nameOfUid(w.id))}</b></td><td><b>${w.balance || 0}</b> نقطة</td>
+    ${state.wallets.length ? (() => {
+      const q = (state.walletQuery || "").trim().toLowerCase();
+      const all = [...state.wallets].sort((a, b) => (b.balance || 0) - (a.balance || 0));
+      const hits = q ? all.filter((w) => [nameOfUid(w.id), w.id, state.storeCode?.[w.id] || ""].join(" ").toLowerCase().includes(q)) : all;
+      const shown = hits.slice(0, state.walletShow || 50);
+      return `<div class="card"><div class="row" style="align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <input type="search" id="walletQuery" placeholder="ابحث باسم المتجر أو صاحبه أو الجوال أو رقم المتجر…" value="${esc(state.walletQuery || "")}" style="flex:1;min-width:220px">
+        <span class="muted">${q ? `${hits.length} من ${all.length}` : `${all.length} محفظة`}</span></div>
+      ${shown.length ? `<table class="tbl"><thead><tr><th>التاجر</th><th>الرصيد</th><th>تعديل يدوي</th></tr></thead><tbody>
+      ${shown.map((w) => `<tr><td><b>${esc(nameOfUid(w.id))}</b>${state.storeCode?.[w.id] ? ` <span class="pill">${esc(state.storeCode[w.id])}</span>` : ""}</td><td><b>${w.balance || 0}</b> نقطة</td>
         <td><input type="number" id="adj_${w.id}" placeholder="النقاط: 20 أو ‎-10" style="width:130px"> <input type="text" id="adjn_${w.id}" placeholder="السبب، مثل: تعويض عن خطأ" style="width:200px">
-        <button class="btn" data-adj="${w.id}">تطبيق التعديل</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">ما فيه محافظ للحين</p>`}`;
+        <button class="btn" data-adj="${w.id}">تطبيق التعديل</button></td></tr>`).join("")}</tbody></table>
+      ${hits.length > shown.length ? `<div class="actions" style="justify-content:center"><button class="btn" data-walletmore>عرض ${Math.min(50, hits.length - shown.length)} زيادة (باقي ${hits.length - shown.length})</button></div>` : ""}`
+      : `<p class="muted">ما لقينا متجر بهالبحث</p>`}</div>`;
+    })() : `<p class="muted">ما فيه محافظ للحين</p>`}`;
 }
 async function adminCredit(uid, delta, note) {
   const ref = doc(db, "wallets", uid), snap = await getDoc(ref);
@@ -1191,6 +1202,8 @@ function bind() {
   c.querySelectorAll("[data-ret]").forEach((b) => (b.onclick = () => returnToMerchant(b.dataset.ret, b.dataset.id)));
   c.querySelectorAll("[data-sfilter]").forEach((b) => (b.onclick = () => { state.storeFilter = b.dataset.sfilter; render(); }));
   c.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast("نسخنا الرقم ✅"); } catch { prompt("انسخ:", b.dataset.copy); } }));
+  const wq = $("walletQuery"); if (wq) wq.oninput = () => { state.walletQuery = wq.value; state.walletShow = 50; render(); };
+  c.querySelectorAll("[data-walletmore]").forEach((b) => (b.onclick = () => { state.walletShow = (state.walletShow || 50) + 50; render(); }));
   const sq = $("storeQuery"); if (sq) sq.oninput = () => { state.storeQuery = sq.value; render(); };
   c.querySelectorAll("[data-catup]").forEach((b) => (b.onclick = () => { const d = catDraft(), i = +b.dataset.catup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
   c.querySelectorAll("[data-catdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف التصنيف؟ العروض الحالية تبقى عليه.")) { catDraft().splice(+b.dataset.catdel, 1); render(); } }));
