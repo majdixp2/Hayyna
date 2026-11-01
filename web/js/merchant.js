@@ -85,6 +85,11 @@ function draw() {
     ${!st.verified ? `<div class="hint-box">✔ توثيق المتجر (السجل التجاري / العمل الحر) متاح حالياً من تطبيق أندرويد.</div>` : ""}
     <button class="btn call" id="mContact">💬 تواصل معنا</button>`;
   $("editStore").onclick = () => openStoreForm();
+  // 📷 طلب نقل عروض الإعلانات لمتجره: حالته
+  getDoc(doc(db, "adClaims", state.user.uid)).then((d) => {
+    const c = d.exists() ? d.data() : null; if (!c || c.status !== "pending" || !$("mContact")) return;
+    $("mContact").insertAdjacentHTML("beforebegin", `<div class="hint-box">⏳ طلب نقل ${c.count || ""} ${c.count === 1 ? "عرض" : "عروض"} إعلانات لمتجرك تحت المراجعة — تنتقل لك بعد ما نتأكد إنك صاحب المحل (التوثيق بالسجل التجاري).</div>`);
+  }).catch(() => {});
   root.querySelectorAll("details.osec").forEach((d) => d.addEventListener("toggle", () => { if (d.dataset.sec === "live") m.secLive = d.open; else m.secEnded = d.open; }));
   bindStaffCard(p.restaurantName || "");
   $("viewStore")?.addEventListener("click", () => openStore(state.user.uid, true));
@@ -330,6 +335,14 @@ function mediaTile(src, key, label = "") {
   return `<div class="tile"><img src="${esc(src)}" alt=""><button class="tile-x" data-rm="${esc(key)}" aria-label="إزالة">✕</button>${label ? `<span class="tile-l">${label}</span>` : ""}</div>`;
 }
 
+/** 📷 عروض الإعلانات اللي تخص محل (نفس المكان + كل فروع المجموعة). */
+export function adOffersFor(placeId) {
+  if (!placeId) return [];
+  const ads = state.offers.filter((o) => o.source === "ad" && !X.isExpired(o));
+  const groups = new Set(ads.filter((o) => o.placeId === placeId && o.adGroup).map((o) => o.adGroup));
+  return ads.filter((o) => o.placeId === placeId || (o.adGroup && groups.has(o.adGroup)));
+}
+
 export function openStoreForm(claim = null) {
   const p = m.profile || {};
   const f = {
@@ -345,9 +358,12 @@ export function openStoreForm(claim = null) {
   if (!f.branches.length && (p.latitude || p.longitude)) f.branches.push({ id: "main", name: "الفرع الرئيسي", latitude: p.latitude, longitude: p.longitude, district: p.district || "", region: p.region || "", phone: p.phone || "", openMinute: p.openMinute ?? -1, closeMinute: p.closeMinute ?? -1, landmark: "" });
   if (claim && !p.restaurantName && claim.name) f.name = claim.name;
   let dirty = !!claim, saving = false;
+  // 📷 «أنا صاحب المحل» ولمحله عروض إعلانات: نعرض فروعه كلها جاهزة، وعروضها تنتقل له بعد التوثيق
+  const claimAds = claim?.placeId ? adOffersFor(claim.placeId) : [];
+  f.adClaim = null;
   const render = () => {
     $("pageBody").innerHTML = `<div class="form">
-      ${claim ? `<div class="hint-box">📍 حددنا موقع المحل من الخريطة. كمّل بيانات الفرع (الحي والجوال) واحفظ.</div>` : ""}
+      ${claim ? `<div class="hint-box">${f.adClaim ? `📷 بعد الحفظ نرسل طلب نقل ${f.adClaim.count} ${f.adClaim.count === 1 ? "عرض" : "عروض"} لمتجرك، وتنتقل لك بعد ما نتأكد إنك صاحب المحل (التوثيق بالسجل التجاري).` : "📍 حددنا موقع المحل من الخريطة. كمّل بيانات الفرع (الحي والجوال) واحفظ."}</div>` : ""}
       <label class="label">اسم المتجر *</label><input id="sName" class="input" value="${esc(f.name)}" maxlength="100">
       <label class="label">التصنيف *</label>
       <div class="chips wrap">${[...new Set([...categories(), f.category].filter(Boolean))].map((c) => `<button class="chip${f.category === c ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
@@ -400,7 +416,25 @@ export function openStoreForm(claim = null) {
   if (claim) {
     const addClaim = () => branchEditor({ id: "b" + Date.now().toString(36), name: f.branches.length ? (claim.name || "") : "الفرع الرئيسي", latitude: claim.lat, longitude: claim.lng,
       district: "", region: "", phone: f.branches.length ? "" : (state.profile?.phone || ""), openMinute: 720, closeMinute: 0, landmark: "" }, (nb) => { f.branches.push(nb); dirty = true; render(); }, true, f.branches);
-    if (!f.branches.length) addClaim();
+    if (claimAds.length) {
+      // فروع جاهزة من عروض الإعلانات (فرع لكل مكان)
+      const seenPl = new Set(), seenPh = new Set(), preset = [];
+      claimAds.forEach((o) => {
+        if (seenPl.has(o.placeId)) return; seenPl.add(o.placeId);
+        const ph = X.normalizeSaudiPhone(o.phone || "") || ""; const usePh = ph && !seenPh.has(ph) ? ph : ""; if (usePh) seenPh.add(usePh);
+        preset.push({ id: "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: [f.name || claim.name, cleanDistrict(o.district)].filter(Boolean).join(" ").slice(0, 60),
+          district: cleanDistrict(o.district || ""), region: o.region || "", latitude: o.latitude, longitude: o.longitude, phone: usePh });
+      });
+      f.adClaim = { placeIds: [...seenPl].slice(0, 50), groups: [...new Set(claimAds.map((o) => o.adGroup).filter(Boolean))].slice(0, 20), count: claimAds.length };
+      render();
+      bulkBranches(f.name || claim.name || "", f.branches, (list) => {
+        // فرع «الرئيسي» الفاضي يتبدّل بالفروع الحقيقية
+        f.branches = f.branches.filter((b) => !(b.id === "main" && !b.district && !b.phone));
+        f.branches.push(...list); dirty = true; render();
+      }, { preset, title: `🏪 لقينا لمحلك ${preset.length} ${preset.length === 1 ? "فرع" : "فروع"} و${claimAds.length} ${claimAds.length === 1 ? "عرض" : "عروض"} على لكوفر`,
+        lead: "علّم على فروعك، وكمّل أرقامها. العروض تنتقل لمتجرك بعد ما نتأكد إنك صاحب المحل.",
+        onSkip: () => { f.adClaim = null; render(); if (!f.branches.length) addClaim(); } });
+    } else if (!f.branches.length) addClaim();
     else {
       // الحساب عنده متجر من قبل: نوضّح إن المحل بينضاف كفرع (مو متجر جديد) بدل ما يختلط مع موقع المتجر الحالي
       showSheet(`<div class="pad install-sheet"><div style="font-size:40px">🏪</div>
@@ -449,8 +483,10 @@ export function openStoreForm(claim = null) {
       }, { merge: true });
       await syncOffers(profile, direct);
       await recordReferral(uid, profile.restaurantName);
+      // 📷 طلب نقل عروض الإعلانات لمتجره (الأدمن يعتمده، أو ينتقل تلقائياً لما يتوثّق)
+      if (f.adClaim) await setDoc(doc(db, "adClaims", uid), { uid, storeName: profile.restaurantName, placeIds: f.adClaim.placeIds, groups: f.adClaim.groups, count: f.adClaim.count, status: "pending", at: serverTimestamp() }).catch((e) => console.warn("adClaim", e));
       saving = false; dirty = false; closePage(false);
-      toast(direct ? "تم حفظ صفحة متجرك ✅" : "تم الحفظ ✅ صفحة متجرك بتظهر للعملاء بعد المراجعة", true);
+      toast(f.adClaim ? `تم الحفظ ✅ وطلب نقل ${f.adClaim.count} ${f.adClaim.count === 1 ? "عرض" : "عروض"} لمتجرك تحت المراجعة` : direct ? "تم حفظ صفحة متجرك ✅" : "تم الحفظ ✅ صفحة متجرك بتظهر للعملاء بعد المراجعة", true);
     } catch (e) {
       console.error(e); saving = false; $("sSave").disabled = false; $("sSave").textContent = "حفظ صفحة المتجر ✓";
       err(e.code === "permission-denied" ? "رفض الحفظ (صلاحيات). تواصل معنا." : (e.message || "تعذّر الحفظ"));

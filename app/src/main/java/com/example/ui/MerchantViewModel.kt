@@ -373,7 +373,8 @@ class MerchantViewModel(
         val description: String, val phone: String, val category: String, val days: Int, val tags: List<String>
     )
 
-    fun publishAdOffer(poi: com.google.android.gms.maps.model.PointOfInterest, place: com.example.data.PlacesLookup.Info?, d: AdDraft) {
+    fun publishAdOffer(poi: com.google.android.gms.maps.model.PointOfInterest, place: com.example.data.PlacesLookup.Info?, d: AdDraft,
+                       extras: List<com.example.data.PlacesLookup.Found> = emptyList()) {
         val uid = currentUser.value?.uid ?: return
         if (isPublishingAd.value) return
         viewModelScope.launch {
@@ -386,6 +387,9 @@ class MerchantViewModel(
                 val orig = num(d.originalPrice)?.takeIf { it > price }
                 val pct = if (orig != null && price > 0) ((orig - price) / orig * 100).toInt() else 0
                 val days = d.days.coerceIn(1, 31)
+                // 👥 إعلان واحد لعدة فروع: نفس الصورة، وكل فرع ياخذ عرضه على موقعه بنفس المجموعة
+                val group = if (extras.isNotEmpty()) "g" + System.currentTimeMillis().toString(36) + (1000..9999).random() else ""
+                val adPhone = d.phone.filter { it.isDigit() || it == '+' }
                 val data = mapOf<String, Any?>(
                     "merchantId" to "poi_" + poi.placeId, "placeId" to poi.placeId, "source" to "ad", "scoutedBy" to uid,
                     "restaurantName" to d.name.trim().ifBlank { place?.name ?: poi.name }.ifBlank { "محل" }.take(100),
@@ -403,11 +407,18 @@ class MerchantViewModel(
                     "startsAt" to null, "discountPercent" to 0, "dailyPercents" to emptyList<Int>(), "itemsScope" to "",
                     "grandOpening" to false, "exclusive" to false, "tags" to d.tags.take(12), "delivery" to false,
                     "logoUrl" to "", "branches" to emptyList<Any>(), "deal" to null
-                )
+                ) + (if (group.isNotBlank()) mapOf("adGroup" to group) else emptyMap())
                 val id = repository.addAdOffer(data)
-                audit("رفع عرض من إعلان", "scout", details = "${d.title} — ${poi.placeId}")
+                extras.filter { it.placeId != poi.placeId }.forEach { x ->
+                    repository.addAdOffer(data + mapOf(
+                        "merchantId" to "poi_" + x.placeId, "placeId" to x.placeId,
+                        "district" to x.district.take(100), "region" to x.city.take(100),
+                        "latitude" to x.lat, "longitude" to x.lng, "phone" to adPhone.take(30)
+                    ))
+                }
+                audit("رفع عرض من إعلان", "scout", details = "${d.title} — ${poi.placeId}" + if (extras.isNotEmpty()) " (+${extras.size} فروع)" else "")
                 adUploadPoi.value = null
-                toast("انتشر العرض على الخريطة ✅")
+                toast(if (extras.isNotEmpty()) "انتشر العرض على ${extras.size + 1} فروع ✅" else "انتشر العرض على الخريطة ✅")
                 Log.d(TAG, "ad offer $id")
             } catch (e: CancellationException) {
                 throw e
@@ -461,10 +472,40 @@ class MerchantViewModel(
         toast("سجّل دخولك عشان تدعو المحل وتنحسب لك النقاط 🎁")
     }
 
+    // 📷 «أنا صاحب المحل» ولمحله عروض إعلانات: فروعه جاهزة + طلب نقل العروض بعد الحفظ
+    data class AdClaimInfo(val placeIds: List<String>, val groups: List<String>, val count: Int)
+    val claimPreset = MutableStateFlow<List<com.example.ui.components.BulkRow>?>(null)
+    val pendingAdClaim = MutableStateFlow<AdClaimInfo?>(null)
+
+    /** عروض الإعلانات اللي تخص محل (نفس المكان + كل فروع مجموعاته) */
+    fun adOffersFor(placeId: String): List<RestaurantOffer> {
+        if (placeId.isBlank()) return emptyList()
+        val now = System.currentTimeMillis()
+        val ads = approvedOffers.value.filter { it.source == "ad" && !com.example.data.model.OfferTime.isExpired(it, now) }
+        val groups = ads.filter { it.placeId == placeId && it.adGroup.isNotBlank() }.map { it.adGroup }.toSet()
+        return ads.filter { it.placeId == placeId || (it.adGroup.isNotBlank() && it.adGroup in groups) }.distinctBy { it.id }
+    }
+
+    private fun prepareAdClaim(poi: com.google.android.gms.maps.model.PointOfInterest) {
+        val ads = adOffersFor(poi.placeId)
+        if (ads.isEmpty()) { claimPreset.value = null; pendingAdClaim.value = null; return }
+        val store = merchantProfile.value?.restaurantName?.takeIf { it.isNotBlank() } ?: poi.name.replace("\n", " ").trim()
+        val seenPh = HashSet<String>()
+        val rows = ads.distinctBy { it.placeId }.map { o ->
+            val d = com.example.data.PlacesLookup.cleanDistrict(o.district)
+            val ph = com.example.ui.components.normalizeSaudiPhone(o.phone)?.takeIf { seenPh.add(it) }.orEmpty()
+            com.example.ui.components.BulkRow(name = listOf(store, d).filter { it.isNotBlank() }.joinToString(" ").take(60), district = d, region = o.region,
+                lat = o.latitude, lng = o.longitude, phone = ph)
+        }
+        claimPreset.value = rows
+        pendingAdClaim.value = AdClaimInfo(ads.map { it.placeId }.distinct().take(50), ads.map { it.adGroup }.filter { it.isNotBlank() }.distinct().take(20), ads.size)
+    }
+
     /** "أنا صاحب المحل": نوديه للتسجيل كتاجر وبيانات محله جاهزة. */
     fun claimPoi(poi: com.google.android.gms.maps.model.PointOfInterest) {
         selectedPoi.value = null
         pendingClaim.value = poi
+        prepareAdClaim(poi)
         launchSafely { repository.logPoi(poi.placeId, "claims") }
         when {
             currentUser.value == null -> {
@@ -562,7 +603,9 @@ class MerchantViewModel(
                     )
                 )
             }
-            toast(if (approve) "تم توثيق ${req.storeName} ✓" else "تم رفض الطلب")
+            // 📷 عنده طلب نقل عروض إعلانات؟ تنتقل له مع التوثيق
+            val moved = if (approve) runCatching { repository.approveAdClaim(req.uid) }.onFailure { Log.w(TAG, "adClaim", it) }.getOrDefault(0) else 0
+            toast(if (approve) "تم توثيق ${req.storeName} ✓" + (if (moved > 0) " وانتقل له $moved عروض" else "") else "تم رفض الطلب")
             audit(if (approve) "توثيق متجر ✓" else "رفض توثيق", "verify", "store", req.uid, req.storeName,
                 if (approve) "${req.docType}: ${req.docNumber}" else "السبب: ${reason.ifBlank { "—" }}")
         }
@@ -1944,6 +1987,8 @@ class MerchantViewModel(
     fun closeBranchesPage() {
         isBranchesPageOpen.value = false
         pendingClaim.value = null
+        claimPreset.value = null
+        pendingAdClaim.value = null
     }
 
     /** يحفظ الفروع والشعار، ويحدّثها في كل عروض التاجر. */
@@ -1985,12 +2030,20 @@ class MerchantViewModel(
                 isBranchesPageOpen.value = false
                 val wasClaim = pendingClaim.value != null
                 pendingClaim.value = null
+                claimPreset.value = null
+                // 📷 طلب نقل عروض الإعلانات لمتجره (ينتقل لما يتوثّق أو تعتمده الإدارة)
+                pendingAdClaim.value?.let { c ->
+                    runCatching { repository.saveAdClaim(user.uid, updated.restaurantName, c.placeIds, c.groups, c.count) }.onFailure { Log.w(TAG, "adClaim", it) }
+                }
+                val adClaimCount = pendingAdClaim.value?.count ?: 0
+                pendingAdClaim.value = null
                 // جاي من "أنا صاحب المحل": نكمّل على طول بخطوة إثبات الملكية (السجل / العمل الحر)
                 if (wasClaim && verifyConfig.value.enabled && myStatus.value?.verified != true) {
                     isVerifyOpen.value = true
-                    toast("تم حفظ متجرك ✅ آخر خطوة: أثبت إنك صاحب المحل")
+                    toast(if (adClaimCount > 0) "تم حفظ متجرك ✅ وثّق متجرك عشان تنتقل لك $adClaimCount عروض" else "تم حفظ متجرك ✅ آخر خطوة: أثبت إنك صاحب المحل")
                     return@launch
                 }
+                if (adClaimCount > 0) { toast("تم الحفظ ✅ وطلب نقل $adClaimCount عروض لمتجرك تحت المراجعة"); return@launch }
                 toast(if (direct) "تم حفظ صفحة متجرك ✅" else "تم الحفظ ✅ صفحة متجرك بتظهر للعملاء بعد المراجعة")
             } catch (e: CancellationException) {
                 throw e

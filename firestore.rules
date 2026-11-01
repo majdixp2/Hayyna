@@ -211,6 +211,24 @@ service cloud.firestore {
             || (request.resource.data.vatNumber is string && request.resource.data.vatNumber.matches('^3[0-9]{13}3$')));
     }
 
+    // 📷 «أنا صاحب المحل» وله عروض إعلانات: التاجر يطلب نقلها لمتجره، والإدارة تعتمد (أو تنتقل لما يتوثّق)
+    match /adClaims/{uid} {
+      allow read: if (isAuthenticated() && request.auth.uid == uid) || canStores();
+      allow create, update: if canStores()
+        || (isAuthenticated() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['uid', 'storeName', 'placeIds', 'groups', 'count', 'status', 'at'])
+          && request.resource.data.uid == uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.storeName is string && request.resource.data.storeName.size() <= 100
+          && request.resource.data.placeIds is list && request.resource.data.placeIds.size() > 0 && request.resource.data.placeIds.size() <= 50
+          && request.resource.data.groups is list && request.resource.data.groups.size() <= 20
+          && request.resource.data.count is int && request.resource.data.count >= 0 && request.resource.data.count <= 200
+          && request.resource.data.at == request.time
+          // ما يرجّع طلب انرفض أو انعتمد لحالة «تحت المراجعة»
+          && (resource == null || resource.data.status == 'pending'));
+      allow delete: if canStores();
+    }
+
     // طلبات توثيق المتاجر: التاجر يرسل طلبه ويشوفه، والأدمن يقرّر
     match /verificationRequests/{uid} {
       allow read: if can('verify') || (isAuthenticated() && request.auth.uid == uid);

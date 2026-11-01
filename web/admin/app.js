@@ -113,6 +113,8 @@ function listen() {
     sub(collection(db, "merchantStatus"), (sn) => { state.statuses = parse(sn).map((x) => ({ ...x, uid: x.id })); });
     sub(query(collection(db, "stores"), where("approved", "==", false)), (sn) => { state.pendingStores = parse(sn).map((x) => ({ ...x, uid: x.id })); });
     sub(collection(db, "stores"), (sn) => { state.storesAll = parse(sn).map((x) => ({ ...x, uid: x.id })); });
+    // 📷 طلبات نقل عروض الإعلانات لمتاجر سجّلت
+    sub(query(collection(db, "adClaims"), where("status", "==", "pending")), (sn) => { state.adClaims = parse(sn).map((x) => ({ ...x, uid: x.id })); });
     // 🔢 رقم المتجر (اللي يدخل فيه الموظفين)
     sub(collection(db, "storeCodes"), (sn) => { state.storeCode = {}; sn.docs.forEach((d) => { const u = d.data().uid; if (u) state.storeCode[u] = d.id; }); });
   }
@@ -234,9 +236,51 @@ const actions = {
     const sref = doc(db, "stores", uid);
     if ((await getDoc(sref)).exists()) await updateDoc(sref, ok ? { verified: true, approved: true } : { verified: false });
     if (ok) await setStatus(uid, { trusted: true, suspended: false, verified: true, name: v?.storeName || "" });
-    toast(ok ? "تم التوثيق ✓" : "تم الرفض");
+    // 📷 عنده طلب نقل عروض إعلانات؟ تنتقل له مع التوثيق
+    let moved = 0;
+    if (ok) { const cl = (state.adClaims || []).find((x) => x.uid === uid); if (cl) moved = await approveAdClaim(cl, true); }
+    toast(ok ? `تم التوثيق ✓${moved ? ` وانتقل له ${moved} ${moved === 1 ? "عرض" : "عروض"}` : ""}` : "تم الرفض");
   },
 };
+
+// ---------------- 📷 نقل عروض الإعلانات لمتجر ----------------
+/** عروض الإعلانات اللي يشملها طلب (نفس الأماكن + كل فروع مجموعاتها) */
+function adsOfClaim(cl) {
+  const pl = new Set(cl.placeIds || []), gr = new Set(cl.groups || []);
+  return state.offers.filter((o) => o.source === "ad" && (pl.has(o.placeId) || (o.adGroup && gr.has(o.adGroup))));
+}
+/**
+ * ينقل عروض إعلانات لمتجر: كل مجموعة (إعلان واحد لعدة فروع) تصير عرض واحد على فروعه في المتجر،
+ * والعدّادات تنجمع. يرجّع عدد الإعلانات اللي انتقلت.
+ */
+async function transferAds(uid, list) {
+  if (!list.length) return 0;
+  const st = state.storesAll.find((s) => s.uid === uid) || {};
+  const sb = st.branches || [];
+  const kmTo = (b, o) => Math.hypot(b.latitude - o.latitude, (b.longitude - o.longitude) * Math.cos(o.latitude * Math.PI / 180)) * 111;
+  const brOf = (o) => sb.map((b) => [b, kmTo(b, o)]).filter(([, d]) => d < 0.3).sort((a, b) => a[1] - b[1])[0]?.[0]
+    || { id: "b_" + o.id.slice(0, 10), name: o.restaurantName || "", latitude: o.latitude, longitude: o.longitude, district: o.district || "", region: o.region || "", phone: o.phone || "", openMinute: -1, closeMinute: -1, landmark: "" };
+  const groups = new Map(); list.forEach((o) => { const k = o.adGroup || o.id; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(o); });
+  const wb = writeBatch(db);
+  for (const g of groups.values()) {
+    const keep = g[0], branches = []; g.forEach((o) => { const b = brOf(o); if (!branches.some((x) => x.id === b.id)) branches.push(b); });
+    const sum = (k) => g.reduce((a, o) => a + (o[k] || 0), 0);
+    wb.update(doc(db, "offers", keep.id), { merchantId: uid, source: "claimed", restaurantName: (st.name || keep.restaurantName).slice(0, 100), logoUrl: st.logoUrl || "",
+      branches: branches.length > 1 ? branches.slice(0, 50) : [], viewsCount: sum("viewsCount"), directionsCount: sum("directionsCount"), whatsappCount: sum("whatsappCount"), adGroup: deleteField() });
+    g.slice(1).forEach((o) => wb.delete(doc(db, "offers", o.id)));
+  }
+  await wb.commit();
+  return list.length;
+}
+/** يعتمد طلب نقل: ينقل العروض ويعلّم الطلب. silent = جاي من التوثيق */
+async function approveAdClaim(cl, silent = false) {
+  const list = adsOfClaim(cl);
+  const n = await transferAds(cl.uid, list);
+  await updateDoc(doc(db, "adClaims", cl.uid), { status: "approved" });
+  await audit("نقل عروض إعلانات لمتجر", "scout", { type: "store", id: cl.uid, name: cl.storeName || cl.uid }, `${n} عرض`);
+  if (!silent) toast(`انتقل ${n} ${n === 1 ? "عرض" : "عروض"} لمتجر ${cl.storeName || ""} ✅`);
+  return n;
+}
 
 // ---------------- الواجهة ----------------
 function computed() {
@@ -291,7 +335,7 @@ function tabAllowed(k) {
 function render() {
   if ($("app").classList.contains("hidden")) return;
   const c = computed();
-  const badges = { catalog: state.items.filter((x) => !x.approved && !x.adminNote).length, review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs, refs: c.refAwards };
+  const badges = { catalog: state.items.filter((x) => !x.approved && !x.adminNote).length, review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length + (state.adClaims || []).length, messages: c.newMsgs, refs: c.refAwards };
   if (!tabAllowed(state.tab)) state.tab = "home";
   $("tabs").innerHTML = NAV.map(([title, items]) => {
     const vis = items.filter(([k]) => tabAllowed(k));
@@ -374,6 +418,7 @@ function home(c) {
     ["مخفية بسبب البلاغات", c.hidden.length, "review", "r", ""],
     ["طلبات توثيق", state.verifs.length, "stores", "n", ""],
     ["صفحات متاجر جديدة", c.pendingStores.length, "stores", "n", ""],
+    ["طلبات نقل عروض إعلانات", (state.adClaims || []).length, "stores", "n", ""],
     ["رسائل جديدة", c.newMsgs, "messages", "n", ""],
     ["نقاط إحالة تنتظرك", c.refAwards, "refs", "g", ""],
     ["عروض حيّها ناقص أو رقم", badDist.length, "offers", "g", "baddist"],
@@ -480,7 +525,15 @@ function stores(c) {
       ${[...state.verifHist].sort((a, b) => (b.decidedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0) - (a.decidedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0)).map((v) => `<tr>
         <td>${esc(v.storeName || v.uid.slice(0, 8))}</td><td>${v.status === "approved" ? `<span class="pill">✓ موثّق</span>` : `<span class="pill off">مرفوض</span>`}</td>
         <td class="muted">${esc(v.rejectReason || "—")}</td><td class="muted">${v.decidedAt?.toDate ? v.decidedAt.toDate().toLocaleString("ar-SA") : "—"}${v.decidedBy ? ` • ${esc(v.decidedBy)}` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">ما فيه طلبات سابقة</p>`}</details>` : "";
-  return (can("verify") ? verifHtml + hist : "") + `<h2>${c.pendingStores.length ? `🏪 صفحات تنتظر الموافقة (${c.pendingStores.length})` : "صفحات تنتظر الموافقة: لا يوجد ✅"}</h2>
+  const claims = state.adClaims || [];
+  const claimsHtml = claims.length ? `<h2>📷 طلبات نقل عروض الإعلانات (${claims.length})</h2>
+    <p class="muted">محلات سجّلت وتقول إنها صاحبة عروض إعلانات رفعها الفريق. تأكد إنه صاحب المحل (التوثيق بالسجل التجاري) واعتمد — أو بتنتقل تلقائياً لما توثّقه.</p>
+    <div class="grid">${claims.map((cl) => { const ads = adsOfClaim(cl), st = state.storesAll.find((x) => x.uid === cl.uid), ver = st?.verified || statusOf(cl.uid)?.verified;
+      return `<div class="card"><div class="name">${esc(cl.storeName || cl.uid.slice(0, 8))} ${ver ? `<span class="pill">✔ موثّق</span>` : `<span class="pill off">غير موثّق</span>`}</div>
+        <div class="muted">${ads.length} ${ads.length === 1 ? "عرض" : "عروض"} على ${new Set(ads.map((o) => o.placeId)).size} فروع${(state.storeCode || {})[cl.uid] ? ` • رقم المتجر ${esc(state.storeCode[cl.uid])}` : ""}</div>
+        ${ads.slice(0, 6).map((o) => `<div class="note">• ${esc(o.offerTitle)} — ${esc(o.district || o.restaurantName)}</div>`).join("")}
+        <div class="actions"><button class="btn primary" data-claimok="${esc(cl.uid)}">✓ اعتماد النقل</button><button class="btn danger" data-claimno="${esc(cl.uid)}">رفض</button></div></div>`; }).join("")}</div>` : "";
+  return claimsHtml + (can("verify") ? verifHtml + hist : "") + `<h2>${c.pendingStores.length ? `🏪 صفحات تنتظر الموافقة (${c.pendingStores.length})` : "صفحات تنتظر الموافقة: لا يوجد ✅"}</h2>
     <div class="grid">${c.pendingStores.map((s) => `<div class="card">
       <div class="row">${s.logoUrl ? `<img class="thumb small" src="${esc(img(s.logoUrl, 150))}" style="border-radius:50%">` : ""}
         <div><div class="name">${esc(s.name)}</div><div class="muted">${esc(s.category)}${s.priceFrom ? ` • تبدأ من ${s.priceFrom} ر.س` : ""}</div></div></div>
@@ -1173,7 +1226,7 @@ function adsPage() {
           <p class="muted" style="margin:6px 0 0">العرض يختفي لحاله بعد المدة، عشان ما يبقى عرض منتهي والمحل ما يدري.</p></div>` : ""}
         <h3>المنشورة (${live.length})${ads.length > live.length ? ` <span class="muted">• منتهية ${ads.length - live.length}</span>` : ""}</h3>
         ${ads.length ? ads.map((o) => offerCard(o,
-          `<div class="muted">${isExpired(o) ? "⛔ انتهى" : "🟢 " + adLeft(o)} • 💬 ${o.whatsappCount || 0} • 🧭 ${o.directionsCount || 0}</div>`,
+          `<div class="muted">${isExpired(o) ? "⛔ انتهى" : "🟢 " + adLeft(o)} • 💬 ${o.whatsappCount || 0} • 🧭 ${o.directionsCount || 0}${o.adGroup ? ` • 👥 مجموعة ${ads.filter((x) => x.adGroup === o.adGroup).length} فروع` : ""}</div>`,
           `<a class="btn" target="_blank" rel="noopener" href="/o/${encodeURIComponent(o.id)}">فتح ↗</a>
            ${!isExpired(o) ? `<button class="btn" data-adext="${esc(o.id)}">+${adDays(state.config)} أيام</button>` : `<button class="btn" data-adext="${esc(o.id)}">🔁 رجّعه ${adDays(state.config)} أيام</button>`}
            ${can("review") && state.storesAll.length ? `<select class="btn" data-admove="${esc(o.id)}"><option value="">🔁 نقل لمتجر سجّل…</option>${near(o).map(({ s, d }) => `<option value="${esc(s.uid)}">${esc(s.name)}${d < 1e8 ? ` (${d < 1 ? Math.round(d * 1000) + " م" : d.toFixed(1) + " كم"})` : ""}</option>`).join("")}</select>` : ""}
@@ -1183,26 +1236,32 @@ function adsPage() {
 }
 function bindAds(c) {
   const byId = (id) => state.offers.find((o) => o.id === id);
+  // 👥 إعلان واحد لعدة فروع: نسأل هل الإجراء للمجموعة كلها
+  const groupOf = (o) => o.adGroup ? state.offers.filter((x) => x.source === "ad" && x.adGroup === o.adGroup) : [o];
+  const pick = (o, verb) => { const g = groupOf(o); return g.length > 1 && confirm(`هذا العرض ضمن مجموعة ${g.length} فروع.\nموافق = ${verb} المجموعة كلها\nإلغاء = هذا الفرع بس`) ? g : [o]; };
   $("adDaysSave")?.addEventListener("click", () => run(async () => {
     const d = Math.min(AD_MAX_DAYS, Math.max(1, parseInt($("adDaysCfg").value, 10) || 7));
     await actions.saveConfig({ adScoutDays: d }); await audit("مدة عروض الإعلانات", "settings", {}, `${d} يوم`);
   }, "انحفظ ✅"));
-  c.querySelectorAll("[data-adext]").forEach((b) => (b.onclick = () => run(async () => {
-    const o = byId(b.dataset.adext), from = Math.max(Date.now(), o.expiresAt?.toMillis?.() || 0);
-    const until = Math.min(from + adDays(state.config) * 864e5, Date.now() + AD_MAX_DAYS * 864e5 - 6e4);
-    await updateDoc(doc(db, "offers", o.id), { expiresAt: Timestamp.fromMillis(until), scoutedBy: state.me.uid });
-    await audit("تمديد عرض إعلان", "scout", offerT(o), new Date(until).toLocaleDateString("ar-SA"));
-  }, "تمدّد ✅", "التمديد")));
+  c.querySelectorAll("[data-adext]").forEach((b) => (b.onclick = () => { const o0 = byId(b.dataset.adext), list = pick(o0, "تمديد"); run(async () => {
+    for (const o of list) {
+      const from = Math.max(Date.now(), o.expiresAt?.toMillis?.() || 0);
+      const until = Math.min(from + adDays(state.config) * 864e5, Date.now() + AD_MAX_DAYS * 864e5 - 6e4);
+      await updateDoc(doc(db, "offers", o.id), { expiresAt: Timestamp.fromMillis(until), scoutedBy: state.me.uid });
+    }
+    await audit("تمديد عرض إعلان", "scout", offerT(o0), list.length > 1 ? `${list.length} فروع` : "");
+  }, "تمدّد ✅", "التمديد"); }));
   c.querySelectorAll("[data-addel]").forEach((b) => (b.onclick = () => {
-    const o = byId(b.dataset.addel); if (!confirm(`حذف «${o.offerTitle}» من الخريطة؟`)) return;
-    run(async () => { await deleteDoc(doc(db, "offers", o.id)); await audit("حذف عرض إعلان", "scout", offerT(o)); }, "انحذف ✅", "الحذف");
+    const o = byId(b.dataset.addel), list = pick(o, "حذف"); if (!confirm(`حذف «${o.offerTitle}»${list.length > 1 ? ` من ${list.length} فروع` : ""} من الخريطة؟`)) return;
+    run(async () => { for (const x of list) await deleteDoc(doc(db, "offers", x.id)); await audit("حذف عرض إعلان", "scout", offerT(o), list.length > 1 ? `${list.length} فروع` : ""); }, "انحذف ✅", "الحذف");
   }));
   c.querySelectorAll("[data-admove]").forEach((sel) => (sel.onchange = () => {
     const o = byId(sel.dataset.admove), st = state.storesAll.find((s) => s.uid === sel.value); if (!st) return;
-    if (!confirm(`ننقل «${o.offerTitle}» لمتجر «${st.name}»؟ بيصير عرضه ويقدر يعدّله ويمدده.`)) { sel.value = ""; return; }
+    const g = groupOf(o);
+    if (!confirm(`ننقل «${o.offerTitle}»${g.length > 1 ? ` (مجموعة ${g.length} فروع — تصير عرض واحد على فروعه)` : ""} لمتجر «${st.name}»؟ بيصير عرضه ويقدر يعدّله ويمدده.`)) { sel.value = ""; return; }
     run(async () => {
-      await updateDoc(doc(db, "offers", o.id), { merchantId: st.uid, source: "claimed", restaurantName: (st.name || o.restaurantName).slice(0, 100), logoUrl: st.logoUrl || "" });
-      await audit("نقل عرض إعلان لمتجر", "scout", offerT(o), st.name);
+      await transferAds(st.uid, g);
+      await audit("نقل عرض إعلان لمتجر", "scout", offerT(o), st.name + (g.length > 1 ? ` (${g.length} فروع)` : ""));
     }, "انتقل للمتجر ✅", "النقل");
   }));
 }
@@ -1230,6 +1289,11 @@ function bind() {
   bindCatalog(c);
   c.querySelectorAll("[data-ret]").forEach((b) => (b.onclick = () => returnToMerchant(b.dataset.ret, b.dataset.id)));
   c.querySelectorAll("[data-sfilter]").forEach((b) => (b.onclick = () => { state.storeFilter = b.dataset.sfilter; render(); }));
+  c.querySelectorAll("[data-claimok]").forEach((b) => (b.onclick = () => { const cl = (state.adClaims || []).find((x) => x.uid === b.dataset.claimok); if (!cl) return;
+    if (!confirm(`ننقل ${adsOfClaim(cl).length} عروض إعلانات لمتجر «${cl.storeName}»؟ تأكد إنه صاحب المحل.`)) return;
+    run(() => approveAdClaim(cl), null, "النقل"); }));
+  c.querySelectorAll("[data-claimno]").forEach((b) => (b.onclick = () => { if (!confirm("رفض طلب النقل؟ العروض تبقى عروض إعلانات.")) return;
+    run(async () => { await updateDoc(doc(db, "adClaims", b.dataset.claimno), { status: "rejected" }); await audit("رفض نقل عروض إعلانات", "scout", { type: "store", id: b.dataset.claimno }); }, "انرفض", "الرفض"); }));
   c.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast("نسخنا الرقم ✅"); } catch { prompt("انسخ:", b.dataset.copy); } }));
   const wq = $("walletQuery"); if (wq) wq.oninput = () => { state.walletQuery = wq.value; state.walletShow = 50; render(); };
   c.querySelectorAll("[data-walletmore]").forEach((b) => (b.onclick = () => { state.walletShow = (state.walletShow || 50) + 50; render(); }));

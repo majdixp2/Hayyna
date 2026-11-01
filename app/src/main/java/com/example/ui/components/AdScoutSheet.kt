@@ -34,6 +34,9 @@ import com.example.ui.i18n.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.material3.TextButton
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +86,13 @@ fun AdScoutSheet(poi: PointOfInterest, vm: MerchantViewModel) {
     var category by remember { mutableStateOf("") }
     var tags by remember { mutableStateOf<List<String>>(emptyList()) }
     var aiDone by remember { mutableStateOf(false) }
+    // 👥 فروع ثانية لنفس المحل (نفس الإعلان)
+    val extras = remember { mutableStateListOf<PlacesLookup.Found>() }
+    var addMore by remember { mutableStateOf(false) }
+    var moreQ by remember { mutableStateOf("") }
+    var moreRes by remember { mutableStateOf<List<PlacesLookup.Found>?>(null) }
+    var moreBusy by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     LaunchedEffect(poi.placeId) {
         days = vm.adScoutDays().toString()
@@ -161,6 +171,52 @@ fun AdScoutSheet(poi: PointOfInterest, vm: MerchantViewModel) {
                     }
                 }
             }
+            extras.forEach { x ->
+                Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Navy.copy(alpha = 0.2f)), color = Color.Transparent) {
+                    Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("📍", fontSize = 20.sp)
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            androidx.compose.material3.Text(x.name, fontWeight = FontWeight.Bold, maxLines = 1)
+                            androidx.compose.material3.Text(listOf(x.district, x.address).filter { it.isNotBlank() }.joinToString(" — "), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                        TextButton(onClick = { extras.remove(x) }) { Text("✕") }
+                    }
+                }
+            }
+            if (!addMore) TextButton(onClick = { addMore = true; if (moreQ.isBlank()) moreQ = name }) { Text("＋ فروع ثانية لنفس المحل", color = Navy, fontWeight = FontWeight.Bold) }
+            else {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(moreQ, { moreQ = it.take(80) }, singleLine = true, label = { Text("دوّر على فروعه") }, modifier = Modifier.weight(1f))
+                    Button(onClick = {
+                        if (moreQ.isBlank() || moreBusy) return@Button
+                        moreBusy = true
+                        scope.launch { moreRes = PlacesLookup.searchText(context, moreQ.trim(), poi.latLng.latitude, poi.latLng.longitude, 20).filter { it.placeId != poi.placeId }; moreBusy = false }
+                    }, colors = ButtonDefaults.buttonColors(containerColor = Navy), shape = RoundedCornerShape(12.dp)) {
+                        if (moreBusy) CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp) else Text("بحث")
+                    }
+                }
+                moreRes?.let { res ->
+                    if (res.isEmpty()) Note("ما لقينا فروع ثانية. جرّب اسم ثاني أو أضف المدينة.")
+                    else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(checked = res.all { r -> extras.any { it.placeId == r.placeId } }, onCheckedChange = { on ->
+                                if (on) res.forEach { r -> if (extras.none { it.placeId == r.placeId }) extras.add(r) } else extras.removeAll { e -> res.any { it.placeId == e.placeId } } })
+                            Text("اختر الكل (${res.size})", fontWeight = FontWeight.Bold)
+                        }
+                        res.forEach { r ->
+                            val on = extras.any { it.placeId == r.placeId }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { if (on) extras.removeAll { it.placeId == r.placeId } else extras.add(r) }) {
+                                androidx.compose.material3.Checkbox(checked = on, onCheckedChange = { c -> if (c) extras.add(r) else extras.removeAll { it.placeId == r.placeId } })
+                                Column(Modifier.weight(1f)) {
+                                    androidx.compose.material3.Text(r.name, fontWeight = FontWeight.Bold, maxLines = 1)
+                                    androidx.compose.material3.Text(listOf(r.district, r.address).filter { it.isNotBlank() }.joinToString(" — "), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                                }
+                            }
+                        }
+                    }
+                    TextButton(onClick = { addMore = false; moreRes = null }) { Text("تم ✓", color = Navy, fontWeight = FontWeight.Bold) }
+                }
+            }
             OutlinedTextField(name, { name = it.take(100) }, label = { Text("اسم المحل") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(title, { title = it.take(150) }, label = { Text("عنوان العرض *") }, placeholder = { Text("مثال: عرض الوطن الجامبو") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -194,14 +250,14 @@ fun AdScoutSheet(poi: PointOfInterest, vm: MerchantViewModel) {
                 onClick = {
                     val img = image ?: return@Button
                     vm.publishAdOffer(poi, place, MerchantViewModel.AdDraft(
-                        img.toString(), name, title, price, orig, desc, phone, category, days.toIntOrNull() ?: 7, tags))
+                        img.toString(), name, title, price, orig, desc, phone, category, days.toIntOrNull() ?: 7, tags), extras.toList())
                 },
                 enabled = ready && !publishing,
                 colors = ButtonDefaults.buttonColors(containerColor = Navy),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
             ) {
                 if (publishing) { CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp); Text("  ننشر…", fontWeight = FontWeight.Bold) }
-                else Text("🚀 انشر على الخريطة", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                else Text(if (extras.isNotEmpty()) "🚀 انشر على ${extras.size + 1} فروع" else "🚀 انشر على الخريطة", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
             }
             if (!ready) Text(
                 if (image == null) "اختر صورة الإعلان عشان تقدر تنشر" else "اكتب عنوان العرض عشان تقدر تنشر",

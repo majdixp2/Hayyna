@@ -95,6 +95,8 @@ data class RestaurantOffer(
     val source: String = "",
     val placeId: String = "",
     val scoutedBy: String = "",
+    // 👥 إعلان واحد لعدة فروع (نفس المجموعة)
+    val adGroup: String = "",
     // ❌ نفد اليوم: لين هالوقت (منتصف الليل) — يعلّمه المحل أو موظفه
     val soldOutUntil: Timestamp? = null,
     // 🔔 كم زبون طلب «ذكّرني لما يتوفر»
