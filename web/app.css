@@ -322,6 +322,8 @@ textarea.input { resize: vertical; line-height: 1.6; }
 .install-go { border: 0; background: var(--green); color: #fff; font: inherit; font-weight: 800; font-size: 14px; border-radius: 12px; padding: 9px 14px; white-space: nowrap; }
 .btn.install-row { background: var(--green-soft); color: var(--green); margin-bottom: 10px; }
 .btn.primary { background: var(--green); color: #fff; }
+.btn.navy { background: #10318F; color: #fff; }
+html.dark .btn.navy, [data-theme="dark"] .btn.navy { background: #3D63D6; }
 .install-sheet { text-align: center; }
 .install-sheet img { width: 64px; height: 64px; border-radius: 16px; }
 .install-sheet h2 { margin: 10px 0 4px; font-size: 19px; }
@@ -903,3 +905,24 @@ body.hideAdFar .zfar .mk.isad:not(.on){display:none}
 .ann-strip.ann-navy{background:#10318F}.ann-strip.ann-gold{background:#F4B400;color:#0B2266}.ann-strip.ann-green{background:#15803D}
 .ann-x{border:0;background:rgba(255,255,255,.2);color:inherit;width:24px;height:24px;border-radius:50%;font-size:12px;cursor:pointer;flex:none}
 .ann-strip.hidden{display:none}
+
+/* 📣 شريط الإعلان: رفيع تحت فوق شريط التنقل، والعناصر السفلية ترتفع فوقه */
+.ann-strip{position:fixed;z-index:520;left:12px;right:12px;bottom:calc(var(--nav) + 6px);margin:0 auto;max-width:616px}
+#tab-map.ann-on .carousel{bottom:calc(var(--nav) + 46px)}
+#tab-map.ann-on .fab{bottom:calc(232px + var(--nav))}
+#tab-map.ann-on .scope-pill{bottom:calc(242px + var(--nav))}
+#tab-map.ann-on .car-arrow{bottom:calc(var(--nav) + 108px)}
+#tab-map.ann-on .empty{bottom:calc(60px + var(--nav))}
+body:has(#tab-map.on.ann-on) .otr.m-bar{bottom:calc(var(--nav) + 52px)}
+/* لون حر من الأدمن */
+.ann-custom{color:var(--af)}.ann-custom .ann-top{background:var(--ab)}.ann-custom .ann-cta{background:var(--ad)}.ann-custom .ann-cta i{background:var(--af);color:var(--ad)}.ann-custom .ann-logo{background:var(--af);color:var(--ab)}
+.ann-strip.ann-custom{background:var(--ab);color:var(--af)}
+/* بنرات «حسابي»: تتقلّب + نقاط + سحب */
+.ann-car{margin:8px 0}
+.ann-track{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.ann-track::-webkit-scrollbar{display:none}
+.ann-track>.ann{flex:0 0 calc(100% - 28px);scroll-snap-align:start}
+.ann-track>.ann:only-child{flex-basis:100%}
+.ann-dots{display:flex;justify-content:center;gap:5px;margin-top:8px}
+.ann-dots i{width:6px;height:6px;border-radius:3px;background:#C9CEDA;transition:width .2s}
+.ann-dots i.on{width:16px;background:#10318F}

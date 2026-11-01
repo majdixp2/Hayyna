@@ -14,7 +14,7 @@ export const STAFF_DOMAIN = "staff.lacover.app";
 export const isStaffEmail = (e) => String(e || "").toLowerCase().endsWith("@" + STAFF_DOMAIN);
 export const ROLES = {
   cashier: { t: "💳 كاشير", perms: ["orders", "stock"], hint: "يستقبل الطلبات ويغيّر حالتها، ويعلّم الأصناف «نفد»" },
-  kitchen: { t: "👨‍🍳 مطبخ", perms: ["orders"], hint: "يشوف الطلبات ويحدّث حالتها (يتجهّز / جاهز)" },
+  kitchen: { t: "👤 مقدم خدمة", perms: ["orders"], hint: "يشوف الطلبات ويحدّث حالتها (يتجهّز / جاهز)" },
 };
 export const PERMS = { orders: "🧾 الطلبات (استقبال وتغيير الحالة)", stock: "🍽️ «نفد اليوم» للأصناف" };
 const { esc } = X;
@@ -71,7 +71,7 @@ export async function openStaffManager(storeName) {
         <div class="st-n">${m.n}</div>
         <div class="st-main"><b>${esc(m.name || "موظف " + m.n)}</b><small>${esc(ROLES[m.role]?.t || "")} • ${m.perms.map((p) => p === "orders" ? "🧾 الطلبات" : "🍽️ نفد اليوم").join(" • ")}${branchText(m.branchIds) ? " • " + esc(branchText(m.branchIds)) : ""}${m.active ? "" : " • ⏸️ موقوف"}</small></div>
         <button class="btn-soft" data-st="${esc(m.uid)}">إدارة</button></div>`).join("")
-        : `<div class="empty-inline">ما أضفت موظفين للحين.<br>أضف الكاشير أو المطبخ، وكل واحد يدخل برقمه ورمزه السري.</div>`}
+        : `<div class="empty-inline">ما أضفت موظفين للحين.<br>أضف الكاشير أو مقدم الخدمة، وكل واحد يدخل برقمه ورمزه السري.</div>`}
       <button class="btn dir big" id="stAdd">➕ إضافة موظف</button>
       <p class="hint">🔒 الموظف ما يشوف العروض ولا الأسعار ولا الرصيد ولا صفحة المتجر. وتقدر توقفه بضغطة.</p>
     </div>`;
@@ -151,7 +151,7 @@ function staffActions(m, code, storeName) {
   if (!m) return;
   showSheet(`<div class="pad"><div class="section-title">👤 ${esc(m.name || "موظف " + m.n)} <span class="pill">رقم ${m.n}</span></div>
     <button class="btn call" id="saInfo">🔑 بيانات الدخول${qrOn() ? " و QR" : ""}</button>
-    <button class="btn call" id="saEdit">✎ تعديل الاسم والصلاحيات</button>
+    <button class="btn navy" id="saEdit">✎ تعديل الاسم والصلاحيات</button>
     <button class="btn call" id="saPin">🔁 رمز سري جديد</button>
     <button class="btn call" id="saToggle">${m.active ? "⏸️ إيقاف مؤقت" : "▶️ تفعيل"}</button>
     <button class="btn danger" id="saDel">🗑️ حذف الموظف</button></div>`);

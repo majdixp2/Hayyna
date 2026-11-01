@@ -1300,9 +1300,9 @@ function promoPage() {
 
   <h2>📣 مستطيل إعلانات لكوفر</h2>
   <div class="card">
-    <p class="muted">يطلع فوق الخريطة كسطر (الزبون يقدر يخفيه لين بكرة)، وفي «حسابي» ثابت. الشارة الحمراء تنحسب لحالها من تاريخ النهاية لو تركتها فاضية.</p>
+    <p class="muted">يطلع شريط رفيع تحت الخريطة (الزبون يقدر يخفيه لين بكرة)، وفي «حسابي» بنر داخل الصفحة يتقلّب لو أكثر من إعلان. الشارة الحمراء تنحسب لحالها من تاريخ النهاية لو تركتها فاضية.</p>
     ${PR.anns.length ? `<table class="tbl"><thead><tr><th>الإعلان</th><th>لمين / وين</th><th>الفترة</th><th>👁 مشاهدة</th><th>👆 ضغط</th><th>الحالة</th><th></th></tr></thead><tbody>${PR.anns.map((a) => { const st = tsMs(a.startsAt), en = tsMs(a.endsAt), on = a.active !== false;
-      return `<tr><td><b>${esc(a.title)}</b><br><small class="muted">${esc(a.sub || "")}</small></td><td>${{ all: "الكل", customers: "الزبائن", merchants: "التجار" }[a.audience] || "الكل"}<br><small>${[a.places?.map ? "فوق الخريطة" : "", a.places?.account ? "حسابي" : ""].filter(Boolean).join(" + ")}</small></td>
+      return `<tr><td><b>${esc(a.title)}</b><br><small class="muted">${esc(a.sub || "")}</small></td><td>${{ all: "الكل", customers: "الزبائن", merchants: "التجار" }[a.audience] || "الكل"}<br><small>${[a.places?.map ? "شريط الخريطة" : "", a.places?.account ? "حسابي" : ""].filter(Boolean).join(" + ")}</small></td>
         <td class="muted">${new Date(st).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn")} ← ${new Date(en).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn")}</td><td>${a.views || 0}</td><td>${a.clicks || 0}${a.views ? ` <small class="muted">(${Math.round(((a.clicks || 0) / a.views) * 100)}%)</small>` : ""}</td>
         <td>${!on ? "⏸️ موقف" : now < st ? "🔜 قريباً" : now < en ? "🟢 شغّال" : "⏹️ منتهي"}</td>
         <td><button class="btn" data-anon="${esc(a.id)}">${on ? "إيقاف" : "تشغيل"}</button> <button class="btn danger" data-andel="${esc(a.id)}">حذف</button></td></tr>`; }).join("")}</tbody></table>` : `<p class="muted">ما فيه إعلانات للحين.</p>`}
@@ -1315,11 +1315,13 @@ function promoPage() {
       <div><p class="muted">الزر يسوي</p><select id="anAction" style="width:100%">${ACTIONS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>
       <div><p class="muted">الرابط / رقم العرض / رقم المتجر</p><input type="text" id="anValue" maxlength="300" style="width:100%"></div>
       <div><p class="muted">لمين</p><select id="anAud" style="width:100%"><option value="all">الكل</option><option value="customers">الزبائن</option><option value="merchants">التجار</option></select></div>
-      <div><p class="muted">اللون</p><div class="row" id="anColors">${[["navy", "كحلي — خصم"], ["gold", "ذهبي — حدث / ميزة"], ["green", "أخضر — عام"]].map(([k, l]) => `<label><input type="radio" name="anColor" value="${k}" ${PR.color === k ? "checked" : ""}> ${l}</label>`).join(" ")}</div></div>
+      <div><p class="muted">اللون (جاهز أو اختر أي لون)</p><div class="row" id="anColors" style="flex-wrap:wrap;align-items:center;gap:8px">${[["navy", "كحلي"], ["gold", "ذهبي"], ["green", "أخضر"]].map(([k, l]) => `<label><input type="radio" name="anColor" value="${k}" ${PR.color === k ? "checked" : ""}> ${l}</label>`).join(" ")}
+        <label>🎨 <input type="color" id="anColorPick" value="${/^#/.test(PR.color) ? PR.color : "#E5484D"}"></label><input type="text" id="anColorHex" maxlength="7" placeholder="#RRGGBB" value="${/^#/.test(PR.color) ? PR.color : ""}" style="width:90px"></div></div>
       <div><p class="muted">من</p><input type="datetime-local" id="anFrom" value="${dtv(now)}"></div>
       <div><p class="muted">إلى</p><input type="datetime-local" id="anTo" value="${dtv(now + 7 * 864e5)}"></div>
     </div>
-    <div class="row" style="margin-top:8px"><label class="switch"><input type="checkbox" id="anMap" checked> فوق الخريطة</label><label class="switch"><input type="checkbox" id="anAcc" checked> في «حسابي»</label></div>
+    <p class="muted" style="margin-top:10px">معاينة</p><div id="anPrev" style="max-width:360px"></div>
+    <div class="row" style="margin-top:8px"><label class="switch"><input type="checkbox" id="anMap" checked> شريط تحت الخريطة</label><label class="switch"><input type="checkbox" id="anAcc" checked> في «حسابي»</label></div>
     <details style="margin-top:8px"><summary>🌐 النص بالإنجليزي (اختياري)</summary>
       <div class="row" style="flex-wrap:wrap;gap:8px"><input type="text" id="anTitleEn" placeholder="Title" maxlength="60"><input type="text" id="anSubEn" placeholder="Subtitle" maxlength="90"><input type="text" id="anCtaEn" placeholder="Button" maxlength="30"></div></details>
     <div class="actions"><button class="btn primary" id="anSave">نشر الإعلان</button></div>
@@ -1353,7 +1355,19 @@ function attachPromo() {
     try { await updateDoc(doc(db, "config", "app"), { [`credits.items.${b.dataset.prdel}.promo`]: deleteField() }); toast("انحذف"); } catch (e) { console.error(e); toast("تعذّر"); }
   });
   $("prStoreSave").onclick = () => updateDoc(doc(db, "config", "app"), { "credits.promoStoreUrl": v("prStore").slice(0, 300) }).then(() => toast("انحفظ ✅")).catch(() => toast("تعذّر"));
-  $("content").querySelectorAll('input[name="anColor"]').forEach((r) => r.onchange = () => { PR.color = r.value; });
+  const PRESET = { navy: ["#10318F", "#0B2266", "#fff"], gold: ["#F4B400", "#E0A300", "#0B2266"], green: ["#15803D", "#106631", "#fff"] };
+  const colorsOf = (c) => { if (PRESET[c]) return PRESET[c]; const n = parseInt(c.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return [c, "#" + [r, g, b].map((x) => Math.round(x * 0.82).toString(16).padStart(2, "0")).join(""), (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#111827" : "#fff"]; };
+  const prev = () => { const [bg, dk, fg] = colorsOf(PR.color); const end = ms("anTo"), d = Math.ceil((end - Date.now()) / 864e5);
+    $("anPrev").innerHTML = `<div style="border-radius:18px;overflow:hidden;color:${fg};direction:rtl"><div style="background:${bg};padding:12px 14px"><div style="display:flex;justify-content:space-between"><b style="opacity:.8">%</b><span style="background:#E5484D;color:#fff;border-radius:8px;padding:1px 8px;font-size:12px">${esc(v("anBadge") || (d <= 1 ? "آخر يوم" : `ينتهي خلال ${d} أيام`))}</span></div>
+      <div style="font-weight:800;font-size:18px;margin-top:6px">${esc(v("anTitle") || "العنوان الكبير")}</div><div style="opacity:.9;font-size:13px">${esc(v("anSub"))}</div></div>
+      ${$("anAction").value !== "none" ? `<div style="background:${dk};padding:10px 14px;font-weight:800">‹ ${esc(v("anCta") || "اعرف أكثر")}</div>` : ""}</div>`; };
+  $("content").querySelectorAll('input[name="anColor"]').forEach((r) => r.onchange = () => { PR.color = r.value; $("anColorHex").value = ""; prev(); });
+  const setHex = (h) => { if (!/^#[0-9a-f]{6}$/i.test(h)) return; PR.color = h.toUpperCase(); $("content").querySelectorAll('input[name="anColor"]').forEach((r) => r.checked = false); $("anColorPick").value = h; $("anColorHex").value = PR.color; prev(); };
+  $("anColorPick").oninput = (e) => setHex(e.target.value);
+  $("anColorHex").oninput = (e) => setHex(e.target.value.trim());
+  ["anTitle", "anSub", "anCta", "anBadge", "anTo", "anAction"].forEach((id) => { $(id).addEventListener("input", prev); $(id).addEventListener("change", prev); });
+  prev();
   $("anSave").onclick = async () => {
     const from = ms("anFrom"), to = ms("anTo");
     if (!v("anTitle")) return toast("اكتب العنوان");

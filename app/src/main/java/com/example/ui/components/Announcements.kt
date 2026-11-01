@@ -1,16 +1,21 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -21,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,11 +34,17 @@ import androidx.compose.ui.unit.sp
 import com.example.data.repository.Announcement
 import com.example.ui.i18n.I18n
 
-/** ألوان الإعلان: كحلي (خصم) / ذهبي (حدث، ميزة) / أخضر (عام) — (خلفية، شريط الزر، النص) */
-private fun annColors(c: String): Triple<Color, Color, Color> = when (c) {
-    "gold" -> Triple(Color(0xFFF4B400), Color(0xFFD99E00), Color(0xFF1B1B1B))
-    "green" -> Triple(Color(0xFF15803D), Color(0xFF0F6630), Color.White)
-    else -> Triple(Color(0xFF10318F), Color(0xFF0B2470), Color.White)
+/** ألوان الإعلان: (خلفية، شريط الزر الأغمق، النص). اللون إما جاهز (navy/gold/green) أو كود حر #RRGGBB */
+fun annColors(c: String): Triple<Color, Color, Color> {
+    when (c) {
+        "gold" -> return Triple(Color(0xFFF4B400), Color(0xFFE0A300), Color(0xFF0B2266))
+        "green" -> return Triple(Color(0xFF15803D), Color(0xFF106631), Color.White)
+        "navy", "" -> return Triple(Color(0xFF10318F), Color(0xFF0B2266), Color.White)
+    }
+    val bg = runCatching { Color(android.graphics.Color.parseColor(c)) }.getOrNull() ?: return annColors("navy")
+    val dark = Color(bg.red * 0.82f, bg.green * 0.82f, bg.blue * 0.82f, 1f)
+    val fg = if (bg.luminance() > 0.5f) Color(0xFF111827) else Color.White
+    return Triple(bg, dark, fg)
 }
 
 private fun Announcement.t(ar: String, en: String) = if (I18n.isEn && en.isNotBlank()) en else ar
@@ -81,25 +93,44 @@ fun AnnouncementCard(a: Announcement, onView: (String) -> Unit, onClick: (Announ
     }
 }
 
-/** السطر فوق الخريطة: ضغطة = يتوسع، ✕ = يختفي لين بكرة */
+/** 📣 بنرات «حسابي»: داخل الصفحة (تتمرر معها)، وأكثر من إعلان = تتقلّب لحالها + نقاط + سحب */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun AnnouncementStrip(a: Announcement, expanded: Boolean, onToggle: () -> Unit, onClose: () -> Unit, onView: (String) -> Unit, onClick: (Announcement) -> Unit) {
-    if (expanded) {
-        Box {
-            AnnouncementCard(a, onView, onClick, Modifier.padding(top = 6.dp))
-            Text("✕", color = annColors(a.color).third, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp).clip(CircleShape).clickable { onToggle() }.padding(horizontal = 10.dp, vertical = 2.dp))
+fun AnnouncementCarousel(list: List<Announcement>, onView: (String) -> Unit, onClick: (Announcement) -> Unit, modifier: Modifier = Modifier) {
+    if (list.isEmpty()) return
+    if (list.size == 1) { AnnouncementCard(list[0], onView, onClick, modifier); return }
+    val pager = rememberPagerState { list.size }
+    LaunchedEffect(pager, list.size) {
+        while (true) {
+            kotlinx.coroutines.delay(4000)
+            if (!pager.isScrollInProgress) pager.animateScrollToPage((pager.currentPage + 1) % list.size)
         }
-        return
     }
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        HorizontalPager(state = pager, contentPadding = PaddingValues(end = 28.dp), pageSpacing = 10.dp, modifier = Modifier.fillMaxWidth()) { i ->
+            AnnouncementCard(list[i], onView, onClick)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            repeat(list.size) { i ->
+                Box(Modifier.height(6.dp).width(if (i == pager.currentPage) 16.dp else 6.dp).clip(CircleShape)
+                    .background(if (i == pager.currentPage) Color(0xFF10318F) else Color(0xFFC9CEDA)))
+            }
+        }
+    }
+}
+
+/** الشريط الرفيع تحت الخريطة: ضغطة = تنفتح البطاقة، ✕ = يختفي لين بكرة */
+@Composable
+fun AnnouncementStrip(a: Announcement, onOpen: () -> Unit, onClose: () -> Unit, onView: (String) -> Unit, modifier: Modifier = Modifier) {
     val (bg, _, fg) = annColors(a.color)
     LaunchedEffect(a.id) { onView(a.id) }
-    Row(Modifier.padding(top = 6.dp).fillMaxWidth().shadow(3.dp, RoundedCornerShape(14.dp)).clip(RoundedCornerShape(14.dp)).background(bg)
-        .clickable { onToggle() }.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().shadow(3.dp, RoundedCornerShape(14.dp)).clip(RoundedCornerShape(14.dp)).background(bg)
+        .clickable { onOpen() }.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Pill(annBadge(a))
         Spacer(Modifier.width(8.dp))
         Text(a.t(a.title, a.titleEn), color = fg, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Text("⌄", color = fg, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 6.dp))
+        Text(if (I18n.isEn) "›" else "‹", color = fg, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp))
         Text("✕", color = fg.copy(alpha = 0.8f), fontSize = 13.sp, modifier = Modifier.clip(CircleShape).clickable { onClose() }.padding(horizontal = 8.dp, vertical = 2.dp))
     }
 }

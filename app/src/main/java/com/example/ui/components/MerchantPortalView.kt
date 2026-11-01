@@ -113,6 +113,8 @@ fun MerchantPortalView(
     credits: MerchantCredits? = null,
     catalogCard: (@Composable () -> Unit)? = null,
     onMyOrders: (() -> Unit)? = null,
+    // 📣 إعلانات لكوفر: تنرسم داخل الصفحة (تتمرر معها)
+    topBanner: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var editProfile by remember { mutableStateOf(false) }
@@ -140,6 +142,7 @@ fun MerchantPortalView(
             onCustomerSignIn = onCustomerSignIn,
             onStaffLogin = onStaffLogin,
             onOpenContact = onOpenContact,
+            topBanner = topBanner,
             modifier = modifier
         )
     } else if (isRoleLoading) {
@@ -159,6 +162,7 @@ fun MerchantPortalView(
             onOpenContact = onOpenContact,
             unreadReplies = unreadReplies,
             onMyOrders = onMyOrders,
+            topBanner = topBanner,
             modifier = modifier
         )
     } else {
@@ -187,6 +191,7 @@ fun MerchantPortalView(
             onOpenVerify = onOpenVerify,
             credits = credits,
             catalogCard = catalogCard,
+            topBanner = topBanner,
             modifier = modifier
         )
     }
@@ -199,6 +204,7 @@ private fun MerchantLoginView(
     onCustomerSignIn: () -> Unit,
     onOpenContact: () -> Unit,
     onStaffLogin: (() -> Unit)? = null,
+    topBanner: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var confirmMerchant by remember { mutableStateOf(false) }
@@ -211,6 +217,7 @@ private fun MerchantLoginView(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        topBanner?.invoke()
         Spacer(Modifier.height(8.dp))
         Text(
             text = "حسابي",
@@ -360,6 +367,7 @@ private fun CustomerAccountView(
     onOpenContact: () -> Unit,
     unreadReplies: Int,
     onMyOrders: (() -> Unit)? = null,
+    topBanner: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -372,6 +380,7 @@ private fun CustomerAccountView(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        topBanner?.invoke()
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -503,6 +512,7 @@ private fun MerchantDashboard(
     onOpenVerify: () -> Unit,
     credits: MerchantCredits? = null,
     catalogCard: (@Composable () -> Unit)? = null,
+    topBanner: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showPrivacy by remember { mutableStateOf(false) }
@@ -519,6 +529,7 @@ private fun MerchantDashboard(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        if (topBanner != null) item { topBanner() }
         item {
             Card(
                 shape = RoundedCornerShape(16.dp),
