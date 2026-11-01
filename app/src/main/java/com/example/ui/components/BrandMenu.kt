@@ -131,7 +131,7 @@ fun BrandMenuButton(
             Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).size(13.dp).scale(pulse)
                 .background(Gold, CircleShape).border(2.dp, Color.White, CircleShape)
         )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        HMenu(expanded = open, onDismissRequest = { open = false }) {
             fun close() { open = false }
             BrandItem("🔄", "تحديث العروض", if (newCount > 0) "نزل ${if (newCount == 1) "عرض جديد" else "$newCount عروض جديدة"} حولك" else null) { close(); vm.refreshOffers(newCount) }
             BrandItem("📍", "تصفّح حي") { close(); onBrowse() }
@@ -143,12 +143,12 @@ fun BrandMenuButton(
             BrandItem("🌐", if (com.example.ui.i18n.I18n.isEn) "العربية" else "English") { close(); com.example.ui.i18n.switchLang(ctx) }
             BrandItem(com.example.ui.i18n.themeLabel().take(2), com.example.ui.i18n.themeLabel().drop(3)) { com.example.ui.i18n.nextTheme(ctx) }
             if (isScout || isAdmin) {
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                HMenuDivider()
                 Text("للفريق", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp))
                 if (isScout) BrandItem("📷", "ارفع عرض من إعلان", "اكتب اسم المحل وارفع الإعلان") { close(); vm.adPickerOpen.value = true }
                 if (isAdmin) BrandItem("🛠️", "لوحة الإدارة") { close(); vm.setRole(com.example.ui.AppRole.ADMIN_PORTAL) }
             }
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            HMenuDivider()
             Text("💡 ضغطة طويلة على الشعار = تحديث سريع", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
         }
@@ -156,16 +156,7 @@ fun BrandMenuButton(
 }
 
 @Composable
-private fun BrandItem(icon: String, label: String, sub: String? = null, action: () -> Unit) = DropdownMenuItem(
-    leadingIcon = { Text(icon, fontSize = 18.sp) },
-    text = {
-        Column {
-            Text(label, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            if (sub != null) Text(sub, fontSize = 12.sp, color = Color(0xFFB07D00))
-        }
-    },
-    onClick = action
-)
+private fun BrandItem(icon: String, label: String, sub: String? = null, action: () -> Unit) = HMenuItem(icon, label, sub, onClick = action)
 
 /** 📷 للفريق: دوّر على المحل في Google ثم ارفع له عرض من إعلان. */
 @OptIn(ExperimentalMaterial3Api::class)
