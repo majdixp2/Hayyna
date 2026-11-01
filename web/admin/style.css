@@ -9,7 +9,10 @@
   --green:var(--blue);--green-soft:var(--blue-s);--amber:var(--yel-d);--amber-bg:var(--yel-s);
 }
 *{box-sizing:border-box}
-body{margin:0;font-family:Cairo,system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:15px}
+body{margin:0;font-family:Cairo,system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:15px;overflow-x:clip}
+/* شبكة عمودين (نموذج الإعلانات): الأعمدة تنضغط بدل ما توسّع الصفحة */
+.grid2{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.grid2>*{min-width:0}
 .hidden{display:none!important}
 button{font-family:inherit}
 
@@ -181,8 +184,9 @@ svg.line{width:100%;height:220px;display:block}
 
 /* ---------- الجوال: القائمة درج من اليمين بزر ☰ ---------- */
 @media (max-width:767px){
-  .side{position:fixed;top:0;bottom:0;inset-inline-start:0;height:100%;width:min(300px,86vw);z-index:40;transform:translateX(105%);transition:transform .22s ease;box-shadow:none;border-inline-end:0}
-  body.drawer-open .side{transform:none;box-shadow:-8px 0 24px rgba(0,0,0,.18)}
+  .side{position:fixed;top:0;bottom:0;inset-inline-start:0;height:100%;width:min(300px,86vw);z-index:40;transform:translateX(105%);visibility:hidden;transition:transform .22s ease,visibility 0s .22s;box-shadow:none;border-inline-end:0}
+  body.drawer-open .side{transform:none;visibility:visible;transition:transform .22s ease;box-shadow:-8px 0 24px rgba(0,0,0,.18)}
+  .grid2{grid-template-columns:1fr!important}
   .scrim{position:fixed;inset:0;background:rgba(32,33,36,.4);z-index:39;opacity:0;pointer-events:none;transition:opacity .2s;display:block}
   body.drawer-open .scrim{opacity:1;pointer-events:auto}
   body.drawer-open{overflow:hidden}
@@ -201,7 +205,11 @@ svg.line{width:100%;height:220px;display:block}
   .tbl:not(.nice),.tbl:not(.nice) tbody,.tbl:not(.nice) tr,.tbl:not(.nice) td{display:block;width:100%}
   .tbl:not(.nice) thead{display:none}
   .tbl:not(.nice) tr{border:1px solid var(--border);border-radius:14px;padding:8px;margin-bottom:8px}
-  .tbl:not(.nice) td{border:0}
+  .tbl:not(.nice) td{border:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px;white-space:normal;min-width:0}
+  .tbl:not(.nice) td>*{max-width:100%}
+  .row{flex-wrap:wrap}
+  .row>input[type=number]{max-width:110px}
+  .tbl:not(.nice) td:empty{display:none}
 }
 @media (min-width:768px) and (max-width:900px){ .ads-grid{grid-template-columns:1fr}.ads-grid #adSlot{position:static} }
 
