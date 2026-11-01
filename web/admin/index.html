@@ -1,4 +1,4 @@
-<!-- v4 -->
+<!-- v5 -->
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -7,12 +7,16 @@
   <title>لوحة إدارة لكوفر</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Roboto:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/admin/style.css?v=4">
+  <link rel="icon" type="image/svg+xml" href="/admin/favicon.svg">
+  <link rel="icon" type="image/png" sizes="48x48" href="/admin/favicon-48.png">
+  <link rel="apple-touch-icon" href="/admin/icon-180.png">
+  <meta name="theme-color" content="#10318F">
+  <link rel="stylesheet" href="/admin/style.css?v=5">
 </head>
 <body>
   <main id="login" class="center hidden">
     <div class="card login-card">
-      <svg class="login-logo" width="56" height="67" viewBox="0 0 100 120" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="#1A73E8"/><path d="M27 86 L50 120 L73 86 Z" fill="#1A73E8"/><circle cx="50" cy="50" r="33" fill="#fff"/><path d="M77.4 64.6 L80.7 82.9 L69.1 74.4 Z" fill="#fff"/><circle cx="38" cy="40" r="7" fill="#EA4335"/><circle cx="62" cy="62" r="7" fill="#34A853"/><path d="M64 34 L36 68" stroke="#FBBC04" stroke-width="8" stroke-linecap="round"/></svg>
+      <img class="login-logo" src="/admin/favicon.svg" width="56" height="66" alt="">
       <h1>لوحة إدارة لكوفر</h1>
       <p class="muted">سجّل دخول بحساب الأدمن أو حساب الموظف</p>
       <button id="loginBtn" class="btn primary big">الدخول بحساب Google</button>
@@ -21,9 +25,9 @@
   </main>
 
   <div id="app" class="shell hidden">
-    <aside class="side" aria-label="أقسام لوحة الإدارة">
+    <aside class="side" id="side" aria-label="أقسام لوحة الإدارة">
       <div class="brand">
-        <svg width="30" height="36" viewBox="0 0 100 120" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="#1A73E8"/><path d="M27 86 L50 120 L73 86 Z" fill="#1A73E8"/><circle cx="50" cy="50" r="33" fill="#fff"/><path d="M77.4 64.6 L80.7 82.9 L69.1 74.4 Z" fill="#fff"/><circle cx="38" cy="40" r="7" fill="#EA4335"/><circle cx="62" cy="62" r="7" fill="#34A853"/><path d="M64 34 L36 68" stroke="#FBBC04" stroke-width="8" stroke-linecap="round"/></svg>
+        <img src="/admin/favicon.svg" width="30" height="35" alt="">
         <div><div class="logo">LACOVER</div><div class="sub">لوحة الإدارة</div></div>
       </div>
       <nav id="tabs" class="nav"></nav>
@@ -31,16 +35,17 @@
     </aside>
     <div class="main">
       <header class="topbar">
+        <button id="menuBtn" class="menu-btn" aria-label="القائمة" aria-controls="side" aria-expanded="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
         <h1 id="pageTitle" class="page-title">الرئيسية</h1>
-        <span class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
       </header>
       <section id="content" class="content"></section>
     </div>
   </div>
 
+  <div id="scrim" class="scrim" aria-hidden="true"></div>
   <div id="viewer" class="viewer hidden"><img id="viewerImg" alt=""><button class="close" id="viewerClose" aria-label="إغلاق">✕</button></div>
   <div id="toast" class="toast hidden"></div>
 
-  <script type="module" src="/admin/app.js?v=4"></script>
+  <script type="module" src="/admin/app.js?v=5"></script>
 </body>
 </html>
