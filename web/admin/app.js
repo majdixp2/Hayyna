@@ -465,11 +465,13 @@ function stores(c) {
     ${trusted.length ? `<div class="grid">${trusted.map((s) => `<div class="card row" style="align-items:center;justify-content:space-between">
       <b>${esc(s.name || s.uid.slice(0, 8))}</b><span><button class="btn" data-act="untrust" data-id="${s.uid}">إلغاء «ينشر مباشرة»</button>
       <button class="btn danger" data-act="suspendUid" data-id="${s.uid}" data-name="${esc(s.name)}">إيقاف</button></span></div>`).join("")}</div>` : `<p class="muted">ما فيه للحين</p>`}
-    <h2>📍 محلات غير مسجّلة يطلبها العملاء</h2>
-    <p class="muted">من نقاط خرائط Google: 👆 ضغطات • 📣 دعوات • 🏪 "أنا صاحب المحل"</p>
-    ${state.poi.length ? `<div class="grid">${state.poi.map((p) => `<a class="card row" style="justify-content:space-between;text-decoration:none;color:inherit" target="_blank" rel="noopener"
-       href="https://www.google.com/maps/search/?api=1&query=place&query_place_id=${encodeURIComponent(p.id)}">
-       <b>👆 ${p.taps || 0} &nbsp; 📣 ${p.invites || 0} &nbsp; 🏪 ${p.claims || 0}</b><span class="name">افتح في الخرائط ›</span></a>`).join("")}</div>` : `<p class="muted">ما فيه بيانات للحين</p>`}
+    <details class="card fold" data-fold="poi" ${state.folds?.poi ? "open" : ""}>
+      <summary><span>📍 محلات غير مسجّلة يطلبها العملاء <span class="pill">${state.poi.length}</span></span><span class="fold-hint">اضغط للعرض</span></summary>
+      <p class="muted">من نقاط خرائط Google: 👆 ضغطات • 📣 دعوات • 🏪 "أنا صاحب المحل"</p>
+      ${state.poi.length ? `<div class="grid">${state.poi.map((p) => `<a class="card row" style="justify-content:space-between;text-decoration:none;color:inherit" target="_blank" rel="noopener"
+         href="https://www.google.com/maps/search/?api=1&query=place&query_place_id=${encodeURIComponent(p.id)}">
+         <b>👆 ${p.taps || 0} &nbsp; 📣 ${p.invites || 0} &nbsp; 🏪 ${p.claims || 0}</b><span class="name">افتح في الخرائط ›</span></a>`).join("")}</div>` : `<p class="muted">ما فيه بيانات للحين</p>`}
+    </details>
     <h2>⛔ حسابات موقوفة (${suspended.length})</h2>
     ${suspended.length ? `<div class="grid">${suspended.map((s) => `<div class="card row" style="align-items:center;justify-content:space-between">
       <b>${esc(s.name || s.uid.slice(0, 8))}</b><button class="btn" data-act="unsuspend" data-id="${s.uid}">إلغاء الإيقاف</button></div>`).join("")}</div>` : `<p class="muted">ما فيه حسابات موقوفة ✅</p>`}`;
@@ -1169,6 +1171,7 @@ function bind() {
   if (state.tab === "ads") bindAds($("content"));
   const byId = (id) => state.offers.find((o) => o.id === id);
   const c = $("content");
+  c.querySelectorAll("details[data-fold]").forEach((d) => (d.ontoggle = () => { (state.folds ||= {})[d.dataset.fold] = d.open; }));
   c.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { state.tab = b.dataset.go; localStorage.setItem("hayyna_admin_tab", state.tab); render(); window.scrollTo(0, 0); }));
   c.querySelectorAll("[data-view]").forEach((i) => (i.onclick = () => { $("viewerImg").src = img(i.dataset.view, 1600); $("viewer").classList.remove("hidden"); }));
   c.querySelectorAll("[data-fbtype]").forEach((b) => (b.onclick = () => { state.inboxType = b.dataset.fbtype; render(); }));
