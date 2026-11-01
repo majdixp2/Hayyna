@@ -48,7 +48,7 @@ data class StoreProfile(
             priceFrom = p.priceFrom,
             menuImages = p.menuImages.take(MAX_MENU_IMAGES),
             branches = p.branches,
-            phone = p.branches.firstOrNull()?.phone ?: p.phone,
+            phone = p.branches.firstOrNull { it.phone.isNotBlank() }?.phone ?: p.phone,
             approved = approved,
             delivery = p.delivery,
             deliveryFee = p.deliveryFee,

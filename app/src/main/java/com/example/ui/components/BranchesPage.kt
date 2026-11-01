@@ -87,7 +87,10 @@ fun BranchesPage(
     claimMode: Boolean = false,
     categories: List<String> = com.example.data.repository.RestaurantOfferRepository.DEFAULT_CATEGORIES,
     // "أنا صاحب المحل" وعنده متجر من قبل: نفتح فرع جديد في موقع المحل مباشرة
-    claimBranch: Branch? = null
+    claimBranch: Branch? = null,
+    // «أنا صاحب المحل» ولمحله فروع فيها عروض إعلانات: نعرضها كلها جاهزة
+    claimPreset: List<BulkRow>? = null,
+    claimLead: String? = null
 ) {
     var restaurantName by remember { mutableStateOf(profile.restaurantName) }
     var logoLocal by remember { mutableStateOf<String?>(null) }
@@ -139,12 +142,32 @@ fun BranchesPage(
             )
         }
     }
-    var editing by remember { mutableStateOf<Branch?>(claimBranch) }
+    var editing by remember { mutableStateOf<Branch?>(if (claimPreset.isNullOrEmpty()) claimBranch else null) }
+    var bulkOpen by remember { mutableStateOf(false) }
+    var presetRows by remember { mutableStateOf(claimPreset?.takeIf { it.isNotEmpty() }) }
     var pendingDelete by remember { mutableStateOf<Branch?>(null) }
     var error by remember { mutableStateOf("") }
 
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) cropLogo = uri.toString()
+    }
+
+    val preset = presetRows
+    if (bulkOpen || preset != null) {
+        BulkBranchesPage(
+            storeName = restaurantName,
+            existing = branches.toList(),
+            onAdd = { list ->
+                // فرع «الرئيسي» الفاضي (بدون حي ورقم) من «أنا صاحب المحل» يتبدّل بالفروع الحقيقية
+                if (preset != null) branches.removeAll { it.id == "main" && it.district.isBlank() && it.phone.isBlank() }
+                branches.addAll(list); bulkOpen = false; presetRows = null
+            },
+            onCancel = { bulkOpen = false; if (preset != null) { presetRows = null; editing = claimBranch } },
+            preset = preset,
+            title = if (preset != null) "🏪 فروع محلك على لكوفر" else null,
+            lead = if (preset != null) claimLead else null
+        )
+        return
     }
 
     val currentEditing = editing
@@ -375,6 +398,12 @@ fun BranchesPage(
                             Text("أضف فرع")
                         }
                     }
+                    OutlinedButton(onClick = { bulkOpen = true }, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text("➕ أضف عدة فروع (من Google أو الخريطة)")
+                    }
+                    if (branches.any { it.phone.isBlank() }) Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFEEF4FF), modifier = Modifier.fillMaxWidth()) {
+                        Text("📞 ${branches.count { it.phone.isBlank() }} فرع بدون رقم — طلباتها تروح لرقم المتجر الأساسي.", fontSize = 12.sp, color = Color(0xFF1D4ED8), modifier = Modifier.padding(10.dp))
+                    }
 
                     if (branches.isEmpty()) {
                         Text(
@@ -427,6 +456,7 @@ fun BranchesPage(
                                     restaurantName.isBlank() -> error = "اكتب اسم المتجر."
                                     category.isBlank() -> error = "اختر تصنيف المتجر."
                                     branches.isEmpty() -> error = "أضف فرع واحد على الأقل."
+                                    branches.none { it.phone.isNotBlank() } -> error = "اكتب رقم جوال فرع واحد على الأقل (هو الرقم الأساسي للمتجر)."
                                     branches.mapNotNull { normalizeSaudiPhone(it.phone) }.let { it.size != it.toSet().size } ->
                                         error = "فيه فرعين بنفس الرقم — كل فرع لازم يكون له رقمه."
                                     else -> onSave(
@@ -506,6 +536,7 @@ private fun BranchEditor(
     var openMinute by remember { mutableStateOf(branch.openMinute.takeIf { it >= 0 } ?: (12 * 60)) }
     var closeMinute by remember { mutableStateOf(branch.closeMinute.takeIf { it >= 0 } ?: 0) }
     var error by remember { mutableStateOf("") }
+    var ack by remember { mutableStateOf(!isNew && branch.phone.isBlank()) }
 
     BackHandler { onCancel() }
 
@@ -561,6 +592,10 @@ private fun BranchEditor(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (phone.isBlank() && others.any { it.phone.isNotBlank() }) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = ack, onCheckedChange = { ack = it })
+                        Text("📞 بدون رقم — أأكد على مسؤوليتي إن طلبات هذا الفرع تروح لرقم المتجر الأساسي", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    }
                     Text("أوقات الدوام 🕐", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = open24, onCheckedChange = { open24 = it })
@@ -578,11 +613,13 @@ private fun BranchEditor(
                         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Button(
                             onClick = {
-                                val normalized = normalizeSaudiPhone(phone)
+                                val normalized = if (phone.isBlank()) "" else normalizeSaudiPhone(phone)
                                 when {
                                     district.isBlank() -> error = "حدد موقع الفرع واكتب الحي."
                                     normalized == null -> error = "اكتب رقم جوال صحيح مثل 05xxxxxxxx."
-                                    others.any { normalizeSaudiPhone(it.phone) == normalized } ->
+                                    normalized.isBlank() && others.none { it.phone.isNotBlank() } -> error = "اكتب رقم جوال الفرع (لازم رقم واحد على الأقل للمتجر)."
+                                    normalized.isBlank() && !ack -> error = "اكتب رقم الفرع، أو أكّد إن طلباته تروح للرقم الأساسي."
+                                    normalized.isNotBlank() && others.any { normalizeSaudiPhone(it.phone) == normalized } ->
                                         error = "الرقم هذا مسجّل لفرع ${others.first { normalizeSaudiPhone(it.phone) == normalized }.let { b -> b.name.ifBlank { b.district.ifBlank { "ثاني" } } }}، أدخل رقم ثاني."
                                     else -> onDone(
                                         branch.copy(

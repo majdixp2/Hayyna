@@ -6,7 +6,7 @@ import { MAPS_WEB_KEY } from "../config.js";
 import { staffCardHtml, bindStaffCard } from "./staff.js";
 import { db, state, $, toast, showSheet, hideSheet, openPage, closePage, uploadImage, openOffer, openStore, getMyLocation, categories, takeClaim, pendingRef, clearRef } from "./app.js";
 import * as X from "./logic.js";
-import { createMap } from "./map.js";
+import { createMap, searchPlaces, areaAt, cleanDistrict } from "./map.js";
 import { cropImage } from "./cropper.js";
 import { watchMerchantCatalog, catalogPanelHtml, bindCatalogPanel, loadMyItems, scopePickerHtml, bindScopePicker, scopeError } from "./catalog-ui.js";
 import { vatOf, validVatNumber, feat, catalogOf, DEAL_TYPES, KINDS, fmt } from "./catalog.js";
@@ -371,7 +371,9 @@ export function openStoreForm(claim = null) {
       <div class="branches">${f.branches.map((b, i) => `<div class="branch"><div class="b-main"><div class="b-name">${esc(b.name || districtLabel(b.district) || "الفرع")}</div>
         <div class="b-sub">${esc([districtLabel(b.district), b.landmark, X.toLocalPhone(b.phone), X.hoursText(b)].filter(Boolean).join(" • "))}</div></div>
         <button class="icon-btn" data-be="${i}">✎</button>${f.branches.length > 1 ? `<button class="icon-btn" data-bd="${i}">🗑</button>` : ""}</div>`).join("")}</div>
-      <button class="btn call" id="addBranch">＋ ${f.branches.length ? "أضف فرع" : "حدد موقع محلك"}</button>
+      <div class="row2"><button class="btn call" id="addBranch">＋ ${f.branches.length ? "أضف فرع" : "حدد موقع محلك"}</button>
+        <button class="btn call" id="addBranches">➕ أضف عدة فروع</button></div>
+      ${f.branches.some((b) => !b.phone) ? `<div class="hint-box">📞 ${f.branches.filter((b) => !b.phone).length} فرع بدون رقم — طلباتها تروح لرقم المتجر الأساسي.</div>` : ""}
     </div>`;
     const body = $("pageBody");
     const bind = (id, k) => { const el = $(id); if (el) el.oninput = (e) => { f[k] = e.target.value; dirty = true; }; };
@@ -390,6 +392,7 @@ export function openStoreForm(claim = null) {
     body.querySelectorAll("[data-be]").forEach((b) => b.onclick = () => branchEditor(f.branches[+b.dataset.be], (nb) => { f.branches[+b.dataset.be] = nb; dirty = true; render(); }, false, f.branches));
     body.querySelectorAll("[data-bd]").forEach((b) => b.onclick = () => { f.branches.splice(+b.dataset.bd, 1); dirty = true; render(); });
     $("addBranch").onclick = () => branchEditor(null, (nb) => { f.branches.push(nb); dirty = true; render(); }, false, f.branches);
+    $("addBranches").onclick = () => bulkBranches(f.name.trim(), f.branches, (list) => { f.branches.push(...list); dirty = true; render(); });
   };
   openPage("صفحة متجري", "", `<div id="sErr" class="err"></div><button class="btn dir big" id="sSave">حفظ صفحة المتجر ✓</button>`,
     () => (dirty && !saving ? confirm("في تعديلات ما انحفظت. تطلع بدون حفظ؟") : true));
@@ -414,6 +417,7 @@ export function openStoreForm(claim = null) {
     if (!f.name.trim()) return err("اكتب اسم المتجر.");
     if (!f.category) return err("اختر تصنيف المتجر.");
     if (!f.branches.length) return err("حدد موقع محلك (فرع واحد على الأقل).");
+    if (!f.branches.some((b) => b.phone)) return err("اكتب رقم جوال فرع واحد على الأقل (هو الرقم الأساسي للمتجر).");
     const dp = dupPhones(f.branches);
     if (dp.length) return err(`فرع ${brLabel(dp[0][0])} وفرع ${brLabel(dp[0][1])} بنفس الرقم — كل فرع لازم يكون له رقمه.`);
     const vatNo = f.vatReg ? String(f.vatNumber).replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c)).replace(/\D/g, "") : "";
@@ -424,8 +428,10 @@ export function openStoreForm(claim = null) {
       const cover = f.coverFile ? await uploadImage(f.coverFile) : f.cover;
       const menu = []; for (const it of f.menu) menu.push(it.file ? await uploadImage(it.file) : it.url);
       const primary = f.branches[0];
+      // الرقم الأساسي للمتجر: أول فرع عنده رقم (الفروع اللي بدون رقم تروح طلباتها له)
+      const mainPhone = (f.branches.find((b) => b.phone) || primary).phone || "";
       const profile = {
-        restaurantName: f.name.trim().slice(0, 100), phone: primary.phone, latitude: primary.latitude, longitude: primary.longitude,
+        restaurantName: f.name.trim().slice(0, 100), phone: mainPhone, latitude: primary.latitude, longitude: primary.longitude,
         region: primary.region || "", district: primary.district || "", cuisineType: f.category, openMinute: primary.openMinute ?? -1, closeMinute: primary.closeMinute ?? -1,
         logoUrl: logo || "", branches: f.branches.slice(0, 50), coverUrl: cover || "", about: f.about.trim().slice(0, 500),
         priceFrom: Number(f.priceFrom) > 0 ? Number(f.priceFrom) : 0, menuImages: menu.slice(0, 10),
@@ -437,7 +443,7 @@ export function openStoreForm(claim = null) {
       await setDoc(doc(db, "merchants", uid), profile);
       await setDoc(doc(db, "stores", uid), {
         uid, name: profile.restaurantName, logoUrl: profile.logoUrl, coverUrl: profile.coverUrl, about: profile.about, category: profile.cuisineType.slice(0, 60),
-        priceFrom: profile.priceFrom, menuImages: profile.menuImages, branches: profile.branches, phone: (primary.phone || "").slice(0, 30), approved: direct,
+        priceFrom: profile.priceFrom, menuImages: profile.menuImages, branches: profile.branches, phone: mainPhone.slice(0, 30), approved: direct,
         delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver, vatNumber: vatNo,
         curbside: f.curbside, payCash: f.payCash, payCard: f.payCard, updatedAt: serverTimestamp(),
       }, { merge: true });
@@ -473,7 +479,7 @@ async function syncOffers(profile, direct) {
     const patch = {
       logoUrl: profile.logoUrl, branches, delivery: profile.delivery, deliveryFee: profile.deliveryFee, deliveryMinOrder: profile.deliveryMinOrder, deliveryFreeOver: profile.deliveryFreeOver,
       ...(primary ? { latitude: primary.latitude, longitude: primary.longitude, region: primary.region || o.region, district: primary.district || o.district,
-        phone: primary.phone || o.phone, openMinute: primary.openMinute ?? o.openMinute, closeMinute: primary.closeMinute ?? o.closeMinute } : {}),
+        phone: primary.phone || (profile.branches.find((b) => b.phone) || {}).phone || o.phone, openMinute: primary.openMinute ?? o.openMinute, closeMinute: primary.closeMinute ?? o.closeMinute } : {}),
       ...(direct ? {} : { isApproved: false }),
     };
     await updateDoc(d.ref, patch).catch((e) => console.warn("sync", d.id, e));
@@ -496,12 +502,15 @@ function branchEditor(branch, onDone, asNew = false, others = []) {
       <div><label class="label">المدينة</label><input id="bRegion" class="input" value="${esc(b.region)}" placeholder="مثال: جدة"></div></div>
     <label class="label">علامة مميزة (اختياري)</label><input id="bLandmark" class="input" value="${esc(b.landmark || "")}" maxlength="80" placeholder="مثال: بجوار البريد السعودي">
     <label class="label">رقم واتساب / جوال الفرع *</label><input id="bPhone" class="input" inputmode="tel" value="${esc(X.toLocalPhone(b.phone))}" placeholder="05xxxxxxxx">
+    <label class="switch-row hidden" id="bAckRow"><span>📞 بدون رقم — أأكد على مسؤوليتي إن طلبات هذا الفرع تروح لرقم المتجر الأساسي</span><input type="checkbox" id="bAck" ${branch && !b.phone ? "checked" : ""}></label>
     <label class="switch-row"><span>مفتوح 24 ساعة</span><input type="checkbox" id="b24" ${open24 ? "checked" : ""}></label>
     <div class="row2" id="bHours"><div><label class="label">يفتح</label>${hoursSelect("bOpen", b.openMinute >= 0 ? b.openMinute : 720)}</div>
       <div><label class="label">يقفل</label>${hoursSelect("bClose", b.closeMinute >= 0 ? b.closeMinute : 0)}</div></div>
     <div id="bErr" class="err"></div>
     <button class="btn dir" id="bSave">${branch && !asNew ? "حفظ الفرع" : "أضف الفرع"}</button></div>`);
   $("bHours").classList.toggle("hidden", open24);
+  const ackShow = () => $("bAckRow").classList.toggle("hidden", !!$("bPhone").value.trim() || !others.some((x) => x.id !== b.id && x.phone));
+  $("bPhone").addEventListener("input", ackShow); ackShow();
   $("b24").onchange = (e) => $("bHours").classList.toggle("hidden", e.target.checked);
   let pos = (b.latitude || b.longitude) ? { lat: b.latitude, lng: b.longitude } : null, mapObj = null;
   const center = pos || state.me || { lat: 21.5433, lng: 39.1728 };
@@ -516,14 +525,143 @@ function branchEditor(branch, onDone, asNew = false, others = []) {
     const err = (t) => $("bErr").textContent = t;
     if (!pos) return err("حدد موقع المحل على الخريطة.");
     if (!district) return err("اكتب اسم الحي.");
-    if (!phone) return err("اكتب رقم جوال صحيح مثل 05xxxxxxxx.");
-    const same = others.find((x) => x.id !== b.id && X.normalizeSaudiPhone(x.phone || "") === phone);
+    const raw = $("bPhone").value.trim();
+    if (raw && !phone) return err("اكتب رقم جوال صحيح مثل 05xxxxxxxx.");
+    if (!phone && !others.some((x) => x.id !== b.id && x.phone)) return err("اكتب رقم جوال الفرع (لازم رقم واحد على الأقل للمتجر).");
+    if (!phone && !$("bAck").checked) return err("اكتب رقم الفرع، أو أكّد إن طلباته تروح للرقم الأساسي.");
+    const same = phone && others.find((x) => x.id !== b.id && X.normalizeSaudiPhone(x.phone || "") === phone);
     if (same) return err(`الرقم هذا مسجّل لفرع ${brLabel(same)}، أدخل رقم ثاني.`);
     const is24 = $("b24").checked;
     onDone({ ...b, name: $("bName").value.trim(), latitude: pos.lat, longitude: pos.lng, district, region: $("bRegion").value.trim(),
-      landmark: $("bLandmark").value.trim().slice(0, 80), phone, openMinute: is24 ? 0 : +$("bOpen").value, closeMinute: is24 ? 0 : +$("bClose").value });
+      landmark: $("bLandmark").value.trim().slice(0, 80), phone: phone || "", openMinute: is24 ? 0 : +$("bOpen").value, closeMinute: is24 ? 0 : +$("bClose").value });
     hideSheet();
   };
+}
+
+/**
+ * ➕ أضف عدة فروع مرة وحدة: من Google (سلسلة محلات) أو بالضغط على الخريطة.
+ * كل فرع ياخذ اسم «المحل + الحي» (يقدر يعدّله)، والدوام واحد للكل، والرقم لكل فرع (أو يأكد إن طلباته تروح للرقم الأساسي).
+ * opts.title/opts.lead/opts.preset: لاستخدامها من «أنا صاحب المحل» (فروع جاهزة من عروض الإعلانات)
+ */
+export function bulkBranches(storeName, existing, onAdd, opts = {}) {
+  const near = (a, b) => X.km({ lat: a.latitude ?? a.lat, lng: a.longitude ?? a.lng }, { lat: b.latitude ?? b.lat, lng: b.longitude ?? b.lng }) < 0.06;
+  const last = existing[existing.length - 1] || {};
+  const S = { step: opts.preset ? "review" : "pick", mode: "google", q: storeName || "", results: null, busy: false, sel: new Set(), pins: [],
+    rows: (opts.preset || []).map((r) => ({ ...r })), open: last.openMinute >= 0 ? last.openMinute : 720, close: last.closeMinute >= 0 ? last.closeMinute : 0,
+    is24: last.openMinute >= 0 && last.openMinute === last.closeMinute, ack: false, err: "" };
+  let mapObj = null;
+  const autoName = (d) => [storeName, cleanDistrict(d)].filter(Boolean).join(" ").slice(0, 60);
+  const rowOf = (p) => ({ id: "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: autoName(p.district), district: cleanDistrict(p.district || ""), region: p.city || p.region || "",
+    latitude: p.lat ?? p.latitude, longitude: p.lng ?? p.longitude, phone: X.normalizeSaudiPhone(p.phone || "") || "", landmark: "" });
+  const keepRows = () => { document.querySelectorAll("[data-rn]").forEach((el) => { S.rows[+el.dataset.rn].name = el.value; });
+    document.querySelectorAll("[data-rd]").forEach((el) => { S.rows[+el.dataset.rd].district = el.value; });
+    document.querySelectorAll("[data-rp]").forEach((el) => { S.rows[+el.dataset.rp].phone = el.value; });
+    if ($("bk24")) { S.is24 = $("bk24").checked; if ($("bkOpen")) { S.open = +$("bkOpen").value; S.close = +$("bkClose").value; } }
+    if ($("bkAck")) S.ack = $("bkAck").checked; if ($("bkQ")) S.q = $("bkQ").value; };
+  const drawPins = () => mapObj?.setMarkers(S.pins.map((p, i) => ({ lat: p.lat, lng: p.lng, z: 20, html: `<div class="bpin">${i + 1}</div>` })));
+  const pinList = () => S.pins.length ? `<div class="branches">${S.pins.map((p, i) => `<div class="branch"><span class="bpin">${i + 1}</span><div class="b-main"><div class="b-name">${p.busy ? "…" : esc(p.district ? "حي " + cleanDistrict(p.district) : "حي غير معروف — بتكتبه بعدين")}</div></div><button class="icon-btn" data-pr="${i}">✕</button></div>`).join("")}</div>` : "";
+  const nextLabel = (n) => `التالي (${n} ${n === 1 ? "فرع" : "فروع"}) ‹`;
+  // الخريطة ما تنعاد رسمها مع كل دبوس (عشان ما يضيع التكبير)
+  const refreshPins = () => {
+    if (!$("bkPins")) return;
+    $("bkPins").innerHTML = pinList(); drawPins();
+    $("bkNext").disabled = !S.pins.length; $("bkNext").textContent = nextLabel(S.pins.length);
+    $("bkPins").querySelectorAll("[data-pr]").forEach((b) => b.onclick = () => { S.pins.splice(+b.dataset.pr, 1); refreshPins(); });
+  };
+  const draw = () => {
+    if (S.step === "pick") {
+      const res = S.results || [];
+      showSheet(`<div class="pad form bulk">
+        <div class="section-title">➕ أضف عدة فروع</div>
+        <div class="seg"><button data-bm="google" class="${S.mode === "google" ? "on" : ""}">🔎 من Google</button><button data-bm="map" class="${S.mode === "map" ? "on" : ""}">📍 من الخريطة</button></div>
+        ${S.mode === "google" ? `<p class="hint">اكتب اسم محلك والمدينة، وعلّم على فروعك من القائمة.</p>
+          <div class="row2" style="grid-template-columns:1fr auto"><input id="bkQ" class="input" value="${esc(S.q)}" placeholder="مثال: كنتاكي جدة"><button class="btn dir" id="bkFind">${S.busy ? "…" : "بحث"}</button></div>
+          ${S.results ? (res.length ? `<label class="switch-row"><span>اختر الكل (${res.filter((r) => !r.dup).length})</span><input type="checkbox" id="bkAll" ${res.filter((r) => !r.dup).every((r) => S.sel.has(r.placeId)) ? "checked" : ""}></label>
+            <div class="pick-list" style="max-height:340px">${res.map((r) => `<label class="switch-row sub" style="margin-inline-start:0"><span><b>${esc(r.name)}</b><br><small>${esc(r.dup ? "✅ مضاف من قبل" : [cleanDistrict(r.district) && "حي " + cleanDistrict(r.district), r.address].filter(Boolean).join(" — "))}</small></span>
+              <input type="checkbox" data-pl="${esc(r.placeId)}" ${r.dup ? "disabled" : S.sel.has(r.placeId) ? "checked" : ""}></label>`).join("")}</div>`
+            : `<div class="hint-box">ما لقينا نتائج. جرّب اسم ثاني، أو حدد فروعك من الخريطة.</div>`) : ""}`
+        : `<p class="hint">اضغط على مكان كل فرع في الخريطة. الحي يتعبّى لحاله.</p><div id="bkMap" class="mini-map" style="height:300px"></div>
+          <div id="bkPins">${pinList()}</div>`}
+        <div id="bkErr" class="err">${esc(S.err)}</div>
+        <button class="btn dir big" id="bkNext" ${(S.mode === "google" ? S.sel.size : S.pins.length) ? "" : "disabled"}>${nextLabel(S.mode === "google" ? S.sel.size : S.pins.length)}</button>
+      </div>`);
+      const body = $("sheetBody");
+      body.querySelectorAll("[data-bm]").forEach((b) => b.onclick = () => { keepRows(); S.mode = b.dataset.bm; S.err = ""; draw(); });
+      const find = async () => { keepRows(); if (!S.q.trim()) return; S.busy = true; draw();
+        try { const near0 = state.me || (existing[0] ? { lat: existing[0].latitude, lng: existing[0].longitude } : null); S.results = (await searchPlaces(MAPS_WEB_KEY, S.q.trim(), near0, 20)).map((r) => ({ ...r, dup: existing.some((e) => near(e, r)) })); }
+        catch (e) { console.warn(e); S.results = []; toast("تعذّر البحث في Google"); }
+        S.busy = false; draw(); };
+      $("bkFind")?.addEventListener("click", find);
+      $("bkQ")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find(); } });
+      $("bkAll")?.addEventListener("change", (e) => { (S.results || []).filter((r) => !r.dup).forEach((r) => e.target.checked ? S.sel.add(r.placeId) : S.sel.delete(r.placeId)); draw(); });
+      body.querySelectorAll("[data-pl]").forEach((c) => c.onchange = () => { c.checked ? S.sel.add(c.dataset.pl) : S.sel.delete(c.dataset.pl); draw(); });
+      if (S.mode === "map") {
+        const c = S.pins[S.pins.length - 1] || (existing[0] && { lat: existing[0].latitude, lng: existing[0].longitude }) || state.me || { lat: 21.5433, lng: 39.1728 };
+        createMap($("bkMap"), { key: MAPS_WEB_KEY, center: [c.lat, c.lng], zoom: 12, showShops: true, onMapClick: async (pt) => {
+          if (S.pins.length >= 30) return toast("حد أقصى 30 فرع مرة وحدة");
+          if ([...existing, ...S.pins].some((e) => near(e, pt))) return toast("فيه فرع في هالمكان من قبل");
+          const pin = { lat: pt.lat, lng: pt.lng, district: "", city: "", busy: true }; S.pins.push(pin); refreshPins();
+          const a = await areaAt(MAPS_WEB_KEY, pt.lat, pt.lng); pin.district = a?.district || ""; pin.city = a?.city || ""; pin.busy = false;
+          if (S.step === "pick" && S.mode === "map") refreshPins();
+        } }).then((mo) => { mapObj = mo; refreshPins(); });
+      }
+      $("bkNext").onclick = () => {
+        keepRows();
+        const picked = S.mode === "google" ? (S.results || []).filter((r) => S.sel.has(r.placeId)) : S.pins.filter((p) => !p.busy);
+        if (!picked.length) return;
+        S.rows = picked.map(rowOf); S.step = "review"; S.err = ""; draw();
+      };
+      return;
+    }
+    // ---- مراجعة: الاسم، الحي، الرقم + دوام واحد للكل ----
+    const anyEmpty = S.rows.some((r) => !String(r.phone || "").trim());
+    showSheet(`<div class="pad form bulk">
+      <div class="section-title">${esc(opts.title || `✔ راجع الفروع (${S.rows.length})`)}</div>
+      ${opts.lead ? `<div class="hint-box">${opts.lead}</div>` : `<p class="hint">الاسم يتكوّن من اسم المحل والحي — تقدر تعدّله.</p>`}
+      ${S.rows.map((r, i) => `<div class="bk-row"><div class="bk-h"><span class="bpin">${i + 1}</span>${opts.preset ? `<label class="bk-on"><input type="checkbox" data-rk="${i}" ${r.off ? "" : "checked"}> أضفه</label>` : `<button class="icon-btn" data-rx="${i}" aria-label="شيل">✕</button>`}</div>
+        <label class="label">اسم الفرع</label><input class="input" data-rn="${i}" value="${esc(r.name)}" maxlength="60">
+        ${r.district && !r.editD ? `<div class="hint">📍 حي ${esc(cleanDistrict(r.district))}${r.region ? "، " + esc(r.region) : ""}</div>` : `<label class="label">الحي *</label><input class="input" data-rd="${i}" value="${esc(r.district)}" placeholder="مثال: الحمدانية">`}
+        <label class="label">رقم واتساب / جوال الفرع</label><input class="input" data-rp="${i}" inputmode="tel" value="${esc(X.toLocalPhone(r.phone))}" placeholder="05xxxxxxxx"></div>`).join("")}
+      <div class="section-title">🕐 الدوام (لكل الفروع)</div>
+      <label class="switch-row"><span>مفتوح 24 ساعة</span><input type="checkbox" id="bk24" ${S.is24 ? "checked" : ""}></label>
+      ${S.is24 ? "" : `<div class="row2"><div><label class="label">يفتح</label>${hoursSelect("bkOpen", S.open)}</div><div><label class="label">يقفل</label>${hoursSelect("bkClose", S.close)}</div></div>`}
+      <small class="hint">تقدر تغيّر دوام أي فرع لحاله بعدين بزر ✎</small>
+      ${anyEmpty ? `<label class="switch-row"><span>📞 أأكد على مسؤوليتي: الفروع اللي بدون رقم تروح طلباتها لرقم المتجر الأساسي</span><input type="checkbox" id="bkAck" ${S.ack ? "checked" : ""}></label>` : ""}
+      <div id="bkErr" class="err">${esc(S.err)}</div>
+      <button class="btn dir big" id="bkAdd">➕ أضف ${S.rows.filter((r) => !r.off).length} ${S.rows.filter((r) => !r.off).length === 1 ? "فرع" : "فروع"}</button>
+      ${opts.preset ? `<button class="btn ghost" id="bkSkip">مو فروعي، تخطّ</button>` : `<button class="btn ghost" id="bkBack">› رجوع</button>`}
+    </div>`);
+    const body = $("sheetBody");
+    body.querySelectorAll("[data-rp]").forEach((el) => el.addEventListener("input", () => { const had = anyEmpty; keepRows(); if (had !== S.rows.some((r) => !String(r.phone || "").trim())) draw(); }));
+    $("bk24").onchange = () => { keepRows(); draw(); };
+    body.querySelectorAll("[data-rx]").forEach((b) => b.onclick = () => { keepRows(); S.rows.splice(+b.dataset.rx, 1); if (!S.rows.length) { S.step = "pick"; } draw(); });
+    body.querySelectorAll("[data-rk]").forEach((c) => c.onchange = () => { keepRows(); S.rows[+c.dataset.rk].off = !c.checked; draw(); });
+    $("bkBack")?.addEventListener("click", () => { keepRows(); S.step = "pick"; S.err = ""; draw(); });
+    $("bkSkip")?.addEventListener("click", () => { hideSheet(); opts.onSkip?.(); });
+    $("bkAdd").onclick = () => {
+      keepRows();
+      const rows = S.rows.filter((r) => !r.off);
+      const fail = (t) => { S.err = t; draw(); };
+      if (!rows.length) return fail("اختر فرع واحد على الأقل.");
+      const seen = new Map(existing.filter((e) => e.phone).map((e) => [X.normalizeSaudiPhone(e.phone) || e.phone, brLabel(e)]));
+      const out = [];
+      for (const r of rows) {
+        const nm = String(r.name || "").trim(), d = cleanDistrict(r.district || ""), raw = String(r.phone || "").trim(), ph = raw ? X.normalizeSaudiPhone(raw) : "";
+        if (!d) { r.editD = true; return fail(`اكتب الحي للفرع «${nm || "بدون اسم"}».`); }
+        if (raw && !ph) return fail(`رقم «${nm || d}» غير صحيح — اكتبه مثل 05xxxxxxxx.`);
+        if (ph && seen.has(ph)) return fail(`رقم «${nm || d}» مسجّل لفرع ${seen.get(ph)}، كل فرع له رقمه.`);
+        if (ph) seen.set(ph, nm || d);
+        out.push({ id: r.id, name: nm.slice(0, 60), latitude: r.latitude, longitude: r.longitude, district: d, region: r.region || "", landmark: "", phone: ph || "",
+          openMinute: S.is24 ? 0 : S.open, closeMinute: S.is24 ? 0 : S.close });
+      }
+      if (!seen.size) return fail("اكتب رقم فرع واحد على الأقل — هو الرقم الأساسي للمتجر.");
+      if (out.some((b) => !b.phone) && !S.ack) return fail("اكتب أرقام الفروع، أو علّم على التأكيد إن طلباتها تروح للرقم الأساسي.");
+      if (existing.length + out.length > 50) return fail("الحد الأقصى 50 فرع للمتجر.");
+      hideSheet(); onAdd(out);
+      toast(`انضاف ${out.length} ${out.length === 1 ? "فرع" : "فروع"} ✅ لا تنسى «حفظ صفحة المتجر»`);
+    };
+  };
+  draw();
 }
 
 function deliveryFields(f) {
@@ -636,7 +774,7 @@ export async function openOfferForm(editing) {
       <div class="chips wrap">${[...new Set([...categories(), f.category].filter(Boolean))].map((c) => `<button class="chip${f.category === c ? " on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
       <div class="section-title">🏪 وين يظهر العرض؟</div>
       <label class="switch-row"><span>كل الفروع (${p.branches.length})</span><input type="checkbox" id="oAll" ${f.all ? "checked" : ""}></label>
-      ${!f.all ? p.branches.map((b) => `<label class="switch-row sub"><span>${esc(b.name || districtLabel(b.district))}</span><input type="checkbox" data-br="${esc(b.id)}" ${f.sel.has(b.id) ? "checked" : ""}></label>`).join("") : ""}
+      ${p.branches.length > 1 ? `<div class="pick-list">${p.branches.map((b) => `<label class="switch-row sub" style="margin-inline-start:0"><span>${esc(b.name || districtLabel(b.district))}${b.name && b.district ? ` <small>• ${esc(districtLabel(b.district))}</small>` : ""}</span><input type="checkbox" data-br="${esc(b.id)}" ${f.all || f.sel.has(b.id) ? "checked" : ""}></label>`).join("")}</div>` : ""}
       <div class="section-title">🔜 متى يبدأ؟</div>
       <div class="row2"><button class="chip${!f.start ? " on" : ""}" id="oNow">الحين</button><input type="date" id="oStart" class="input" value="${startStr()}"></div>
       ${isNew ? "" : `<label class="switch-row"><span>🎉 عرض افتتاح (محل جديد)</span><input type="checkbox" id="oOpen" ${f.opening ? "checked" : ""}></label>`}
@@ -675,8 +813,14 @@ export async function openOfferForm(editing) {
     body.querySelectorAll("[data-dayrm]").forEach((b) => b.onclick = () => { f.days.splice(+b.dataset.dayrm, 1); render(); });
     $("oAddDay")?.addEventListener("click", () => { f.days.push(f.days[f.days.length - 1] || ""); render(); });
     body.querySelectorAll("[data-cat]").forEach((b) => b.onclick = () => { f.category = b.dataset.cat; render(); });
-    $("oAll").onchange = (ev) => { f.all = ev.target.checked; render(); };
-    body.querySelectorAll("[data-br]").forEach((c) => c.onchange = () => { c.checked ? f.sel.add(c.dataset.br) : f.sel.delete(c.dataset.br); });
+    $("oAll").onchange = (ev) => { f.all = ev.target.checked; f.sel = new Set(f.all ? p.branches.map((b) => b.id) : []); render(); };
+    // كل الفروع معلّمة افتراضياً — يشيل العلامة عن الفرع اللي ما يبيه
+    body.querySelectorAll("[data-br]").forEach((c) => c.onchange = () => {
+      if (f.all) { f.all = false; f.sel = new Set(p.branches.map((b) => b.id)); }
+      c.checked ? f.sel.add(c.dataset.br) : f.sel.delete(c.dataset.br);
+      if (f.sel.size === p.branches.length) f.all = true;
+      $("oAll").checked = f.all; dirty = true;
+    });
     $("oNow").onclick = () => { f.start = null; render(); };
     $("oStart").onchange = (ev) => { if (!ev.target.value) { f.start = null; } else { const [y, mo, d] = ev.target.value.split("-").map(Number); f.start = new Date(y, mo - 1, d).getTime(); } render(); };
     $("oOpen")?.addEventListener("change", (ev) => { f.opening = ev.target.checked; });
@@ -759,7 +903,7 @@ export async function openOfferForm(editing) {
         price, originalPrice: original, currency: "ر.س", discountBadge: discount >= 1 ? `خصم ${discount}% 🔥` : "",
         mediaType: f.isVideo ? "VIDEO" : "IMAGE", mediaUri: urls[0], mediaUris: urls.slice(0, 3), isPromotionalVideo: f.isVideo,
         district: primary.district || "", region: primary.region || "", latitude: primary.latitude, longitude: primary.longitude,
-        phone: primary.phone || "", openMinute: primary.openMinute ?? -1, closeMinute: primary.closeMinute ?? -1,
+        phone: primary.phone || p.phone || "", openMinute: primary.openMinute ?? -1, closeMinute: primary.closeMinute ?? -1,
         workingHours: X.hoursText(primary) ? "يومياً " + X.hoursText(primary) : "",
         expiresAt: expiry != null ? Timestamp.fromMillis(expiry) : null, startsAt: f.start ? Timestamp.fromMillis(f.start) : null,
         discountPercent: f.percentMode ? discount : 0, dailyPercents: useTiers ? steps : [], itemsScope: f.percentMode ? f.scope.trim().slice(0, 40) : "",

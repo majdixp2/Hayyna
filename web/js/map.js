@@ -262,14 +262,26 @@ function placeOut(p) {
 }
 const withTimeout = (p, ms = 8000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
 /** يدوّر على محل بالاسم/العنوان. near = {lat,lng} اختياري يقرّب النتائج */
-export async function searchPlaces(key, text, near) {
+export async function searchPlaces(key, text, near, max = 6) {
   const g = await loadGoogle(key);
   const { Place } = await g.importLibrary("places");
-  const req = { textQuery: text, fields: PLACE_FIELDS, language: mapLang(), region: "sa", maxResultCount: 6 };
+  const req = { textQuery: text, fields: PLACE_FIELDS, language: mapLang(), region: "sa", maxResultCount: Math.min(20, Math.max(1, max)) };
   if (near?.lat != null) req.locationBias = { center: { lat: near.lat, lng: near.lng }, radius: 30000 };
   const { places } = await withTimeout(Place.searchByText(req));
   return (places || []).map(placeOut).filter((p) => p.lat != null);
 }
+/** الحي والمدينة لنقطة على الخريطة (من أقرب أماكن Google حولها). null لو ما لقينا */
+export async function areaAt(key, lat, lng) {
+  try {
+    const g = await loadGoogle(key);
+    const { Place } = await g.importLibrary("places");
+    const { places } = await withTimeout(Place.searchNearby({ fields: ["addressComponents"], locationRestriction: { center: { lat, lng }, radius: 250 }, maxResultCount: 5, language: mapLang(), region: "sa" }));
+    for (const p of places || []) { const o = placeOut(p); if (o.district) return { district: o.district, city: o.city }; }
+  } catch (e) { console.warn("areaAt", e); }
+  return null;
+}
+/** «حي الحمدانية» → «الحمدانية» (للاسم التلقائي للفرع) */
+export const cleanDistrict = (d) => String(d || "").replace(/^\s*(حي|district)\s+/i, "").trim();
 /** تفاصيل محل واحد (الاسم، الجوال، الحي، المدينة، الإحداثيات) */
 export async function placeDetails(key, placeId) {
   const g = await loadGoogle(key);

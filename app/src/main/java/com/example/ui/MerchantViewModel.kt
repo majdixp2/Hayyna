@@ -1282,7 +1282,7 @@ class MerchantViewModel(
             lat = if (mode == "delivery") loc?.latitude else null, lng = if (mode == "delivery") loc?.longitude else null, note = note.trim().take(300),
             scheduledAtMillis = scheduledAt, slotKey = slotKey
         )
-        val digits = (branch?.phone ?: store.phone).filter { it.isDigit() }.let { d ->
+        val digits = (branch?.phone?.takeIf { it.isNotBlank() } ?: store.phone).filter { it.isDigit() }.let { d ->
             when { d.startsWith("05") && d.length == 10 -> "966" + d.drop(1); d.startsWith("5") && d.length == 9 -> "966$d"; else -> d }
         }
         if (digits.isBlank()) { toast("المحل ما عنده رقم واتساب."); return }
@@ -1963,11 +1963,13 @@ class MerchantViewModel(
                 // صور المنيو: الجديدة (محلية) تنرفع، والمرفوعة سابقاً تبقى كما هي
                 val menu = profile.menuImages.map { MediaUploader.uploadOfferMedia(getApplication(), it, false) }
                 val primary = profile.branches.firstOrNull()
+                // الرقم الأساسي: أول فرع عنده رقم (الفروع اللي بدون رقم تروح طلباتها له)
+                val mainPhone = profile.branches.firstOrNull { it.phone.isNotBlank() }?.phone ?: primary?.phone ?: profile.phone
                 val updated = profile.copy(
                     logoUrl = logo,
                     coverUrl = cover,
                     menuImages = menu,
-                    phone = primary?.phone ?: profile.phone,
+                    phone = mainPhone,
                     latitude = primary?.latitude ?: profile.latitude,
                     longitude = primary?.longitude ?: profile.longitude,
                     region = primary?.region ?: profile.region,
