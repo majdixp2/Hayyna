@@ -493,7 +493,7 @@ private fun PreorderSettingsDialog(vm: MerchantViewModel, onDismiss: () -> Unit)
     FullDialog("📅 الطلب المسبق", onDismiss) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("الزبون يطلب الحين ويختار موعد لاحق — حتى لو المحل مغلق.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically) { Text("تفعيل «اطلب مسبقاً»", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); Switch(c.on, { c = c.copy(on = it) }) }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("تفعيل «اطلب مسبقاً»", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); HSwitch(c.on, { c = c.copy(on = it) }) }
             if (c.on) {
                 Text("أبعد موعد يقدر الزبون يختاره", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -506,9 +506,9 @@ private fun PreorderSettingsDialog(vm: MerchantViewModel, onDismiss: () -> Unit)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     (listOf(15, 30, 45, 60, 90, 120) + c.prepMin).distinct().forEach { m -> FilterChip(selected = c.prepMin == m, onClick = { c = c.copy(prepMin = m) }, label = { Text("$m دقيقة") }) }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("🏃 استلام بموعد", fontWeight = FontWeight.Bold); Text("الزبون يختار وقت داخل الدوام كل ربع ساعة", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(c.pickup, { c = c.copy(pickup = it) }) }
+                Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("🏃 استلام بموعد", fontWeight = FontWeight.Bold); Text("الزبون يختار وقت داخل الدوام كل ربع ساعة", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; HSwitch(c.pickup, { c = c.copy(pickup = it) }) }
                 if (hasDelivery) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("🚚 توصيل بموعد", fontWeight = FontWeight.Bold); Text("فترات تحددها أنت", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(c.delivery, { c = c.copy(delivery = it) }) }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("🚚 توصيل بموعد", fontWeight = FontWeight.Bold); Text("فترات تحددها أنت", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; HSwitch(c.delivery, { c = c.copy(delivery = it) }) }
                     if (c.delivery) Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("وقت التوصيل", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -592,11 +592,11 @@ fun PauseOrdersRow(vm: MerchantViewModel) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("الزبائن يشوفون إن الفرع موقف مؤقتاً، وما يقدرون يطلبون منه.", fontSize = 13.sp)
-                    if (canAll) Row(verticalAlignment = Alignment.CenterVertically) { Text("⏸️ كل الفروع", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); Switch(a, { a = it }) }
+                    if (canAll) Row(verticalAlignment = Alignment.CenterVertically) { Text("⏸️ كل الفروع", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); HSwitch(a, { a = it }) }
                     if (!(canAll && a)) scope.forEach { b ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("⏸️ فرع ", fontSize = 14.sp); androidx.compose.material3.Text(bn(b), fontSize = 14.sp, modifier = Modifier.weight(1f))
-                            Switch(b.id in sel, { on -> if (on) sel.add(b.id) else sel.remove(b.id) })
+                            HSwitch(b.id in sel, { on -> if (on) sel.add(b.id) else sel.remove(b.id) })
                         }
                     }
                 }

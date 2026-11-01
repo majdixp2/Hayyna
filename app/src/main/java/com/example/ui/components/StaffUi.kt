@@ -118,10 +118,11 @@ fun StaffHomeScreen(vm: MerchantViewModel) {
                 }
                 Box {
                     TextButton(onClick = { menu = true }) { Text("⋮", color = Color.White, fontSize = 22.sp) }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("🔔 تجربة صوت الطلبات") }, onClick = { menu = false; com.example.data.OrderSounds.play(vm.getApplication<android.app.Application>(), "new") })
-                        DropdownMenuItem(text = { Text("🔑 غيّر رمزي السري") }, onClick = { menu = false; pinDialog = true })
-                        DropdownMenuItem(text = { Text("تسجيل الخروج") }, onClick = { menu = false; vm.staffLogout() })
+                    HMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        HMenuItem("🔔", "تجربة صوت الطلبات") { menu = false; com.example.data.OrderSounds.play(vm.getApplication<android.app.Application>(), "new") }
+                        HMenuItem("🔑", "غيّر رمزي السري") { menu = false; pinDialog = true }
+                        HMenuDivider()
+                        HMenuItem("🚪", "تسجيل الخروج", danger = true) { menu = false; vm.staffLogout() }
                     }
                 }
             }
@@ -357,19 +358,19 @@ private fun StaffFormDialog(vm: MerchantViewModel, old: StoreStaff?, withPin: Bo
                     StoreStaff.PERMS.forEach { (k, l) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(l, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                            Switch(checked = k in perms, onCheckedChange = { perms = if (it) perms + k else perms - k })
+                            HSwitch(checked = k in perms, onCheckedChange = { perms = if (it) perms + k else perms - k })
                         }
                     }
                     if (storeBranches.size > 1) {
                         Text("📍 فرعه", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("كل الفروع", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Switch(checked = brs.isEmpty(), onCheckedChange = { brs = if (it) emptySet() else setOf(storeBranches.first().id) })
+                            HSwitch(checked = brs.isEmpty(), onCheckedChange = { brs = if (it) emptySet() else setOf(storeBranches.first().id) })
                         }
                         if (brs.isNotEmpty()) storeBranches.forEach { b ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 androidx.compose.material3.Text(b.name.ifBlank { b.district.ifBlank { "الفرع" } }, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                                Switch(checked = b.id in brs, onCheckedChange = { on -> brs = if (on) brs + b.id else (brs - b.id) })
+                                HSwitch(checked = b.id in brs, onCheckedChange = { on -> brs = if (on) brs + b.id else (brs - b.id) })
                             }
                         }
                         Text("الموظف يشوف طلبات فرعه بس، ويوقف استقبال طلبات فرعه بس.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

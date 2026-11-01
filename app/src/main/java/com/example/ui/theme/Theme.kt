@@ -29,7 +29,14 @@ private val LightCalmColorScheme = lightColorScheme(
     surfaceVariant = SoftLinenVariant,
     onSurfaceVariant = MutedTextSecondary,
     outline = SoftBorderColor,
-    outlineVariant = SoftBorderColor.copy(alpha = 0.6f)
+    outlineVariant = SoftBorderColor.copy(alpha = 0.6f),
+    // بدون الصبغة البنفسجية الافتراضية في النوافذ والقوائم والأوراق السفلية
+    surfaceTint = PureWhiteSurface,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color.White,
+    surfaceContainer = Color.White,
+    surfaceContainerHigh = Color.White,
+    surfaceContainerHighest = Color(0xFFF1F3F8)
 )
 
 // 🌙 المظهر الداكن (نفس ألوان الويب الداكنة)
@@ -53,7 +60,13 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = Color(0xFF1C2540),
     onSurfaceVariant = Color(0xFF9AA3BA),
     outline = Color(0xFF33405F),
-    outlineVariant = Color(0xFF26304A)
+    outlineVariant = Color(0xFF26304A),
+    surfaceTint = Color(0xFF141B2E),
+    surfaceContainerLowest = Color(0xFF0E1426),
+    surfaceContainerLow = Color(0xFF141B2E),
+    surfaceContainer = Color(0xFF161E33),
+    surfaceContainerHigh = Color(0xFF1A2338),
+    surfaceContainerHighest = Color(0xFF1F2942)
 )
 
 /** المظهر: فاتح (الافتراضي) / داكن / حسب الجوال — من إعدادات التطبيق */
