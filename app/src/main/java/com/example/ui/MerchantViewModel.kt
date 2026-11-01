@@ -2230,7 +2230,7 @@ class MerchantViewModel(
             "url" -> a.value.takeIf { it.startsWith("https://") || it.startsWith("http://") }
             "offer" -> { offerById(a.value)?.let { openOfferDetail(it) } ?: toast("العرض انتهى"); null }
             "store" -> { approvedStores.value.firstOrNull { it.uid == a.value }?.let { openStorePage(it) } ?: toast("المتجر غير متاح"); null }
-            "publish" -> { currentRole.value = AppRole.MERCHANT_PORTAL; openAddOfferSheet(); null }
+            "publish" -> { currentRole.value = AppRole.MERCHANT_PORTAL; if (isMerchantAccount) openAddOfferSheet(); null }
             "credits" -> creditsConfig.value.let { c -> c.promoStoreUrl.ifBlank { c.storeUrl } }.takeIf { it.isNotBlank() } ?: run { currentRole.value = AppRole.MERCHANT_PORTAL; null }
             else -> null
         }

@@ -51,6 +51,7 @@ function go(a) {
   if (a.action === "url" && /^https?:\/\//.test(v)) window.open(v, "_blank", "noopener");
   else if (a.action === "offer" && v) openOffer(v, true);
   else if (a.action === "store" && v) openStore(v, true);
+  else if ((a.action === "publish" || a.action === "credits") && !(state.role === "merchant" || state.staff)) { setTab("account"); }
   else if (a.action === "publish") { setTab("account"); import("./merchant.js").then((m) => m.openOfferForm?.(null)).catch(() => {}); }
   else if (a.action === "credits") { const u = state.config?.credits?.promoStoreUrl || state.config?.credits?.storeUrl; if (u) window.open(u, "_blank", "noopener"); else setTab("account"); }
 }
