@@ -780,7 +780,11 @@ fun AddRestaurantOfferSheet(
                         onValueChange = { restaurantName = it },
                         label = { Text("اسم المتجر *") },
                         singleLine = true,
-                        leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null) },
+                        // إيموجي تصنيف المتجر (بدل أيقونة المطعم للكل)
+                        leadingIcon = {
+                            val emo = cuisineType.trim().split(" ").lastOrNull { w -> w.isNotBlank() && w.none { it in '\u0600'..'\u06FF' || it.isLetterOrDigit() } }
+                            if (emo != null) androidx.compose.material3.Text(emo, fontSize = 20.sp) else Icon(Icons.Default.Storefront, contentDescription = null)
+                        },
                         modifier = Modifier.fillMaxWidth().testTag("input_restaurant_name")
                     )
 

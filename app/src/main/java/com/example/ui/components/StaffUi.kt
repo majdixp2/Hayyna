@@ -291,7 +291,7 @@ private fun StaffManagerDialog(vm: MerchantViewModel, storeName: String, onDismi
                             Text("يكتبه الموظف مع رقمه ورمزه السري عند «دخول موظف»", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp, textAlign = TextAlign.Center)
                         }
                     }
-                    if (list.isEmpty()) Text("ما أضفت موظفين للحين. أضف الكاشير أو المطبخ، وكل واحد يدخل برقمه ورمزه السري.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    if (list.isEmpty()) Text("ما أضفت موظفين للحين. أضف الكاشير أو مقدم الخدمة، وكل واحد يدخل برقمه ورمزه السري.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     list.forEach { m ->
                         Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface,
                             modifier = Modifier.fillMaxWidth().clickable { actions = m }) {
@@ -319,7 +319,7 @@ private fun StaffManagerDialog(vm: MerchantViewModel, storeName: String, onDismi
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick = { creds = m; actions = null }, modifier = Modifier.fillMaxWidth()) { Text("🔑 بيانات الدخول" + if (cfg.feat("staffQr")) " و QR" else "") }
-                    OutlinedButton(onClick = { form = false to m; actions = null }, modifier = Modifier.fillMaxWidth()) { Text("✎ تعديل الاسم والصلاحيات") }
+                    Button(onClick = { form = false to m; actions = null }, colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF10318F), contentColor = androidx.compose.ui.graphics.Color.White), modifier = Modifier.fillMaxWidth()) { Text("✎ تعديل الاسم والصلاحيات", fontWeight = FontWeight.Bold) }
                     OutlinedButton(onClick = { form = true to m; actions = null }, modifier = Modifier.fillMaxWidth()) { Text("🔁 رمز سري جديد") }
                     OutlinedButton(onClick = { vm.setStaffActive(m, !m.active); actions = null }, modifier = Modifier.fillMaxWidth()) { Text(if (m.active) "⏸️ إيقاف مؤقت" else "▶️ تفعيل") }
                     OutlinedButton(onClick = { vm.deleteStaff(m); actions = null }, modifier = Modifier.fillMaxWidth()) { Text("🗑️ حذف الموظف", color = MaterialTheme.colorScheme.error) }

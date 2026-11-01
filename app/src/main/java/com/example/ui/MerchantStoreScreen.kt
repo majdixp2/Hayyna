@@ -113,7 +113,16 @@ fun MerchantStoreScreen(
     val mapAnn by viewModel.mapAnnouncement.collectAsStateWithLifecycle()
     var annExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val annGo: (com.example.data.repository.Announcement) -> Unit = { a ->
+        annExpanded = false
         viewModel.annClick(a)?.let { u -> runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u))) } }
+    }
+    if (annExpanded) mapAnn?.let { a ->
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { annExpanded = false }) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                com.example.ui.components.AnnouncementCard(a, onView = { viewModel.annViewed(it) }, onClick = annGo)
+                androidx.compose.material3.TextButton(onClick = { annExpanded = false }) { Text("لاحقاً") }
+            }
+        }
     }
     var showMyOrders by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val allOffers by viewModel.allOffers.collectAsStateWithLifecycle()
@@ -604,13 +613,6 @@ fun MerchantStoreScreen(
                                             }
                                         }
                                     }
-                                    mapAnn?.let { a ->
-                                        com.example.ui.components.AnnouncementStrip(
-                                            a = a, expanded = annExpanded, onToggle = { annExpanded = !annExpanded },
-                                            onClose = { annExpanded = false; viewModel.hideAnnouncementToday(a.id) },
-                                            onView = { viewModel.annViewed(it) }, onClick = annGo
-                                        )
-                                    }
                                 }
                             }
 
@@ -651,10 +653,21 @@ fun MerchantStoreScreen(
                                     exit = fadeOut(),
                                     modifier = Modifier.align(Alignment.Center)
                                 ) {
-                                    MapQuickGuidePill(
-                                        offersCount = filteredCustomerOffers.size,
-                                        onOpenList = { isRestaurantListSheetOpen = true }
-                                    )
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        MapQuickGuidePill(
+                                            offersCount = filteredCustomerOffers.size,
+                                            onOpenList = { isRestaurantListSheetOpen = true }
+                                        )
+                                        // 📣 شريط إعلان لكوفر الرفيع تحت (✕ = لين بكرة)
+                                        mapAnn?.let { a ->
+                                            com.example.ui.components.AnnouncementStrip(
+                                                a = a, onOpen = { annExpanded = true },
+                                                onClose = { annExpanded = false; viewModel.hideAnnouncementToday(a.id) },
+                                                onView = { viewModel.annViewed(it) },
+                                                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -725,12 +738,11 @@ fun MerchantStoreScreen(
                                 }
                             }
 
-                            // 📣 إعلانات لكوفر في «حسابي» (ثابتة بدون إغلاق)
-                            announcements.filter { it.onAccount }.take(2).forEach { a ->
-                                com.example.ui.components.AnnouncementCard(a, onView = { viewModel.annViewed(it) }, onClick = annGo,
-                                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
-                            }
                             MerchantPortalView(
+                                // 📣 إعلانات لكوفر في «حسابي»: داخل الصفحة وتتمرر معها، وتتقلّب لو أكثر من واحد
+                                topBanner = announcements.filter { it.onAccount }.takeIf { it.isNotEmpty() }?.let { acc -> {
+                                    com.example.ui.components.AnnouncementCarousel(acc, onView = { viewModel.annViewed(it) }, onClick = annGo)
+                                } },
                                 isLoggedIn = isMerchantLoggedIn,
                                 merchantEmail = merchantEmail,
                                 // العنوان في لوحة التاجر: اسم المتجر، وإلا اسم صاحبه

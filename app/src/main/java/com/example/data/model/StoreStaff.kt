@@ -26,7 +26,7 @@ data class StoreStaff(
         /** الدور ← (الاسم، الصلاحيات الافتراضية، الشرح) */
         val ROLES = linkedMapOf(
             "cashier" to Triple("💳 كاشير", listOf("orders", "stock"), "يستقبل الطلبات ويغيّر حالتها، ويعلّم الأصناف «نفد»"),
-            "kitchen" to Triple("👨‍🍳 مطبخ", listOf("orders"), "يشوف الطلبات ويحدّث حالتها (يتجهّز / جاهز)")
+            "kitchen" to Triple("👤 مقدم خدمة", listOf("orders"), "يشوف الطلبات ويحدّث حالتها (يتجهّز / جاهز)")
         )
         val PERMS = linkedMapOf("orders" to "🧾 الطلبات (استقبال وتغيير الحالة)", "stock" to "🍽️ «نفد اليوم» للأصناف")
     }
