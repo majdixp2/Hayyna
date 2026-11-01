@@ -104,6 +104,8 @@ function listen() {
     sub(collection(db, "merchantStatus"), (sn) => { state.statuses = parse(sn).map((x) => ({ ...x, uid: x.id })); });
     sub(query(collection(db, "stores"), where("approved", "==", false)), (sn) => { state.pendingStores = parse(sn).map((x) => ({ ...x, uid: x.id })); });
     sub(collection(db, "stores"), (sn) => { state.storesAll = parse(sn).map((x) => ({ ...x, uid: x.id })); });
+    // 🔢 رقم المتجر (اللي يدخل فيه الموظفين)
+    sub(collection(db, "storeCodes"), (sn) => { state.storeCode = {}; sn.docs.forEach((d) => { const u = d.data().uid; if (u) state.storeCode[u] = d.id; }); });
   }
   if (can("messages")) sub(query(collection(db, "feedback"), orderBy("createdAt", "desc"), limit(300)), (sn) => { state.feedback = parse(sn); });
   if (can("merchants")) {
@@ -646,17 +648,18 @@ function allStoresHtml() {
     "⛔ موقوف": (s) => st(s.uid).suspended,
   };
   const list = state.storesAll.filter((s) => (F[state.storeFilter] || F["الكل"])(s)
-    && (!q || [s.name, s.category, s.phone, ...(s.branches || []).map((b) => b.district)].some((v) => String(v || "").toLowerCase().includes(q))))
+    && (!q || [s.name, s.category, s.phone, (state.storeCode || {})[s.uid], ...(s.branches || []).map((b) => b.district)].some((v) => String(v || "").toLowerCase().includes(q))))
     .sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
   const wa = (p) => String(p || "").replace(/\D/g, "").replace(/^05/, "9665").replace(/^5(\d{8})$/, "9665$1");
   return `<h2>🏪 كل المتاجر (${state.storesAll.length})</h2>
-    <input type="text" id="storeQuery" placeholder="ابحث بالاسم أو التصنيف أو الجوال أو الحي…" value="${esc(state.storeQuery)}">
+    <input type="text" id="storeQuery" placeholder="ابحث بالاسم أو التصنيف أو الجوال أو رقم المتجر أو الحي…" value="${esc(state.storeQuery)}">
     <div class="chips">${Object.keys(F).map((k) => `<button class="chip ${state.storeFilter === k ? "on" : ""}" data-sfilter="${esc(k)}">${esc(k)} (${state.storesAll.filter(F[k]).length})</button>`).join("")}</div>
     <div class="grid">${list.slice(0, 150).map((s) => { const t = st(s.uid), offers = state.offers.filter((o) => o.merchantId === s.uid).length, items = state.items.filter((i) => i.merchantId === s.uid).length;
       return `<div class="card"><div class="row" style="align-items:center;gap:10px">
         ${s.logoUrl ? `<img class="thumb small" src="${esc(img(s.logoUrl, 150))}" style="border-radius:50%">` : `<div class="thumb small" style="display:flex;align-items:center;justify-content:center;border-radius:50%">🏪</div>`}
         <div style="flex:1;min-width:0"><div class="name">${esc(s.name || "—")}</div>
           <div class="muted">${esc(s.category || "")}${s.phone ? " • " + esc(s.phone) : ""}${(s.branches || []).length ? ` • ${(s.branches || []).length} فرع` : ""}</div>
+          <div class="muted">🔢 رقم المتجر: ${(state.storeCode || {})[s.uid] ? `<b style="font-family:Montserrat,monospace;letter-spacing:2px;color:var(--ink,#111)">${esc(state.storeCode[s.uid])}</b> <button class="btn" style="padding:2px 8px;font-size:12px;display:inline-flex;width:auto" data-copy="${esc(state.storeCode[s.uid])}">نسخ</button>` : "ما أخذ رقم للحين (يتولّد لما يفتح «موظفين المتجر»)"}</div>
           <div style="margin-top:4px">${s.verified || t.verified ? `<span class="pill">✔ موثّق</span>` : `<span class="pill off">غير موثّق</span>`}
             ${t.trusted && !t.suspended ? `<span class="pill">⚡ ينشر مباشرة</span>` : ""} ${!s.approved ? `<span class="pill off">⏳ صفحته بانتظار الموافقة</span>` : ""} ${t.suspended ? `<span class="pill off">⛔ موقوف</span>` : ""}
             <span class="muted">🔥 ${offers} عرض • 🛍️ ${items} منتج</span></div></div></div>
@@ -1090,6 +1093,7 @@ function bind() {
   bindCatalog(c);
   c.querySelectorAll("[data-ret]").forEach((b) => (b.onclick = () => returnToMerchant(b.dataset.ret, b.dataset.id)));
   c.querySelectorAll("[data-sfilter]").forEach((b) => (b.onclick = () => { state.storeFilter = b.dataset.sfilter; render(); }));
+  c.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast("نسخنا الرقم ✅"); } catch { prompt("انسخ:", b.dataset.copy); } }));
   const sq = $("storeQuery"); if (sq) sq.oninput = () => { state.storeQuery = sq.value; render(); };
   c.querySelectorAll("[data-catup]").forEach((b) => (b.onclick = () => { const d = catDraft(), i = +b.dataset.catup; d.splice(i - 1, 0, d.splice(i, 1)[0]); render(); }));
   c.querySelectorAll("[data-catdel]").forEach((b) => (b.onclick = () => { if (confirm("حذف التصنيف؟ العروض الحالية تبقى عليه.")) { catDraft().splice(+b.dataset.catdel, 1); render(); } }));
