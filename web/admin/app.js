@@ -86,7 +86,8 @@ onAuthStateChanged(auth, async (user) => {
     if (!TABS.some(([k]) => k === state.tab && tabAllowed(k))) state.tab = "home";
   }
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
-  $("user").innerHTML = `<span>${esc(user.email)}${state.me.owner ? "" : ` <span class="pill">موظف</span>`}</span><button class="btn" id="logout">خروج</button>`;
+  $("user").innerHTML = `<span class="avatar">${esc((state.me.name || user.email || "?").trim().charAt(0).toUpperCase())}</span>
+    <span class="who"><b>${esc(state.me.owner ? "المالك" : state.me.name)}</b><small>${esc(user.email)}</small></span><button class="btn" id="logout">خروج</button>`;
   $("logout").onclick = () => signOut(auth);
   listen();
   render();
@@ -248,6 +249,32 @@ const TABS = [
   ["messages", "📨 الرسائل"], ["refs", "🎁 الإحالات"], ["offers", "📋 كل العروض"], ["ads", "📷 الإعلانات"], ["catalog", "🛍️ المنتجات"], ["credits", "💰 الرصيد"], ["promo", "📣 الإعلانات والعروض"],
   ["log", "📜 السجل"], ["team", "👥 الفريق"], ["settings", "⚙️ الإعدادات"],
 ];
+// القائمة الجانبية: مجموعات + أيقونة خطية ولون لكل قسم (ألوان Google)
+const G = { blue: "#1A73E8", red: "#EA4335", yel: "#F9AB00", grn: "#34A853", mut: "#5F6368" };
+const ICONS = {
+  home: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  log: '<path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/>',
+  review: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  offers: '<path d="M20 12l-8 8-9-9V3h8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  ads: '<rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/>',
+  catalog: '<path d="M5 8h14l-1.5 12h-11z"/><path d="M9 8a3 3 0 016 0"/>',
+  stores: '<path d="M3 9l1.5-5h15L21 9M4 9v11h16V9M9 20v-6h6v6"/>',
+  messages: '<path d="M4 5h16v11H8l-4 4z"/>',
+  refs: '<rect x="3" y="8" width="18" height="5" rx="1"/><path d="M5 13v8h14v-8M12 8v13"/>',
+  credits: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/>',
+  promo: '<path d="M3 11v2l13 5V6z"/><path d="M16 9a3 3 0 010 6"/>',
+  team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.3-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.5a3.5 3.5 0 010 7M18 14.8c2 .7 3.2 2.5 3.6 5.2"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+};
+const icon = (k, color, size = 20) => `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ""}</svg>`;
+const NAV = [
+  ["عام", [["home", "الرئيسية", G.blue], ["log", "سجل العمليات", G.mut]]],
+  ["المحتوى", [["review", "المراجعة", G.yel], ["offers", "كل العروض", G.red], ["ads", "عروض الإعلانات", G.grn], ["catalog", "المنتجات والطلبات", G.blue]]],
+  ["التجار", [["stores", "المتاجر والتوثيق", G.grn], ["messages", "الرسائل", G.blue], ["refs", "الإحالات والسفراء", G.red]]],
+  ["المالية والتسويق", [["credits", "الرصيد والباقات", G.grn], ["promo", "إعلانات وعروض لكوفر", G.yel]]],
+  ["النظام", [["team", "الفريق والصلاحيات", G.blue], ["settings", "الإعدادات", G.mut]]],
+];
+const navLabel = (k) => NAV.flatMap(([, l]) => l).find(([x]) => x === k)?.[1] || "الرئيسية";
 function tabAllowed(k) {
   return ({ home: true, log: true, review: can("review"), offers: can("review"), stores: canStores(), messages: can("messages"),
     refs: can("merchants"), credits: can("credits"), promo: !!state.me?.owner, catalog: can("review"), team: !!state.me?.owner, settings: !!state.me?.owner, ads: can("scout") })[k];
@@ -258,10 +285,13 @@ function render() {
   const c = computed();
   const badges = { catalog: state.items.filter((x) => !x.approved && !x.adminNote).length, review: c.pending.length + c.hidden.length, stores: c.pendingStores.length + state.verifs.length, messages: c.newMsgs, refs: c.refAwards };
   if (!tabAllowed(state.tab)) state.tab = "home";
-  $("tabs").innerHTML = TABS.filter(([k]) => tabAllowed(k)).map(([k, t]) =>
-    `<button class="tab ${state.tab === k ? "active" : ""}" data-tab="${k}">${t}${badges[k] ? `<span class="badge">${badges[k]}</span>` : ""}</button>`
-  ).join("");
-  $("tabs").querySelectorAll(".tab").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; localStorage.setItem("hayyna_admin_tab", state.tab); render(); }));
+  $("tabs").innerHTML = NAV.map(([title, items]) => {
+    const vis = items.filter(([k]) => tabAllowed(k));
+    return vis.length ? `<div class="nav-group"><div class="nav-title">${title}</div>${vis.map(([k, l, col]) =>
+      `<button class="tab ${state.tab === k ? "active" : ""}" data-tab="${k}">${icon(k, state.tab === k ? G.blue : col)}<span class="tab-l">${l}</span>${badges[k] ? `<span class="badge">${badges[k]}</span>` : ""}</button>`).join("")}</div>` : "";
+  }).join("");
+  $("pageTitle").textContent = navLabel(state.tab);
+  $("tabs").querySelectorAll(".tab").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; localStorage.setItem("hayyna_admin_tab", state.tab); render(); window.scrollTo(0, 0); }));
   const focused = document.activeElement?.id;
   const caret = document.activeElement?.selectionStart;
   $("content").innerHTML = ({ home, review, stores, messages, refs, offers, credits, catalog: catalogPage, settings, log: logPage, team, ads: adsPage, promo: promoPage }[state.tab] || home)(c);
@@ -288,35 +318,99 @@ function offerCard(o, extra = "", buttons = "") {
   </div>`;
 }
 
+// ---------------- الرئيسية (لوحة ملوّنة) ----------------
+const ms = (t) => (t?.toMillis ? t.toMillis() : 0);
+const num = (n) => Number(n || 0).toLocaleString("en-US");
+const DAY = 864e5;
+function dailySeries(list, field, days = 30) {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const t0 = start.getTime() - (days - 1) * DAY, out = new Array(days).fill(0);
+  for (const x of list) { const t = ms(x[field]); if (t >= t0) { const i = Math.floor((t - t0) / DAY); if (i >= 0 && i < days) out[i]++; } }
+  return out;
+}
+function lineChart(series, h = 220) {
+  const W = 600, max = Math.max(1, ...series.flatMap((s) => s.data));
+  const pts = (d) => d.map((v, i) => `${((i / (d.length - 1)) * W).toFixed(1)},${(h - 12 - (v / max) * (h - 30)).toFixed(1)}`).join(" ");
+  const grid = [0.25, 0.5, 0.75].map((f) => `<line x1="0" x2="${W}" y1="${h * f}" y2="${h * f}" stroke="#EEF0F2" vector-effect="non-scaling-stroke"/>`).join("");
+  const first = series[0];
+  return `<svg class="line" viewBox="0 0 ${W} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(series.map((s) => s.label).join("، "))} آخر ٣٠ يوم">${grid}
+    <polygon points="0,${h} ${pts(first.data)} ${W},${h}" fill="${first.color}" fill-opacity=".10"/>
+    ${series.map((s) => `<polyline points="${pts(s.data)}" fill="none" stroke="${s.color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`).join("")}</svg>`;
+}
+const legend = (items) => `<div class="legend">${items.map(([t, c]) => `<span><i style="background:${c}"></i>${t}</span>`).join("")}</div>`;
+function donut(parts, total, label) {
+  let acc = 0; const sum = parts.reduce((a, p) => a + p[1], 0) || 1;
+  const stops = parts.map(([, v, c]) => { const a0 = acc; acc += (v / sum) * 360; return `${c} ${a0}deg ${acc}deg`; }).join(",");
+  return `<div class="donut" style="background:${total ? `conic-gradient(${stops})` : "#EEF0F2"}" role="img" aria-label="${esc(parts.map(([t, v]) => `${t} ${v}`).join("، "))}"><div><b>${num(total)}</b><small>${label}</small></div></div>
+    <div class="dlist">${parts.map(([t, v, c]) => `<div><span><i style="background:${c}"></i>${t}</span><b>${num(v)}</b></div>`).join("")}</div>`;
+}
+const hbars = (rows, colors) => {
+  const max = Math.max(1, ...rows.map((r) => r[1]));
+  return rows.length ? `<div class="hbars">${rows.map(([t, v], i) => `<div><div class="hb-top"><span>${esc(t)}</span><b>${num(v)}</b></div>
+    <div class="hb-track"><div style="width:${Math.max(3, (v / max) * 100)}%;background:${colors[i % colors.length]}"></div></div></div>`).join("")}</div>` : `<p class="muted">ما فيه بيانات للحين</p>`;
+};
+
 function home(c) {
   const todo = [
-    ["⏳ عروض تنتظر المراجعة", c.pending.length, "review"],
-    ["🚩 عروض مخفية بسبب البلاغات", c.hidden.length, "review"],
-    ["🏪 صفحات متاجر تنتظر الموافقة", c.pendingStores.length, "stores"],
-    ["🛡️ طلبات توثيق", state.verifs.length, "stores"],
-    ["📨 رسائل جديدة", c.newMsgs, "messages"],
-    ["🎁 نقاط إحالة تنتظر اعتمادك", c.refAwards, "refs"],
+    ["عروض تنتظر المراجعة", c.pending.length, "review", "y"],
+    ["مخفية بسبب البلاغات", c.hidden.length, "review", "r"],
+    ["طلبات توثيق", state.verifs.length, "stores", "b"],
+    ["صفحات متاجر جديدة", c.pendingStores.length, "stores", "g"],
+    ["رسائل جديدة", c.newMsgs, "messages", "b"],
+    ["نقاط إحالة تنتظرك", c.refAwards, "refs", "y"],
   ].filter((t) => t[1] > 0 && tabAllowed(t[2]));
-  if (!state.me.owner) return `<h2>أهلاً ${esc(state.me.name)} 👋</h2>
-    <p class="muted">صلاحياتك: ${PERMS.filter(([k]) => can(k)).map(([, l]) => l).join(" • ")}</p>
-    <h2>يحتاج انتباهك</h2>${todo.length ? `<div class="grid">${todo.map(([l, n, t]) => `<button class="card todo" data-go="${t}">${l}<b>${n} ›</b></button>`).join("")}</div>` : `<p class="muted">كل شي تمام ✅</p>`}
-    <p class="muted">كل عملية تسويها تنحفظ في «📜 السجل» باسمك.</p>`;
-  const active = state.offers.filter((o) => o.isApproved && !isExpired(o)).length;
-  const stat = (t, v) => `<div class="card stat"><div class="v">${v}</div><div class="t">${t}</div></div>`;
-  return `<h2>يحتاج انتباهك</h2>
-    ${todo.length ? `<div class="grid">${todo.map(([l, n, t]) => `<button class="card todo" data-go="${t}">${l}<b>${n} ›</b></button>`).join("")}</div>`
-      : `<p class="muted">كل شي تمام، ما فيه شي ينتظرك ✅</p>`}
-    <h2>إحصائيات</h2>
-    <div class="stats">
-      ${stat("المتاجر", new Set(state.offers.map((o) => o.merchantId)).size)}
-      ${stat("عروض نشطة", active)}
-      ${stat("كل العروض", state.offers.length)}
-      ${stat("الأحياء", new Set(state.offers.map((o) => o.district).filter(Boolean)).size)}
-      ${stat("المشاهدات", state.offers.reduce((a, o) => a + (o.viewsCount || 0), 0))}
-      ${stat("طلبوا الاتجاه", state.offers.reduce((a, o) => a + (o.directionsCount || 0), 0))}
-      ${stat("تواصلوا واتساب", state.offers.reduce((a, o) => a + (o.whatsappCount || 0), 0))}
-      ${stat("⚡ ينشرون مباشرة", state.statuses.filter((s) => s.trusted && !s.suspended).length)}
-    </div>`;
+  const attention = `<section class="card panel"><div class="ph"><h2><span class="gdots"><i></i><i></i><i></i><i></i></span>يحتاج انتباهك</h2></div>
+    ${todo.length ? `<div class="todos">${todo.map(([l, n, t, k]) => `<button class="todo ${k}" data-go="${t}"><span><i></i>${l}</span><b>${num(n)} ‹</b></button>`).join("")}</div>`
+      : `<p class="muted">كل شي تمام، ما فيه شي ينتظرك ✅</p>`}</section>`;
+  const hello = state.me.owner ? "" : `<p class="muted">أهلاً ${esc(state.me.name)} 👋 — صلاحياتك: ${PERMS.filter(([k]) => can(k)).map(([, l]) => l).join(" • ")}</p>`;
+  if (!can("review") && !canStores()) return hello + attention + `<p class="muted">كل عملية تسويها تنحفظ في «سجل العمليات» باسمك.</p>`;
+
+  const now = Date.now(), wk = now - 7 * DAY;
+  const activeList = state.offers.filter((o) => o.isApproved && !isExpired(o));
+  const merchants = new Set(state.offers.map((o) => o.merchantId)).size;
+  const trusted = state.statuses.filter((s) => s.trusted && !s.suspended).length;
+  const newOffers = state.offers.filter((o) => ms(o.createdAt) >= wk).length;
+  const districts = {}; activeList.forEach((o) => { if (o.district) districts[o.district] = (districts[o.district] || 0) + 1; });
+  const distRows = Object.entries(districts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const ordersOn = can("merchants");
+  const ord = state.orders;
+  const avg = state.ratings.length ? (state.ratings.reduce((a, r) => a + (r.stars || 0), 0) / state.ratings.length).toFixed(1) : null;
+  const kpi = (label, val, sub, color, soft, ic) => `<div class="card kpi"><div class="kt"><span class="ktile" style="background:${soft}">${icon(ic, color, 22)}</span><span>${label}</span></div>
+    <div class="kv">${val}</div>${sub ? `<span class="kd">${sub}</span>` : ""}<i class="kbar" style="background:${color}"></i></div>`;
+  const kpis = `<section class="kpis">
+    ${kpi("عروض نشطة", num(activeList.length), `${num(newOffers)} عرض جديد هالأسبوع`, G.blue, "#E8F0FE", "offers")}
+    ${kpi("المتاجر", num(merchants), `${num(trusted)} ينشرون مباشرة`, G.red, "#FCE8E6", "stores")}
+    ${ordersOn ? kpi("الطلبات", num(ord.length), avg ? `التقييم ${avg} ★ من ${num(state.ratings.length)}` : "آخر ٥٠٠ طلب", G.yel, "#FEF7E0", "catalog")
+      : kpi("كل العروض", num(state.offers.length), "", G.yel, "#FEF7E0", "catalog")}
+    ${kpi("الأحياء", num(Object.keys(districts).length), "فيها عروض نشطة", G.grn, "#E6F4EA", "home")}</section>`;
+
+  const series = [{ label: "عروض جديدة", color: G.blue, data: dailySeries(state.offers, "createdAt") }];
+  if (ordersOn) series.push({ label: "الطلبات", color: G.red, data: dailySeries(ord, "createdAt") });
+  const views = state.offers.reduce((a, o) => a + (o.viewsCount || 0), 0), dirs = state.offers.reduce((a, o) => a + (o.directionsCount || 0), 0), wa = state.offers.reduce((a, o) => a + (o.whatsappCount || 0), 0);
+  const st = (f) => ord.filter(f).length;
+  const delivered = st((o) => o.status === "done"), failed = st((o) => o.status === "cancelled" || o.status === "noshow"), inProg = ord.length - delivered - failed;
+  const pie = ordersOn
+    ? `<div class="card panel side-chart"><div class="ph"><h2>حالة الطلبات</h2></div>${donut([["تمّت", delivered, G.blue], ["قيد التنفيذ", inProg, G.yel], ["ملغية / ما انستلمت", failed, G.red]], ord.length, "طلب")}</div>`
+    : `<div class="card panel side-chart"><div class="ph"><h2>حالة العروض</h2></div>${donut([["نشطة", activeList.length, G.grn], ["تنتظر المراجعة", c.pending.length, G.yel], ["منتهية أو موقفة", Math.max(0, state.offers.length - activeList.length - c.pending.length), G.mut]], state.offers.length, "عرض")}</div>`;
+  const charts = `<section class="row2">
+    <div class="card panel grow"><div class="ph"><h2>${ordersOn ? "العروض الجديدة والطلبات" : "العروض الجديدة"} — آخر ٣٠ يوم</h2>${legend(series.map((s) => [s.label, s.color]))}</div>
+      ${lineChart(series)}<div class="axis"><span>قبل ٣٠ يوم</span><span>قبل ٢٠</span><span>قبل ١٠</span><span>اليوم</span></div></div>
+    ${pie}</section>
+    <section class="row2 even">
+      <div class="card panel"><div class="ph"><h2>أكثر الأحياء عروضاً</h2></div>${hbars(distRows, [G.blue, G.red, G.yel, G.grn, G.blue])}</div>
+      <div class="card panel"><div class="ph"><h2>تفاعل الزبائن مع العروض</h2></div>${hbars([["المشاهدات", views], ["طلبوا الاتجاه", dirs], ["تواصلوا واتساب", wa]], [G.blue, G.red, G.grn])}
+        <div class="pfoot"><span class="muted">⚡ ${num(trusted)} متجر ينشر مباشرة بدون مراجعة</span>${tabAllowed("stores") ? `<button class="linkbtn" data-go="stores">المتاجر</button>` : ""}</div></div>
+    </section>`;
+
+  const latest = [...c.pending, ...c.hidden].slice(0, 5);
+  const table = can("review") ? `<section class="card panel"><div class="ph"><h2>آخر العروض بانتظار المراجعة</h2><button class="linkbtn" data-go="review">افتح المراجعة</button></div>
+    ${latest.length ? `<div class="tblwrap"><table class="tbl nice"><thead><tr><th>العرض</th><th>المتجر</th><th>الحي</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>
+    ${latest.map((o) => { const hid = c.hidden.includes(o); return `<tr><td><span class="ocell">${thumbOf(o) ? `<img class="thumb mini" src="${esc(thumbOf(o))}" data-view="${esc((o.mediaUris && o.mediaUris[0]) || o.mediaUri)}" alt="">` : `<span class="thumb mini"></span>`}<b>${esc(o.offerTitle)}</b></span></td>
+      <td>${esc(o.restaurantName)}</td><td>${esc(o.district || "—")}</td>
+      <td>${hid ? `<span class="pill r">عليه بلاغات (${o.reportsCount})</span>` : o.source === "ad" ? `<span class="pill b">من إعلان المحل</span>` : `<span class="pill y">ينتظر المراجعة</span>`}</td>
+      <td><span class="acts">${hid ? `<button class="btn primary" data-act="keep" data-id="${o.id}">سليم، رجّعه</button>` : `<button class="btn primary" data-act="approve" data-id="${o.id}">اعتماد</button>`}
+        <button class="btn" data-go="review">التفاصيل</button></span></td></tr>`; }).join("")}</tbody></table></div>` : `<p class="muted">ما فيه عروض تنتظر ✅</p>`}</section>` : "";
+  return hello + attention + kpis + charts + table;
 }
 
 function review(c) {
@@ -1075,7 +1169,7 @@ function bind() {
   if (state.tab === "ads") bindAds($("content"));
   const byId = (id) => state.offers.find((o) => o.id === id);
   const c = $("content");
-  c.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { state.tab = b.dataset.go; render(); }));
+  c.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { state.tab = b.dataset.go; localStorage.setItem("hayyna_admin_tab", state.tab); render(); window.scrollTo(0, 0); }));
   c.querySelectorAll("[data-view]").forEach((i) => (i.onclick = () => { $("viewerImg").src = img(i.dataset.view, 1600); $("viewer").classList.remove("hidden"); }));
   c.querySelectorAll("[data-fbtype]").forEach((b) => (b.onclick = () => { state.inboxType = b.dataset.fbtype; render(); }));
   c.querySelectorAll("[data-showdone]").forEach((b) => (b.onclick = () => { state.showDone = !state.showDone; render(); }));
