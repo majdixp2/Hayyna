@@ -1270,23 +1270,50 @@ $("viewerClose").onclick = () => $("viewer").classList.add("hidden");
 $("viewer").onclick = (e) => { if (e.target.id === "viewer") $("viewer").classList.add("hidden"); };
 
 // ===================== 📣 الإعلانات والعروض على أسعار لكوفر =====================
-const PR = { anns: [], unsub: null, color: "navy" };
+const PR = { anns: [], unsub: null, color: "navy", draft: {}, edit: null, pedit: null };
 const dtv = (ms) => { if (!ms) return ""; const d = new Date(ms - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
 const tsMs = (t) => (t && t.toMillis ? t.toMillis() : 0);
-const ACTIONS = [["publish", "يفتح «نشر عرض» (للتجار)"], ["credits", "يفتح شراء الرصيد"], ["url", "رابط خارجي"], ["offer", "يفتح عرض (رقم العرض)"], ["store", "يفتح متجر (رقم المتجر)"], ["none", "بدون زر"]];
+const ACTIONS = [["store", "🏪 يفتح متجر (تختاره من القائمة)"], ["offer", "🔥 يفتح عرض (تختاره من القائمة)"], ["url", "🔗 رابط خارجي"], ["publish", "➕ يفتح «نشر عرض» (للتجار بس)"], ["credits", "💰 يفتح شراء الرصيد (للتجار)"], ["none", "بدون زر"]];
+const storeLabel = (s) => `${s.name || "—"}${(state.storeCode || {})[s.uid] ? " • " + state.storeCode[s.uid] : ""}${(s.branches || [])[0]?.district ? " • " + s.branches[0].district : ""}${s.approved ? "" : " (غير معتمد)"}`;
+const liveOffers = () => state.offers.filter((o) => o.isApproved !== false && !o.draft && !(tsMs(o.expiresAt) && tsMs(o.expiresAt) < Date.now()));
+const offerLabel = (o) => `${o.restaurantName || "—"} — ${o.offerTitle || ""}`;
+/** وش يفتح الزر (للعرض في الجدول) */
+function targetText(a) {
+  if (a.action === "store") { const s = state.storesAll.find((x) => x.uid === a.value); return s ? `🏪 ${esc(s.name)}` : `<span style="color:#B42318">⚠️ متجر غير معروف — عدّله</span>`; }
+  if (a.action === "offer") { const o = state.offers.find((x) => x.id === a.value); return o ? `🔥 ${esc(offerLabel(o))}` : `<span style="color:#B42318">⚠️ العرض غير موجود — عدّله</span>`; }
+  if (a.action === "url") return `🔗 ${esc((a.value || "").slice(0, 40))}`;
+  return (ACTIONS.find(([k]) => k === a.action) || [, "—"])[1];
+}
+/** خانة «وش يفتح»: قائمة منسدلة للمتاجر والعروض بدل كتابة الرقم */
+function valueField(action, val = "") {
+  if (action === "store") {
+    const list = [...state.storesAll].sort((a, b) => (b.approved === true) - (a.approved === true) || String(a.name || "").localeCompare(String(b.name || ""), "ar"));
+    return `<p class="muted">اختر المتجر (ابحث بالاسم أو رقم المتجر)</p><input type="text" id="anPick" placeholder="🔍 مثال: شانز أو 14055" style="width:100%;margin-bottom:6px">
+      <select id="anValue" size="6" style="width:100%"><option value="">— اختر —</option>${list.map((s) => `<option value="${esc(s.uid)}" ${s.uid === val ? "selected" : ""}>${esc(storeLabel(s))}</option>`).join("")}</select>`;
+  }
+  if (action === "offer") {
+    const list = liveOffers().sort((a, b) => String(a.restaurantName || "").localeCompare(String(b.restaurantName || ""), "ar"));
+    return `<p class="muted">اختر العرض (ابحث باسم المتجر أو العرض)</p><input type="text" id="anPick" placeholder="🔍 ابحث…" style="width:100%;margin-bottom:6px">
+      <select id="anValue" size="6" style="width:100%"><option value="">— اختر —</option>${list.map((o) => `<option value="${esc(o.id)}" ${o.id === val ? "selected" : ""}>${esc(offerLabel(o))}</option>`).join("")}</select>`;
+  }
+  if (action === "url") return `<p class="muted">الرابط</p><input type="url" id="anValue" maxlength="300" placeholder="https://..." value="${esc(val)}" style="width:100%">`;
+  return `<input type="hidden" id="anValue" value=""><p class="muted">${action === "publish" ? "⚠️ هذا الزر للتجار بس — خلّ «لمين» = التجار" : action === "credits" ? "يفتح رابط سلة (أو صفحة الرصيد) للتجار" : "الإعلان بدون زر"}</p>`;
+}
 function promoPage() {
   const cr = state.config.credits || {}, items = itemList(creditsOf(state.config).items);
   const now = Date.now();
   const promos = items.filter((it) => it.promo);
+  const pe = PR.pedit, ae = PR.edit && PR.anns.find((x) => x.id === PR.edit);
   return `<h2>🏷️ عروض على أسعار لكوفر</h2>
   <div class="card">
     <p class="muted">خصم على سعر خدمة لفترة محددة (مثل اليوم الوطني). التاجر يشوف السعر القديم مشطوب والجديد، وسبب العرض، وكم باقي. لو عرضه حصري ناخذ الخصم الأكبر (ما نجمعهم). كل خدمة عليها عرض واحد.</p>
     ${promos.length ? `<table class="tbl"><thead><tr><th>الخدمة</th><th>الخصم</th><th>السبب</th><th>الفترة</th><th>لمين</th><th>الحالة</th><th></th></tr></thead><tbody>${promos.map((it) => { const p = it.promo, st = tsMs(p.startsAt), en = tsMs(p.endsAt);
-      return `<tr><td>${esc(it.name)}</td><td><b>${p.pct}%</b></td><td>${esc(p.reason || "")}</td><td class="muted">${new Date(st).toLocaleString("ar-SA-u-ca-gregory-nu-latn")}<br>${new Date(en).toLocaleString("ar-SA-u-ca-gregory-nu-latn")}</td>
-        <td>${p.newDays > 0 ? `الجدد (أول ${p.newDays} يوم)` : "كل التجار"}</td><td>${now < st ? "🔜 قريباً" : now < en ? "🟢 شغّال" : "⏹️ منتهي"}</td><td><button class="btn danger" data-prdel="${esc(it.id)}">حذف</button></td></tr>`; }).join("")}</tbody></table>` : `<p class="muted">ما فيه عروض على الأسعار الحين.</p>`}
-    <h3>＋ عرض جديد</h3>
+      return `<tr ${pe === it.id ? 'style="background:#FFF7E0"' : ""}><td>${esc(it.name)}</td><td><b>${p.pct}%</b></td><td>${esc(p.reason || "")}</td><td class="muted">${new Date(st).toLocaleString("ar-SA-u-ca-gregory-nu-latn")}<br>${new Date(en).toLocaleString("ar-SA-u-ca-gregory-nu-latn")}</td>
+        <td>${p.newDays > 0 ? `الجدد (أول ${p.newDays} يوم)` : "كل التجار"}</td><td>${now < st ? "🔜 قريباً" : now < en ? "🟢 شغّال" : "⏹️ منتهي"}</td><td style="white-space:nowrap"><button class="btn" data-predit="${esc(it.id)}" title="تعديل">✏️</button> <button class="btn danger" data-prdel="${esc(it.id)}">حذف</button></td></tr>`; }).join("")}</tbody></table>` : `<p class="muted">ما فيه عروض على الأسعار الحين.</p>`}
+    <div id="prForm">
+    <h3>${pe ? `✏️ تعديل عرض «${esc(creditsOf(state.config).items[pe]?.name || pe)}»` : "＋ عرض جديد"}</h3>
     <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px">
-      <span>الخدمة</span><select id="prItem"><option value="*">كل الخدمات</option>${items.filter((it) => it.active).map((it) => `<option value="${esc(it.id)}">${esc(it.name)} (${it.price} نقطة)</option>`).join("")}</select>
+      <span>الخدمة</span><select id="prItem" ${pe ? "disabled" : ""}>${pe ? "" : `<option value="*">كل الخدمات</option>`}${items.filter((it) => it.active || it.id === pe).map((it) => `<option value="${esc(it.id)}" ${it.id === pe ? "selected" : ""}>${esc(it.name)} (${it.price} نقطة)</option>`).join("")}</select>
       <span>الخصم %</span><input type="number" id="prPct" min="1" max="100" value="50" style="width:70px">
       <span>السبب</span><input type="text" id="prReason" maxlength="60" placeholder="🇸🇦 بمناسبة اليوم الوطني" style="min-width:220px">
     </div>
@@ -1295,8 +1322,9 @@ function promoPage() {
       <span>إلى</span><input type="datetime-local" id="prTo" value="${dtv(now + 7 * 864e5)}">
       <label class="switch"><input type="checkbox" id="prNew"> للتجار الجدد بس، أول</label><input type="number" id="prNewDays" min="1" max="365" value="14" style="width:64px"> يوم من تسجيلهم
     </div>
-    <label class="switch" style="margin-top:8px"><input type="checkbox" id="prAnn" checked> 📣 سوّ إعلان للتجار عن العرض (يتعبّى لحاله)</label>
-    <div class="actions"><button class="btn primary" id="prSave">حفظ العرض</button></div>
+    ${pe ? "" : `<label class="switch" style="margin-top:8px"><input type="checkbox" id="prAnn" checked> 📣 سوّ إعلان للتجار عن العرض (يتعبّى لحاله)</label>`}
+    <div class="actions"><button class="btn primary" id="prSave">${pe ? "حفظ التعديل" : "حفظ العرض"}</button>${pe ? ` <button class="btn" id="prCancel">إلغاء التعديل</button>` : ""}</div>
+    </div>
     <h3>🛒 رابط عرض سلة (اختياري)</h3>
     <p class="muted">لو سويت خصم على باقات الرصيد في سلة، حط الرابط هنا ويطلع للتاجر زر «اشترِ رصيد بخصم».</p>
     <div class="row"><input type="url" id="prStore" value="${esc(cr.promoStoreUrl || "")}" placeholder="https://..." style="flex:1"><button class="btn" id="prStoreSave">حفظ</button></div>
@@ -1305,19 +1333,21 @@ function promoPage() {
   <h2>📣 مستطيل إعلانات لكوفر</h2>
   <div class="card">
     <p class="muted">يطلع شريط رفيع تحت الخريطة (الزبون يقدر يخفيه لين بكرة)، وفي «حسابي» بنر داخل الصفحة يتقلّب لو أكثر من إعلان. الشارة الحمراء تنحسب لحالها من تاريخ النهاية لو تركتها فاضية.</p>
-    ${PR.anns.length ? `<table class="tbl"><thead><tr><th>الإعلان</th><th>لمين / وين</th><th>الفترة</th><th>👁 مشاهدة</th><th>👆 ضغط</th><th>الحالة</th><th></th></tr></thead><tbody>${PR.anns.map((a) => { const st = tsMs(a.startsAt), en = tsMs(a.endsAt), on = a.active !== false;
-      return `<tr><td><b>${esc(a.title)}</b><br><small class="muted">${esc(a.sub || "")}</small></td><td>${{ all: "الكل", customers: "الزبائن", merchants: "التجار" }[a.audience] || "الكل"}<br><small>${[a.places?.map ? "شريط الخريطة" : "", a.places?.account ? "حسابي" : ""].filter(Boolean).join(" + ")}</small></td>
-        <td class="muted">${new Date(st).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn")} ← ${new Date(en).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn")}</td><td>${a.views || 0}</td><td>${a.clicks || 0}${a.views ? ` <small class="muted">(${Math.round(((a.clicks || 0) / a.views) * 100)}%)</small>` : ""}</td>
+    ${PR.anns.length ? `<table class="tbl"><thead><tr><th>الإعلان</th><th>الزر يفتح</th><th>لمين / وين</th><th>الفترة</th><th>👁</th><th>👆</th><th>الحالة</th><th></th></tr></thead><tbody>${PR.anns.map((a) => { const st = tsMs(a.startsAt), en = tsMs(a.endsAt), on = a.active !== false;
+      return `<tr ${PR.edit === a.id ? 'style="background:#FFF7E0"' : ""}><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${esc({ navy: "#10318F", gold: "#F4B400", green: "#15803D" }[a.color] || a.color || "#10318F")}"></span> <b>${esc(a.title)}</b><br><small class="muted">${esc(a.sub || "")}</small></td><td><small>${targetText(a)}</small></td>
+        <td>${{ all: "الكل", customers: "الزبائن", merchants: "التجار" }[a.audience] || "الكل"}<br><small>${[a.places?.map ? "شريط الخريطة" : "", a.places?.account ? "حسابي" : ""].filter(Boolean).join(" + ")}</small></td>
+        <td class="muted">${new Date(st).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn")}<br>${new Date(en).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn")}</td><td>${a.views || 0}</td><td>${a.clicks || 0}${a.views ? ` <small class="muted">(${Math.round(((a.clicks || 0) / a.views) * 100)}%)</small>` : ""}</td>
         <td>${!on ? "⏸️ موقف" : now < st ? "🔜 قريباً" : now < en ? "🟢 شغّال" : "⏹️ منتهي"}</td>
-        <td><button class="btn" data-anon="${esc(a.id)}">${on ? "إيقاف" : "تشغيل"}</button> <button class="btn danger" data-andel="${esc(a.id)}">حذف</button></td></tr>`; }).join("")}</tbody></table>` : `<p class="muted">ما فيه إعلانات للحين.</p>`}
-    <h3>＋ إعلان جديد</h3>
+        <td style="white-space:nowrap"><button class="btn" data-anedit="${esc(a.id)}" title="تعديل">✏️</button> <button class="btn" data-anon="${esc(a.id)}">${on ? "إيقاف" : "تشغيل"}</button> <button class="btn danger" data-andel="${esc(a.id)}">حذف</button></td></tr>`; }).join("")}</tbody></table>` : `<p class="muted">ما فيه إعلانات للحين.</p>`}
+    <div id="anForm">
+    <h3>${ae ? `✏️ تعديل «${esc(ae.title)}»` : "＋ إعلان جديد"}</h3>
     <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div><p class="muted">العنوان الكبير *</p><input type="text" id="anTitle" maxlength="60" placeholder="🇸🇦 خصم 75% على نشر العروض" style="width:100%"></div>
-      <div><p class="muted">السطر الصغير</p><input type="text" id="anSub" maxlength="90" placeholder="بمناسبة اليوم الوطني — انشر بـ 25 نقطة بدل 100" style="width:100%"></div>
-      <div><p class="muted">نص الزر</p><input type="text" id="anCta" maxlength="30" placeholder="انشر عرضك الحين" style="width:100%"></div>
+      <div><p class="muted">العنوان الكبير *</p><input type="text" id="anTitle" maxlength="60" placeholder="🎉 خصم 10 ريال على أي طلب" style="width:100%"></div>
+      <div><p class="muted">السطر الصغير</p><input type="text" id="anSub" maxlength="90" placeholder="من شانز كافيه — لين نهاية الأسبوع" style="width:100%"></div>
+      <div><p class="muted">نص الزر</p><input type="text" id="anCta" maxlength="30" placeholder="اطلب الحين" style="width:100%"></div>
       <div><p class="muted">الشارة الحمراء (اختياري)</p><input type="text" id="anBadge" maxlength="30" placeholder="فاضي = ينتهي خلال X أيام" style="width:100%"></div>
       <div><p class="muted">الزر يسوي</p><select id="anAction" style="width:100%">${ACTIONS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>
-      <div><p class="muted">الرابط / رقم العرض / رقم المتجر</p><input type="text" id="anValue" maxlength="300" style="width:100%"></div>
+      <div id="anValWrap">${valueField("store")}</div>
       <div><p class="muted">لمين</p><select id="anAud" style="width:100%"><option value="all">الكل</option><option value="customers">الزبائن</option><option value="merchants">التجار</option></select></div>
       <div><p class="muted">اللون (جاهز أو اختر أي لون)</p><div class="row" id="anColors" style="flex-wrap:wrap;align-items:center;gap:8px">${[["navy", "كحلي"], ["gold", "ذهبي"], ["green", "أخضر"]].map(([k, l]) => `<label><input type="radio" name="anColor" value="${k}" ${PR.color === k ? "checked" : ""}> ${l}</label>`).join(" ")}
         <label>🎨 <input type="color" id="anColorPick" value="${/^#/.test(PR.color) ? PR.color : "#E5484D"}"></label><input type="text" id="anColorHex" maxlength="7" placeholder="#RRGGBB" value="${/^#/.test(PR.color) ? PR.color : ""}" style="width:90px"></div></div>
@@ -1328,15 +1358,37 @@ function promoPage() {
     <div class="row" style="margin-top:8px"><label class="switch"><input type="checkbox" id="anMap" checked> شريط تحت الخريطة</label><label class="switch"><input type="checkbox" id="anAcc" checked> في «حسابي»</label></div>
     <details style="margin-top:8px"><summary>🌐 النص بالإنجليزي (اختياري)</summary>
       <div class="row" style="flex-wrap:wrap;gap:8px"><input type="text" id="anTitleEn" placeholder="Title" maxlength="60"><input type="text" id="anSubEn" placeholder="Subtitle" maxlength="90"><input type="text" id="anCtaEn" placeholder="Button" maxlength="30"></div></details>
-    <div class="actions"><button class="btn primary" id="anSave">نشر الإعلان</button></div>
+    <div class="actions"><button class="btn primary" id="anSave">${ae ? "حفظ التعديل" : "نشر الإعلان"}</button>${ae ? ` <button class="btn" id="anCancel">إلغاء التعديل</button>` : ""}</div>
+    </div>
   </div>`;
 }
 function attachPromo() {
   if (!PR.unsub) PR.unsub = onSnapshot(query(collection(db, "announcements"), orderBy("createdAt", "desc"), limit(50)), (s) => { PR.anns = s.docs.map((d) => ({ ...d.data(), id: d.id })); if (state.tab === "promo") render(); }, (e) => console.warn(e));
   const v = (id) => $(id)?.value?.trim() || "";
   const ms = (id) => { const x = Date.parse($(id).value); return isNaN(x) ? 0 : x; };
+  // ✍️ المسودة: نحفظ اللي انكتب عشان إعادة الرسم (تحديثات مباشرة) ما تمسحه
+  const D = PR.draft;
+  const setVal = (id, val) => { const el = $(id); if (!el || val === undefined) return; if (el.type === "checkbox") el.checked = !!val; else el.value = val; };
+  if (D.anAction) { $("anAction").value = D.anAction; }
+  $("anValWrap").innerHTML = valueField($("anAction").value, D.anValue || "");
+  Object.entries(D).forEach(([k, val]) => { if (k !== "anAction" && k !== "anValue") setVal(k, val); });
+  const bindPick = () => {
+    const pick = $("anPick"), sel = $("anValue");
+    if (pick && sel && sel.tagName === "SELECT") {
+      if (D.anPick) pick.value = D.anPick;
+      const filter = () => { const q = pick.value.trim().toLowerCase(); [...sel.options].forEach((o, i) => { o.hidden = i > 0 && !!q && !o.textContent.toLowerCase().includes(q) && o.value !== sel.value; }); };
+      pick.oninput = () => { D.anPick = pick.value; filter(); }; filter();
+    }
+  };
+  bindPick();
+  ["prForm", "anForm"].forEach((f) => $(f)?.addEventListener("input", (e) => { const el = e.target; if (el.id && el.name !== "anColor") D[el.id] = el.type === "checkbox" ? el.checked : el.value; }));
+  ["prForm", "anForm"].forEach((f) => $(f)?.addEventListener("change", (e) => { const el = e.target; if (el.id && el.name !== "anColor") D[el.id] = el.type === "checkbox" ? el.checked : el.value; }));
+  $("anAction").addEventListener("change", () => { D.anValue = ""; D.anPick = ""; $("anValWrap").innerHTML = valueField($("anAction").value, ""); bindPick();
+    if ($("anAction").value === "publish" || $("anAction").value === "credits") { $("anAud").value = "merchants"; D.anAud = "merchants"; } prev(); });
+
+  // ---- عروض الأسعار ----
   $("prSave").onclick = async () => {
-    const pct = Math.min(100, Math.max(1, parseInt($("prPct").value, 10) || 0)), from = ms("prFrom"), to = ms("prTo"), item = $("prItem").value;
+    const pct = Math.min(100, Math.max(1, parseInt($("prPct").value, 10) || 0)), from = ms("prFrom"), to = ms("prTo"), item = PR.pedit || $("prItem").value;
     if (!(to > from)) return toast("تاريخ النهاية لازم بعد البداية");
     const promo = { pct, reason: v("prReason").slice(0, 60), startsAt: Timestamp.fromMillis(from), endsAt: Timestamp.fromMillis(to), newDays: $("prNew").checked ? Math.max(1, parseInt($("prNewDays").value, 10) || 14) : 0 };
     const ids = item === "*" ? itemList(creditsOf(state.config).items).filter((it) => it.active).map((it) => it.id) : [item];
@@ -1344,23 +1396,34 @@ function attachPromo() {
     const upd = {};
     if (!cur) { const all = creditsOf(state.config).items; Object.entries(all).forEach(([k, it]) => { upd[`credits.items.${k}`] = ids.includes(k) ? { ...it, promo } : it; }); }
     else ids.forEach((k) => { upd[`credits.items.${k}.promo`] = promo; });
+    const wasEdit = !!PR.pedit, mkAnn = !wasEdit && $("prAnn")?.checked;
     try {
-      await updateDoc(doc(db, "config", "app"), upd); toast("انحفظ العرض ✅");
-      if ($("prAnn").checked) {
+      await updateDoc(doc(db, "config", "app"), upd); toast(wasEdit ? "انحفظ التعديل ✅" : "انحفظ العرض ✅");
+      if (mkAnn) {
         const name = item === "*" ? "كل الخدمات" : creditsOf(state.config).items[item]?.name || "";
         await addDoc(collection(db, "announcements"), { title: `${promo.reason ? promo.reason.split(" ")[0] + " " : "🏷️ "}خصم ${pct}% على ${name}`.slice(0, 60), sub: promo.reason || "لفترة محدودة", cta: "انشر عرضك الحين",
           action: "publish", value: "", color: "navy", badge: "", audience: "merchants", places: { map: true, account: true }, startsAt: promo.startsAt, endsAt: promo.endsAt, active: true, views: 0, clicks: 0, createdAt: serverTimestamp() });
-        toast("وسوّينا إعلان للتجار 📣 تقدر تعدّله تحت");
+        toast("وسوّينا إعلان للتجار 📣 تقدر تعدّله بالقلم ✏️");
       }
+      ["prItem", "prPct", "prReason", "prFrom", "prTo", "prNew", "prNewDays", "prAnn"].forEach((k) => delete PR.draft[k]); PR.pedit = null; render();
     } catch (e) { console.error(e); toast("تعذّر الحفظ"); }
   };
+  $("prCancel")?.addEventListener("click", () => { ["prItem", "prPct", "prReason", "prFrom", "prTo", "prNew", "prNewDays"].forEach((k) => delete PR.draft[k]); PR.pedit = null; render(); });
+  $("content").querySelectorAll("[data-predit]").forEach((b) => b.onclick = () => {
+    const it = creditsOf(state.config).items[b.dataset.predit], p = it?.promo; if (!p) return;
+    PR.pedit = b.dataset.predit;
+    Object.assign(PR.draft, { prPct: String(p.pct), prReason: p.reason || "", prFrom: dtv(tsMs(p.startsAt)), prTo: dtv(tsMs(p.endsAt)), prNew: p.newDays > 0, prNewDays: String(p.newDays || 14) });
+    render(); $("prForm")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
   $("content").querySelectorAll("[data-prdel]").forEach((b) => b.onclick = async () => {
     if (!confirm("حذف العرض؟ الأسعار ترجع طبيعية فوراً")) return;
     try { await updateDoc(doc(db, "config", "app"), { [`credits.items.${b.dataset.prdel}.promo`]: deleteField() }); toast("انحذف"); } catch (e) { console.error(e); toast("تعذّر"); }
   });
   $("prStoreSave").onclick = () => updateDoc(doc(db, "config", "app"), { "credits.promoStoreUrl": v("prStore").slice(0, 300) }).then(() => toast("انحفظ ✅")).catch(() => toast("تعذّر"));
+
+  // ---- الإعلانات ----
   const PRESET = { navy: ["#10318F", "#0B2266", "#fff"], gold: ["#F4B400", "#E0A300", "#0B2266"], green: ["#15803D", "#106631", "#fff"] };
-  const colorsOf = (c) => { if (PRESET[c]) return PRESET[c]; const n = parseInt(c.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  const colorsOf = (c) => { if (PRESET[c]) return PRESET[c]; if (!/^#[0-9a-f]{6}$/i.test(c || "")) return PRESET.navy; const n = parseInt(c.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
     return [c, "#" + [r, g, b].map((x) => Math.round(x * 0.82).toString(16).padStart(2, "0")).join(""), (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#111827" : "#fff"]; };
   const prev = () => { const [bg, dk, fg] = colorsOf(PR.color); const end = ms("anTo"), d = Math.ceil((end - Date.now()) / 864e5);
     $("anPrev").innerHTML = `<div style="border-radius:18px;overflow:hidden;color:${fg};direction:rtl"><div style="background:${bg};padding:12px 14px"><div style="display:flex;justify-content:space-between"><b style="opacity:.8">%</b><span style="background:#E5484D;color:#fff;border-radius:8px;padding:1px 8px;font-size:12px">${esc(v("anBadge") || (d <= 1 ? "آخر يوم" : `ينتهي خلال ${d} أيام`))}</span></div>
@@ -1370,24 +1433,36 @@ function attachPromo() {
   const setHex = (h) => { if (!/^#[0-9a-f]{6}$/i.test(h)) return; PR.color = h.toUpperCase(); $("content").querySelectorAll('input[name="anColor"]').forEach((r) => r.checked = false); $("anColorPick").value = h; $("anColorHex").value = PR.color; prev(); };
   $("anColorPick").oninput = (e) => setHex(e.target.value);
   $("anColorHex").oninput = (e) => setHex(e.target.value.trim());
-  ["anTitle", "anSub", "anCta", "anBadge", "anTo", "anAction"].forEach((id) => { $(id).addEventListener("input", prev); $(id).addEventListener("change", prev); });
+  ["anTitle", "anSub", "anCta", "anBadge", "anTo"].forEach((id) => { $(id).addEventListener("input", prev); $(id).addEventListener("change", prev); });
   prev();
   $("anSave").onclick = async () => {
     const from = ms("anFrom"), to = ms("anTo");
     if (!v("anTitle")) return toast("اكتب العنوان");
     if (!(to > from)) return toast("تاريخ النهاية لازم بعد البداية");
     if (!$("anMap").checked && !$("anAcc").checked) return toast("اختر وين يطلع");
-    const action = $("anAction").value;
-    if (action === "url" && !/^https?:\/\//.test(v("anValue"))) return toast("اكتب رابط يبدأ بـ https://");
+    const action = $("anAction").value, value = v("anValue");
+    if (action === "url" && !/^https?:\/\//.test(value)) return toast("اكتب رابط يبدأ بـ https://");
+    if (action === "store" && !state.storesAll.some((s) => s.uid === value)) return toast("اختر المتجر من القائمة");
+    if (action === "offer" && !state.offers.some((o) => o.id === value)) return toast("اختر العرض من القائمة");
+    if ((action === "publish" || action === "credits") && $("anAud").value !== "merchants") return toast("هالزر للتجار بس — غيّر «لمين» إلى التجار");
+    const data = { title: v("anTitle"), sub: v("anSub"), cta: v("anCta") || (action === "none" ? "" : "اعرف أكثر"), badge: v("anBadge"), action, value: ["store", "offer", "url"].includes(action) ? value : "",
+      color: PR.color, audience: $("anAud").value, places: { map: $("anMap").checked, account: $("anAcc").checked },
+      titleEn: v("anTitleEn"), subEn: v("anSubEn"), ctaEn: v("anCtaEn"), startsAt: Timestamp.fromMillis(from), endsAt: Timestamp.fromMillis(to) };
     try {
-      await addDoc(collection(db, "announcements"), { title: v("anTitle"), sub: v("anSub"), cta: v("anCta") || (action === "none" ? "" : "اعرف أكثر"), badge: v("anBadge"), action, value: v("anValue"),
-        color: PR.color, audience: $("anAud").value, places: { map: $("anMap").checked, account: $("anAcc").checked },
-        titleEn: v("anTitleEn"), subEn: v("anSubEn"), ctaEn: v("anCtaEn"),
-        startsAt: Timestamp.fromMillis(from), endsAt: Timestamp.fromMillis(to), active: true, views: 0, clicks: 0, createdAt: serverTimestamp() });
-      toast("انتشر الإعلان ✅");
-    } catch (e) { console.error(e); toast("تعذّر النشر"); }
+      if (PR.edit) { await updateDoc(doc(db, "announcements", PR.edit), data); toast("انحفظ التعديل ✅"); }
+      else { await addDoc(collection(db, "announcements"), { ...data, active: true, views: 0, clicks: 0, createdAt: serverTimestamp() }); toast("انتشر الإعلان ✅"); }
+      Object.keys(PR.draft).filter((k) => k.startsWith("an")).forEach((k) => delete PR.draft[k]); PR.edit = null; PR.color = "navy"; render();
+    } catch (e) { console.error(e); toast("تعذّر الحفظ"); }
   };
+  $("anCancel")?.addEventListener("click", () => { Object.keys(PR.draft).filter((k) => k.startsWith("an")).forEach((k) => delete PR.draft[k]); PR.edit = null; PR.color = "navy"; render(); });
+  $("content").querySelectorAll("[data-anedit]").forEach((b) => b.onclick = () => {
+    const a = PR.anns.find((x) => x.id === b.dataset.anedit); if (!a) return;
+    PR.edit = a.id; PR.color = a.color || "navy";
+    Object.keys(PR.draft).filter((k) => k.startsWith("an")).forEach((k) => delete PR.draft[k]);
+    Object.assign(PR.draft, { anTitle: a.title || "", anSub: a.sub || "", anCta: a.cta || "", anBadge: a.badge || "", anAction: a.action || "none", anValue: a.value || "", anAud: a.audience || "all",
+      anFrom: dtv(tsMs(a.startsAt)), anTo: dtv(tsMs(a.endsAt)), anMap: !!a.places?.map, anAcc: !!a.places?.account, anTitleEn: a.titleEn || "", anSubEn: a.subEn || "", anCtaEn: a.ctaEn || "" });
+    render(); $("anForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   $("content").querySelectorAll("[data-anon]").forEach((b) => b.onclick = () => { const a = PR.anns.find((x) => x.id === b.dataset.anon); updateDoc(doc(db, "announcements", a.id), { active: a.active === false }).catch(() => toast("تعذّر")); });
   $("content").querySelectorAll("[data-andel]").forEach((b) => b.onclick = () => { if (confirm("حذف الإعلان؟")) deleteDoc(doc(db, "announcements", b.dataset.andel)).catch(() => toast("تعذّر")); });
 }
-
